@@ -1,0 +1,30 @@
+name: ✨ Fonctionnalité
+description: Nouvelle fonctionnalité ou amélioration
+title: "[area] "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexte / problème utilisateur
+      description: Qui en a besoin et pourquoi ?
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: Niveau utilisateur concerné
+      multiple: true
+      options: [Découverte, Amateur, Expert]
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critères d'acceptation
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes techniques / maquettes / sources

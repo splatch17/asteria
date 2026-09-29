@@ -1,0 +1,34 @@
+name: 🐛 Bug
+description: Quelque chose ne marche pas comme prévu
+title: "[area] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Que se passe-t-il ?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Étapes pour reproduire
+      value: |
+        1.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Plateforme / appareil / version
+      placeholder: "Android 14, Pixel 7, v0.3.1"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Captures, logs, date/heure/lieu simulés

@@ -1,0 +1,24 @@
+name: 🎨 Design / DA
+description: Écran, composant, figure de constellation, animation
+title: "[ui] "
+labels: ["type:design"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Objectif et écran/élément concerné
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: Références visuelles
+      description: Liens, images, section de docs/ART_DIRECTION.md
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critères d'acceptation
+      value: |
+        - [ ] Mockup validé par le porteur du projet
+        - [ ] Fonctionne en mode nuit (rouge)
+        - [ ]

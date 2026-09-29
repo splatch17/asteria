@@ -1,0 +1,32 @@
+name: 🌌 Données
+description: Intégrer, corriger ou mettre à jour un jeu de données astronomiques
+title: "[data] "
+labels: ["type:data", "area:data"]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source officielle (URL, catalogue, version)
+      placeholder: "CDS VizieR I/311 — Hipparcos new reduction (2007)"
+    validations:
+      required: true
+  - type: input
+    id: license
+    attributes:
+      label: Licence / conditions de citation
+    validations:
+      required: true
+  - type: textarea
+    id: usage
+    attributes:
+      label: Usage dans l'app et champs nécessaires
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critères d'acceptation (contrôles de cohérence, objets témoins…)
+      value: |
+        - [ ] Script reproductible
+        - [ ] Entrée ajoutée dans docs/DATA_SOURCES.md
+        - [ ]
