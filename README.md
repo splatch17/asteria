@@ -1,8 +1,8 @@
-# Galaxa *(nom de travail)*
+# Asteria
 
 > Apprendre le ciel — des premières constellations jusqu'aux catalogues de recherche.
 
-Galaxa est une application d'astronomie **Android-first**, également disponible **en ligne (PWA)** et en **exécutable desktop**, qui permet :
+Asteria est une application d'astronomie **Android-first**, également disponible **en ligne (PWA)** et en **exécutable desktop**, qui permet :
 
 - 🔭 **Mode Ciel Live** — pointer son téléphone vers le ciel et identifier étoiles, constellations, planètes, objets du ciel profond en temps réel.
 - 🗺️ **Carte Découverte** — explorer librement une carte du ciel interactive (temps, lieu, zoom, couches).

@@ -11,18 +11,17 @@
 | — | — | — | — | — |
 
 ## ⛔ Blocages / décisions en attente
-- Nom définitif de l'application (Galaxa = nom de travail)
-- Validation de la stack (ADR-0001)
-- Validation de l'interprétation DA (docs/ART_DIRECTION.md)
-- Licence du projet (open source ou propriétaire)
+- Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
+- Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Répondre aux questions ouvertes (nom, stack, DA, licence)
-2. Initialiser le monorepo pnpm + CI
-3. Prototype de pipeline Hipparcos + noms IAU → JSON/binaire
-4. Prototype visuel : Orion en 3 variantes de style
+1. Initialiser le monorepo pnpm + CI
+2. Prototype de pipeline Hipparcos + noms IAU → JSON/binaire
+3. Prototype visuel : Orion en 3 variantes de style
 
 ## ✅ Fait récemment
+- 2026-09-30 — Palette validée : nuit #101B52 / parchemin #F0E6D2. Appareil de test : Samsung Galaxy S23.
+- 2026-09-30 — Décisions : nom **Asteria**, stack acceptée (ADR-0001), i18n (ADR-0002), DA réécrite à partir de l'analyse réelle du site Hermes Agent, indispensables validés (nuit rouge, Ce soir, ISS, cultures du ciel + histoires, vue 3D), app gratuite en bêta, FR d'abord.
 - 2026-09-30 — Création du repo, docs de plan/workflow/DA/données, agents et procédures, templates GitHub, labels & milestones.
 
 ## 📝 Notes de passation

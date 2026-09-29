@@ -1,6 +1,6 @@
 # ADR-0001 — Stack technique
 
-- **Statut** : Proposé (en attente de validation)
+- **Statut** : Accepté (2026-09-30 — le porteur du projet délègue le choix : « le plus adapté, beau et pro »)
 - **Date** : 2026-09-30
 
 ## Contexte
@@ -26,3 +26,9 @@ Cibles : Android (prioritaire), Web (partie en ligne), Windows (.exe). Le cœur 
 
 ## Conséquences
 Risque principal : précision/latence des capteurs dans une WebView → prévoir un plugin natif Capacitor dès la phase 4 si nécessaire.
+
+## Justification finale
+Critères du porteur : rendu **beau et pro**, grand public **et** professionnels, Android d'abord + web + exe.
+- Le style retenu (gravure tramée 1-bit, halftone, scanlines, grain : voir `docs/ART_DIRECTION.md`) se réalise **en shaders GPU**. WebGL2 + Three.js offre le meilleur rapport qualité/effort et l'écosystème le plus riche.
+- Un seul code pour les 3 cibles, ce qui garde un rythme de développement soutenable.
+- Svelte 5 plutôt que React : moins de surcoût d'exécution sur mobile, animations d'interface simples à écrire.

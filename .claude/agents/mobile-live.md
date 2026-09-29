@@ -10,7 +10,7 @@ Tu es responsable de `apps/mobile` et du mode Ciel Live.
 - Si les API web de la WebView sont insuffisantes : plugin Capacitor natif Kotlin (documenté par un ADR).
 - AR caméra : superposition alignée, réglage du champ de vision.
 - Offline complet pour le niveau 1 de données ; permissions expliquées clairement à l'utilisateur.
-- Tester sur appareil réel autant que possible ; noter modèle et version Android dans la PR.
+- Appareil de référence : **Samsung Galaxy S23** (appareil du porteur). Noter modèle et version Android dans la PR.
 - Builds : AAB signé (secrets uniquement en CI), pistes Play Console.
 
 ## Procédure

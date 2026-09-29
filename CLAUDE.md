@@ -1,4 +1,4 @@
-# Galaxa — règles pour les agents IA
+# Asteria — règles pour les agents IA
 
 Application d'apprentissage du ciel (constellations, étoiles). Android-first + PWA + desktop (Tauri). Public : des enfants aux doctorants (3 niveaux : Découverte / Amateur / Expert).
 
@@ -14,7 +14,9 @@ Application d'apprentissage du ciel (constellations, étoiles). Android-first + 
 - **Licences** : ne jamais intégrer de données/assets sans licence compatible vérifiée et documentée.
 - **Performance mobile** : cible 60 fps sur un Android milieu de gamme ; pas de dépendance lourde sans justification dans la PR.
 - **DA** : respecter `docs/ART_DIRECTION.md` ; toute UI s'accompagne de captures.
-- **Langue** : code, identifiants et commits en anglais ; docs et contenu utilisateur en français (i18n prête pour EN).
+- **Droits** : aucune image de Nous Research/Hermes Agent dans le repo (référence de style uniquement). Contenu issu de Wikipédia : reformulé et attribué (CC BY-SA).
+- **Langue** : code, identifiants et commits en anglais ; docs et contenu utilisateur en français.
+- **i18n (ADR-0002)** : aucun texte utilisateur en dur, tout passe par des clés ICU ; contenu éditorial dans `packages/content/<lang>/`.
 - Tenir `PROGRESS.md` à jour à chaque début/fin de tâche.
 - Pas de `TODO` sans numéro de ticket : `// TODO(#N): ...`.
 

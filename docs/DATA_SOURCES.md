@@ -17,6 +17,10 @@
 | Satellites / ISS | **CelesTrak** (TLE) | — | Libre | Passages |
 | Exoplanètes | **NASA Exoplanet Archive** | NASA / IPAC | Libre | Étoiles hôtes |
 | Objets (expert) | **SIMBAD** (API TAP) | CDS Strasbourg | Libre, citation | Liens et données croisées |
+| Cultures du ciel (figures, lignes) | Stellarium *skycultures* (licences par culture : CC BY-SA / GPL…) + publications ethnoastronomiques | Divers | Vérifier culture par culture | Cultures non occidentales |
+| Histoires, mythes, anecdotes | **Wikipédia FR/EN** (point de départ) + sources antiques (Ératosthène, Hygin, Aratos) | Wikimedia | **CC BY-SA 4.0** → reformuler, attribuer, contenu dérivé sous CC BY-SA | Guide, fiches, jeux |
+| Gravures anciennes (base des figures) | *Uranometria* (Bayer 1603), Hevelius 1690, *Urania's Mirror* 1824 (numérisations Library of Congress, USNO, Linda Hall Library) | — | Domaine public (vérifier la numérisation) | Base des figures artiste + IA |
+| Météo / nuages | Open-Meteo (API libre) ou Météo-France (données publiques) | — | Libre, citation | « Ce soir » |
 | Pollution lumineuse | World Atlas of Artificial Night Sky Brightness (Falchi 2016) / VIIRS (NASA/NOAA) | — | Vérifier | Indice Bortle |
 
 ## Stratégie

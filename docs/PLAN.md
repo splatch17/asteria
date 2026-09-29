@@ -15,7 +15,7 @@ Le niveau se change à tout moment ; il ne masque jamais la vérité scientifiqu
 ## Architecture proposée (voir ADR-0001 — *à valider*)
 
 ```
-galaxa/
+asteria/
 ├── packages/
 │   ├── astro-core/      # TS pur : temps, coordonnées, précession/nutation, éphémérides, requêtes catalogue
 │   ├── sky-data/        # Pipeline Python/TS : téléchargement → nettoyage → tuiles binaires compactes
@@ -52,6 +52,8 @@ galaxa/
 - [ ] Contrôle du temps (voyage dans le temps, accélération) et du lieu
 - [ ] Couches : lignes, figures, frontières, grilles (équatoriale/azimutale), noms, planètes, DSO
 - [ ] Fiche objet au tap (3 niveaux de détail)
+- [ ] ⭐ Mode nuit rouge (dès le premier rendu)
+- [ ] ⭐ Vue 3D d'une constellation (distances réelles)
 - [ ] Recherche (étoile, constellation, objet, catalogue)
 - **→ Première release web (PWA) publique**
 
@@ -59,12 +61,15 @@ galaxa/
 - [ ] Style final validé, pipeline d'assets (SVG/vectoriel animé ou textures + shaders)
 - [ ] 88 figures (priorité : 12 zodiacales + 15 les plus connues de l'hémisphère Nord)
 - [ ] Animations d'apparition (la figure « se révèle » depuis les étoiles)
+- [ ] ⭐ Cultures du ciel non occidentales : 3 premières (chinoise, arabe, polynésienne) avec histoires
 
 ### Phase 4 — Android & Ciel Live (≈ 4 semaines)
 - [ ] App Capacitor, capteurs (orientation, boussole, GPS), fusion de capteurs + filtrage
 - [ ] Mode Live : la carte suit le téléphone ; calibration boussole guidée
 - [ ] Mode AR caméra (superposition sur flux vidéo) — optionnel/activable
-- [ ] Mode nuit (rouge), offline complet
+- [ ] Offline complet
+- [ ] ⭐ Écran « Ce soir » (visibles, Lune, météo, pollution lumineuse)
+- [ ] ⭐ Passages de l'ISS (TLE CelesTrak + notification)
 - **→ Bêta fermée Android (Play Console, piste interne)**
 
 ### Phase 5 — Apprentissage & mini-jeux (≈ 4 semaines)
@@ -75,7 +80,8 @@ galaxa/
 ### Phase 6 — Guide & contenu expert (continu)
 - [ ] Fiches des 88 constellations, ~300 étoiles nommées IAU, 110 Messier
 - [ ] Niveau expert : données Gaia DR3, liens SIMBAD, diagrammes HR interactifs
-- [ ] Traduction EN
+- [ ] Histoires & anecdotes (à partir de Wikipédia reformulé + sources antiques)
+- [ ] Traduction EN (quand décidé ; aucun code à modifier grâce à ADR-0002)
 
 ### Phase 7 — Desktop & release publique
 - [ ] Build Tauri (.exe / installateur), mise à jour auto

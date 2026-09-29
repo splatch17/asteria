@@ -1,6 +1,15 @@
 # Fonctionnalités
 
-Légende : 🟢 MVP · 🟡 v1 · 🔵 plus tard / idée
+Légende : 🟢 MVP · 🟡 v1 · 🔵 plus tard / idée · ⭐ **indispensable (validé par le porteur du projet)**
+
+## ⭐ Indispensables validés (2026-09-30)
+1. **Mode nuit rouge**
+2. **« Ce soir »** : ce qui est visible, météo, pollution lumineuse
+3. **Passages de l'ISS** (et satellites brillants)
+4. **Cultures du ciel occidentales et non occidentales**, avec **histoires et anecdotes** (point de départ : Wikipédia, reformulé et attribué ; cf. DATA_SOURCES)
+5. **Vue 3D des constellations**
+
+Modèle : **gratuit** (phase bêta). Langue : **français**, architecture i18n prête (ADR-0002).
 
 ## 1. Ciel Live (téléphone pointé vers le ciel)
 - 🟢 Carte orientée par capteurs (gyroscope + accéléromètre + magnétomètre + GPS)
@@ -14,9 +23,9 @@ Légende : 🟢 MVP · 🟡 v1 · 🔵 plus tard / idée
 - 🟢 Navigation libre, zoom continu, voyage dans le temps (heure, date, siècles → précession visible)
 - 🟢 Couches activables : lignes, figures, frontières IAU, grilles, noms, planètes, ciel profond, Voie lactée
 - 🟢 Fiche objet multi-niveaux
-- 🟡 Autres cultures du ciel (chinoise, arabe, polynésienne, autochtones…) — superbe pour la DA
+- 🟢⭐ **Cultures du ciel** : gréco-romaine (IAU) + chinoise, arabe, égyptienne, polynésienne, aborigène australienne, lakota, inca, nordique… avec figures, **histoires et anecdotes** par constellation/étoile
 - 🟡 Vue « depuis une autre étoile » (le ciel vu depuis Proxima du Centaure, en 3D grâce aux parallaxes Gaia)
-- 🔵 Vue 3D de la constellation : voir que les étoiles d'Orion sont à des distances très différentes
+- 🟢⭐ **Vue 3D de la constellation** : tourner autour d'Orion et voir que ses étoiles sont à des distances très différentes (parallaxes Gaia/Hipparcos, avec barres d'incertitude en mode Expert)
 
 ## 3. Mini-jeux
 | Jeu | Principe | Niveau |
@@ -38,9 +47,9 @@ Légende : 🟢 MVP · 🟡 v1 · 🔵 plus tard / idée
 - 🟡 Niveau Expert : désignations croisées, astrométrie Gaia DR3, incertitudes, liens directs SIMBAD/VizieR/NASA ADS, diagrammes HR/courbes de lumière
 
 ## 5. Propositions pour passionnés
-- 🟢 **Mode vision nocturne** (tout en rouge, luminosité minimale) — indispensable
-- 🟡 **Ce soir** : ce qui est visible, heure de lever/coucher, phase lunaire, météo & couverture nuageuse, **indice de pollution lumineuse** (échelle de Bortle, carte)
-- 🟡 **Passages de l'ISS** et satellites brillants (données CelesTrak), Starlink
+- 🟢⭐ **Mode vision nocturne** (tout en rouge, luminosité minimale) — indispensable
+- 🟢⭐ **Ce soir** : ce qui est visible, heure de lever/coucher, phase lunaire, météo & couverture nuageuse, **indice de pollution lumineuse** (échelle de Bortle, carte)
+- 🟢⭐ **Passages de l'ISS** et satellites brillants (données CelesTrak), Starlink
 - 🟡 **Planificateur d'observation** : liste d'objets pour une nuit/un instrument, export
 - 🟡 **Journal d'observation** : noter/photographier ce qu'on a vu, carnet de Messier (marathon Messier)
 - 🟡 **Simulateur d'oculaire / de champ** : ce que je verrai avec mon télescope + oculaire ou mon appareil photo
