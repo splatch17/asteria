@@ -4,7 +4,7 @@ import svelte from "eslint-plugin-svelte";
 import globals from "globals";
 
 export default ts.config(
-  { ignores: ["**/dist/**", "**/node_modules/**", "packages/sky-data/**"] },
+  { ignores: ["**/dist/**", "**/node_modules/**", "packages/sky-data/**", ".claude/worktrees/**"] },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
