@@ -13,7 +13,11 @@
     "@asteria/astro-core": "workspace:*",
     "@asteria/sky-renderer": "workspace:*",
     "@asteria/ui": "workspace:*",
-    "svelte": "^5.57.1"
+    "@fontsource/big-shoulders-display": "^5.3.0",
+    "@fontsource/cormorant": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "svelte": "^5.57.1",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

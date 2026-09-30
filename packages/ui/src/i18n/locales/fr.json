@@ -10,5 +10,14 @@
   "level.amateur": "Amateur",
   "level.expert": "Expert",
   "night.toggle": "Vision nocturne",
-  "stars.count": "{count, plural, =0 {aucune étoile} one {# étoile} other {# étoiles}}"
+  "stars.count": "{count, plural, =0 {aucune étoile} one {# étoile} other {# étoiles}}",
+  "map.title": "Carte du ciel",
+  "map.loading": "Chargement du ciel…",
+  "map.error": "Impossible de charger les données du ciel.",
+  "map.lines": "Lignes",
+  "map.cardinals": "N,NE,E,SE,S,SO,O,NO",
+  "place.paris": "Paris",
+  "star.distance": "{ly, number} al",
+  "star.unknownDistance": "—",
+  "star.close": "Fermer"
 }
