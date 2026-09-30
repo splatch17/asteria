@@ -44,6 +44,9 @@ importers:
       '@asteria/astro-core':
         specifier: workspace:*
         version: link:../../packages/astro-core
+      '@asteria/catalog':
+        specifier: workspace:*
+        version: link:../../packages/catalog
       '@asteria/content':
         specifier: workspace:*
         version: link:../../packages/content

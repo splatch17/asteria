@@ -3,6 +3,7 @@
   import { _ } from "@asteria/ui";
   import { SkyMap, type CatalogStar } from "@asteria/sky-renderer";
   import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
+  import { decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
 
   const THEMES = {
@@ -81,10 +82,17 @@
   onMount(async () => {
     try {
       const base = import.meta.env.BASE_URL;
-      const [stars, constellationLines] = await Promise.all([
-        fetch(`${base}data/stars.json`).then((r) => r.json()),
-        fetch(`${base}data/constellation-lines.json`).then((r) => r.json()),
+      const load = (file: string) =>
+        fetch(`${base}data/${file}`).then((r) => {
+          if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+          return r;
+        });
+      const [catalog, strings, constellationLines] = await Promise.all([
+        load("stars.bin").then((r) => r.arrayBuffer()),
+        load("star-strings.json").then((r) => r.json()),
+        load("constellation-lines.json").then((r) => r.json()),
       ]);
+      const stars = decodeStarCatalog(catalog, strings);
       map = new SkyMap({
         canvas,
         overlay,
