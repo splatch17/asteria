@@ -44,6 +44,9 @@ importers:
       '@asteria/astro-core':
         specifier: workspace:*
         version: link:../../packages/astro-core
+      '@asteria/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@asteria/sky-renderer':
         specifier: workspace:*
         version: link:../../packages/sky-renderer
