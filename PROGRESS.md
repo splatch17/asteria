@@ -16,9 +16,12 @@
 - Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Prototype visuel : Orion en 3 variantes de style
+1. Carte Découverte : premier rendu interactif du ciel complet (M2)
+2. Format binaire des étoiles (#16)
+3. Figures suivantes en style A (pipeline artiste + IA)
 
 ## ✅ Fait récemment
+- 2026-09-30 — #4 DA : **style A (gravure tramée 1-bit) retenu**, rayons retirés. Prototype `prototypes/orion`.
 - 2026-09-30 — #3 Pipeline `sky-data/build_stars.py` : 8 870 étoiles V ≤ 6.5 (Hipparcos I/239 + I/311, BSC5, IAU WGSN), 333 noms IAU, 88 constellations en lignes HIP, contrôles automatiques (Sirius, Vega, Bételgeuse, Polaris, Rigel, Orion).
 - 2026-09-30 — #2 CI GitHub Actions (lint, typecheck, test, build).
 - 2026-09-30 — #1 Monorepo pnpm : astro-core (tests Meeus OK), sky-renderer, ui (tokens + i18n svelte-i18n), content, sky-data, apps/web (Vite + Svelte 5). TypeScript fixé en ~6.0 (typescript-eslint et svelte-check pas encore compatibles TS 7).

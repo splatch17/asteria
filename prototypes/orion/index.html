@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101b52" />
+    <title>Asteria — Orion (prototype DA)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Cormorant:ital,wght@1,500&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <canvas id="sky"></canvas>
+    <div id="labels"></div>
+
+    <header class="hud top">
+      <p class="meta">#01 // CONSTELLATION</p>
+      <h1>ORION</h1>
+      <p class="myth">Le chasseur géant, fils de Poséidon</p>
+    </header>
+
+    <aside class="hud panel" id="panel" hidden>
+      <p class="meta" id="panel-id"></p>
+      <p class="panel-name" id="panel-name"></p>
+      <pre class="panel-data" id="panel-data"></pre>
+    </aside>
+
+    <nav class="hud bottom">
+      <div class="group" role="radiogroup" aria-label="Style">
+        <button data-style="0" aria-pressed="true">A · Gravure</button>
+        <button data-style="1" aria-pressed="false">B · Trame</button>
+        <button data-style="2" aria-pressed="false">C · Grain</button>
+      </div>
+      <div class="group">
+        <button id="replay">↻ Rejouer</button>
+        <button id="night" aria-pressed="false">Nuit rouge</button>
+      </div>
+    </nav>
+    <p class="credits" id="credits"></p>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

@@ -32,3 +32,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .claude/settings.local.json
+
+# Sources lourdes retéléchargées par les scripts
+prototypes/*/assets-src/

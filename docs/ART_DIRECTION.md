@@ -1,6 +1,6 @@
 # Direction artistique
 
-> Statut : **validée** par le porteur du projet (2026-09-30). Palette fixée. Figures finales à choisir via le ticket d'exploration Orion (#4).
+> Statut : **validée** par le porteur du projet (2026-09-30). Palette fixée. **Style de figure retenu : A — gravure tramée 1-bit (Bayer 8×8)**, sans rayons. D'autres améliorations stylistiques seront étudiées plus tard.
 > Référence analysée le 2026-09-30 : https://hermes-agent.nousresearch.com/ (HTML, CSS et visuels). On reprend le **style**, pas les couleurs ni les images (droits de Nous Research : aucune de leurs images ne doit entrer dans le repo).
 
 ## 1. Ce qui fait le style Hermes Agent (analyse)
@@ -44,7 +44,7 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 
 ### Le ciel
 - Fond **bleu nuit #101B52** uni (pas de dégradé cartoon). Étoiles nettes, couleur physique très **désaturée** (B-V) pour rester presque monochrome ; en mode « Pur », 100 % parchemin.
-- **Lignes de constellation = fils de lumière fins**, comme les rayons du hero ; à la sélection, des **faisceaux** partent des étoiles vers la figure.
+- **Lignes de constellation = fils de lumière fins**, nets, comme gravés. (Les rayons façon hero Hermes ont été testés puis écartés.)
 - Voie lactée rendue en **tramage stochastique / grain** (pas de photo lissée).
 
 ### Les figures mythologiques (le cœur de la DA)
@@ -52,7 +52,7 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
   - **Tramage 1-bit** (Bayer / blue-noise) ou **halftone** ;
   - variante **scanlines** pour les transitions ;
   - **grain** et léger glitch à l'apparition.
-- **Apparition** : la figure « se révèle » depuis les étoiles, les points de trame se densifient, les rayons se tendent entre les mains du héros et les étoiles réelles (Orion tient ses étoiles comme Hermès tient ses faisceaux).
+- **Apparition** : la figure « se révèle » depuis les étoiles, les points de trame se densifient.
 - Cadres **damier/pixel** pour les cartes de collection (jeux, badges).
 
 ### L'interface
@@ -74,6 +74,11 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 5. Chaque figure : fiche de provenance (source, artiste, outil IA, licence) dans `packages/content/figures/`.
 
 ## 5. Livrables Phase 0 (ticket #4)
-- Orion en 3 variantes : **A** gravure tramée 1-bit + rayons, **B** halftone/scanlines, **C** particules/grain.
+
+**Prototype disponible** : `prototypes/orion` (`pnpm --filter @asteria/proto-orion dev`). Captures : `docs/design/orion/`.
+
+![Planche des variantes](design/orion/board.jpg)
+
+- Orion en 3 variantes : **A** gravure tramée 1-bit ✅ retenue, **B** halftone/scanlines, **C** particules/grain.
 - Chaque variante en mode nuit rouge.
 - Planche typographique (3 combinaisons).
