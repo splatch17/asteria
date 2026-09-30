@@ -4,13 +4,14 @@
 
 | Domaine | Source | Institution | Licence / usage | Usage prévu |
 |---|---|---|---|---|
-| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/311` | Libre usage scientifique, citation | Base ~118 000 étoiles |
+| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/311` | Libre usage scientifique, citation | Astrométrie `I/311` + V, B-V, HD depuis `I/239` — ✅ intégré (#3), 8 870 étoiles V ≤ 6.5 |
 | Étoiles (précision) | **Gaia DR3** | ESA | Libre, citation obligatoire | Astrométrie niveau expert, distances, mouvement propre |
 | Étoiles (noms, photométrie) | **Yale Bright Star Catalogue 5** | NASA HEASARC / CDS `V/50` | Domaine public | Désignations Bayer/Flamsteed, HR |
-| Noms d'étoiles officiels | **IAU WGSN** (Working Group on Star Names) | IAU | Libre, citation | ~450 noms propres officiels |
+| Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY** (citer l'IAU) | 333 noms pour V ≤ 6.5 — ✅ intégré (#3) |
 | Constellations : frontières | **Delporte 1930 / IAU** | IAU / CDS `VI/49` | Libre | 88 frontières officielles |
 | Constellations : noms, abréviations | IAU | IAU | Libre | Latin, génitif, abréviation 3 lettres |
-| Lignes de constellations | À choisir : d3-celestial (BSD) / Stellarium sky cultures (⚠️ GPL/CC selon culture) / tracé maison | — | Vérifier | Figures « modernes » |
+| Lignes de constellations | **d3-celestial** `constellations.lines.json` (O. Frohn), sommets rattachés aux étoiles HIP à ≤ 0.2° | — | **BSD-3-Clause** (attribution) | 88 figures modernes — ✅ intégré (#3) |
+| Appartenance aux constellations | astropy `get_constellation` (Roman 1987, CDS `VI/42`) | — | Libre | Champ `con` — ✅ intégré (#3) |
 | Planètes, Lune, Soleil | **JPL Horizons / DE440** (validation) + lib `astronomy-engine` (MIT) | NASA JPL | Libre | Positions temps réel |
 | Ciel profond | **OpenNGC** (CC BY-SA 4.0) + Messier | — | CC BY-SA | NGC/IC/Messier |
 | Voie lactée | **Gaia DR3 sky map** / NASA SVS | ESA / NASA | Citation | Texture de fond |

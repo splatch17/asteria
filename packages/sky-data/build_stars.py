@@ -1,0 +1,245 @@
+"""Build the naked-eye star catalogue and constellation lines for Asteria.
+
+Sources (see docs/DATA_SOURCES.md):
+  - Hipparcos main catalogue, ESA 1997 (CDS I/239)       : V mag, B-V, HD cross-id
+  - Hipparcos new reduction, van Leeuwen 2007 (CDS I/311) : improved astrometry
+  - Yale Bright Star Catalogue 5 (CDS V/50)               : HR number, Bayer/Flamsteed
+  - IAU Catalog of Star Names (WGSN, IAU-CSN.txt)         : official proper names
+  - Constellation membership: astropy get_constellation (Roman 1987, CDS VI/42)
+  - Constellation lines: d3-celestial (O. Frohn, BSD-3-Clause), matched to HIP stars
+
+Outputs (not versioned):
+  out/stars.json               one record per star, V <= MAG_LIMIT
+  out/constellation-lines.json { "Ori": [[hip, hip, ...], ...], ... }
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+import requests
+from astropy import units as u
+from astropy.coordinates import SkyCoord, get_constellation
+from astroquery.vizier import Vizier
+
+MAG_LIMIT = 6.5
+ROOT = Path(__file__).parent
+RAW = ROOT / "raw"
+OUT = ROOT / "out"
+
+IAU_CSN_URL = "https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt"
+D3_LINES_URL = (
+    "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/constellations.lines.json"
+)
+LINE_MATCH_TOLERANCE_DEG = 0.2
+
+GREEK = {
+    "Alp": "α", "Bet": "β", "Gam": "γ", "Del": "δ", "Eps": "ε", "Zet": "ζ", "Eta": "η",
+    "The": "θ", "Iot": "ι", "Kap": "κ", "Lam": "λ", "Mu": "μ", "Nu": "ν", "Xi": "ξ",
+    "Omi": "ο", "Pi": "π", "Rho": "ρ", "Sig": "σ", "Tau": "τ", "Ups": "υ", "Phi": "φ",
+    "Chi": "χ", "Psi": "ψ", "Ome": "ω",
+}  # fmt: skip
+
+
+def cached(name: str, url: str) -> str:
+    path = RAW / name
+    if not path.exists():
+        RAW.mkdir(parents=True, exist_ok=True)
+        resp = requests.get(url, timeout=60)
+        resp.raise_for_status()
+        path.write_text(resp.text, encoding="utf-8")
+    return path.read_text(encoding="utf-8")
+
+
+def vizier(catalog: str, columns: list[str], filters: dict[str, str] | None = None):
+    v = Vizier(columns=columns, column_filters=filters or {}, row_limit=-1)
+    return v.get_catalogs(catalog)[0]
+
+
+def parse_bsc_name(name: str) -> tuple[int | None, str | None]:
+    """'58Alp Ori' -> (58, 'α Ori'); 'Alp1Cen' -> (None, 'α¹ Cen')."""
+    m = re.match(r"^\s*(\d+)?\s*([A-Z][a-z]{1,2})?(\d)?\s*([A-Z][A-Za-z]{2})\s*$", name or "")
+    if not m:
+        return None, None
+    flam, greek, sup, con = m.groups()
+    bayer = None
+    if greek and greek in GREEK:
+        bayer = GREEK[greek] + ("¹²³⁴⁵⁶⁷⁸⁹"[int(sup) - 1] if sup else "") + " " + con
+    return (int(flam) if flam else None), bayer
+
+
+def parse_iau_csn(text: str) -> dict[int, str]:
+    """HIP -> official IAU proper name (with diacritics)."""
+    lines = text.splitlines()
+    header = next(line for line in lines if line.startswith("#Name/ASCII"))
+    start_diacritics = header.index("Name/Diacritics")
+    start_designation = header.index("Designation")
+    names: dict[int, str] = {}
+    for line in lines:
+        if line.startswith(("#", "$")) or not line.strip():
+            continue
+        name = line[start_diacritics:start_designation].strip()
+        # Columns end with: ... HIP HD RA Dec Date [Notes] → HIP is 4 fields before the date.
+        fields = line[start_designation:].split()
+        date_idx = next((i for i, f in enumerate(fields) if re.match(r"\d{4}-\d{2}-\d{2}$", f)), None)
+        if date_idx is None:
+            continue
+        hip_field = fields[date_idx - 4]
+        if hip_field.isdigit():
+            names[int(hip_field)] = name
+    return names
+
+
+def main() -> int:
+    print("· Hipparcos I/239 (V, B-V, HD)…")
+    main_cat = vizier(
+        "I/239/hip_main",
+        ["HIP", "Vmag", "B-V", "HD"],
+        {"Vmag": f"<={MAG_LIMIT}"},
+    )
+    print(f"  {len(main_cat)} stars with V <= {MAG_LIMIT}")
+
+    print("· Hipparcos new reduction I/311 (astrometry)…")
+    hip2 = vizier(
+        "I/311/hip2",
+        ["HIP", "RArad", "DErad", "Plx", "e_Plx", "pmRA", "pmDE"],
+        {"Hpmag": f"<={MAG_LIMIT + 1}"},
+    )
+    astrometry = {int(r["HIP"]): r for r in hip2}
+    # VizieR names these columns "RArad"/"DErad" but serves them in degrees: trust the unit.
+    to_deg = (1 * hip2["RArad"].unit).to(u.deg).value
+
+    print("· Yale BSC5 V/50 (HR, Bayer/Flamsteed)…")
+    bsc = vizier("V/50/catalog", ["HR", "Name", "HD"])
+    bsc_by_hd = {int(r["HD"]): r for r in bsc if not np.ma.is_masked(r["HD"])}
+
+    print("· IAU WGSN names…")
+    iau = parse_iau_csn(cached("IAU-CSN.txt", IAU_CSN_URL))
+    print(f"  {len(iau)} names with a HIP number")
+
+    stars = []
+    for r in main_cat:
+        hip = int(r["HIP"])
+        a = astrometry.get(hip)
+        if a is None:
+            continue  # no new-reduction solution (a handful of stars)
+        rec: dict = {
+            "hip": hip,
+            "ra": round(float(a["RArad"]) * to_deg, 6),
+            "dec": round(float(a["DErad"]) * to_deg, 6),
+            "v": round(float(r["Vmag"]), 2),
+        }
+        if not np.ma.is_masked(r["B-V"]):
+            rec["bv"] = round(float(r["B-V"]), 3)
+        for key, col in (("plx", "Plx"), ("ePlx", "e_Plx"), ("pmRa", "pmRA"), ("pmDec", "pmDE")):
+            if not np.ma.is_masked(a[col]):
+                rec[key] = round(float(a[col]), 3)
+        if not np.ma.is_masked(r["HD"]):
+            hd = int(r["HD"])
+            rec["hd"] = hd
+            b = bsc_by_hd.get(hd)
+            if b is not None:
+                rec["hr"] = int(b["HR"])
+                flam, bayer = parse_bsc_name(str(b["Name"]))
+                if flam:
+                    rec["flamsteed"] = flam
+                if bayer:
+                    rec["bayer"] = bayer
+        if hip in iau:
+            rec["name"] = iau[hip]
+        stars.append(rec)
+
+    stars.sort(key=lambda s: s["v"])  # before building coords: line matching relies on shared indices
+    coords = SkyCoord(
+        ra=[s["ra"] for s in stars] * u.deg, dec=[s["dec"] for s in stars] * u.deg, frame="icrs"
+    )
+    for s, con in zip(stars, get_constellation(coords, short_name=True)):
+        s["con"] = str(con)
+
+    print("· Constellation lines (d3-celestial) → HIP…")
+    lines_geo = json.loads(cached("d3-constellations.lines.json", D3_LINES_URL))
+    lines, unmatched = match_lines(lines_geo, stars, coords)
+
+    OUT.mkdir(exist_ok=True)
+    (OUT / "stars.json").write_text(json.dumps(stars, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (OUT / "constellation-lines.json").write_text(json.dumps(lines, separators=(",", ":")), encoding="utf-8")
+
+    print(f"✓ {len(stars)} stars, {sum(1 for s in stars if 'name' in s)} named, "
+          f"{len(lines)} constellations with lines, {unmatched} unmatched line vertices")
+    return validate(stars, lines, unmatched)
+
+
+def match_lines(geojson: dict, stars: list[dict], coords: SkyCoord):
+    """Snap each line vertex to the nearest catalogue star."""
+    result: dict[str, list[list[int]]] = {}
+    unmatched = 0
+    for feature in geojson["features"]:
+        polylines = []
+        for poly in feature["geometry"]["coordinates"]:
+            pts = SkyCoord(
+                ra=[(lon + 360) % 360 for lon, _ in poly] * u.deg,
+                dec=[lat for _, lat in poly] * u.deg,
+            )
+            idx, sep, _ = pts.match_to_catalog_sky(coords)
+            hips = []
+            for i, d in zip(idx, sep.deg):
+                if d <= LINE_MATCH_TOLERANCE_DEG:
+                    hips.append(stars[int(i)]["hip"])
+                else:
+                    unmatched += 1
+            if len(hips) >= 2:
+                polylines.append(hips)
+        result[feature["id"]] = polylines
+    return result, unmatched
+
+
+# Control stars: values from SIMBAD / Hipparcos (V mag), IAU names.
+CONTROLS = {
+    32349: ("Sirius", -1.44, "CMa"),
+    91262: ("Vega", 0.03, "Lyr"),
+    27989: ("Betelgeuse", 0.45, "Ori"),
+    11767: ("Polaris", 1.97, "UMi"),
+    24436: ("Rigel", 0.18, "Ori"),
+}
+
+
+def validate(stars: list[dict], lines: dict, unmatched: int) -> int:
+    errors = []
+    by_hip = {s["hip"]: s for s in stars}
+    if not 8000 <= len(stars) <= 10000:
+        errors.append(f"unexpected star count {len(stars)}")
+    if len({s["hip"] for s in stars}) != len(stars):
+        errors.append("duplicate HIP numbers")
+    for hip, (name, vmag, con) in CONTROLS.items():
+        s = by_hip.get(hip)
+        if not s:
+            errors.append(f"missing control star {name}")
+            continue
+        if s.get("name") != name:
+            errors.append(f"HIP {hip}: name {s.get('name')!r} != {name!r}")
+        if abs(s["v"] - vmag) > 0.05:
+            errors.append(f"{name}: V {s['v']} != {vmag}")
+        if s["con"] != con:
+            errors.append(f"{name}: constellation {s['con']} != {con}")
+    orion = {h for poly in lines.get("Ori", []) for h in poly}
+    if not {27989, 24436, 25336, 26727, 26311, 25930} <= orion:  # α β γ ζ ε δ Ori
+        errors.append("Orion lines do not include its main stars")
+    if any(by_hip[h]["con"] != "Ori" for h in orion if h in by_hip):
+        errors.append("Orion lines reference stars outside Orion")
+    if by_hip.get(32349, {}).get("bayer") != "α CMa":
+        errors.append("Sirius Bayer designation not parsed")
+    if len(lines) != 88:
+        errors.append(f"{len(lines)} constellations with lines (expected 88)")
+    if unmatched > 20:
+        errors.append(f"{unmatched} unmatched line vertices")
+    for e in errors:
+        print("✗", e, file=sys.stderr)
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
