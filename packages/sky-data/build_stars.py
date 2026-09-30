@@ -10,11 +10,14 @@ Sources (see docs/DATA_SOURCES.md):
 
 Outputs (not versioned):
   out/stars.json               one record per star, V <= MAG_LIMIT
+  out/stars.bin                same catalogue, compact binary (format ASTS v1, see star_binary.py)
+  out/star-strings.json        names and Bayer designations keyed by HIP (string table of stars.bin)
   out/constellation-lines.json { "Ori": [[hip, hip, ...], ...], ... }
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import re
 import sys
@@ -25,6 +28,9 @@ import requests
 from astropy import units as u
 from astropy.coordinates import SkyCoord, get_constellation
 from astroquery.vizier import Vizier
+
+sys.path.insert(0, str(Path(__file__).parent))
+from star_binary import check_round_trip, write_star_catalog  # noqa: E402
 
 MAG_LIMIT = 6.5
 ROOT = Path(__file__).parent
@@ -167,10 +173,23 @@ def main() -> int:
     OUT.mkdir(exist_ok=True)
     (OUT / "stars.json").write_text(json.dumps(stars, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (OUT / "constellation-lines.json").write_text(json.dumps(lines, separators=(",", ":")), encoding="utf-8")
+    data, strings = write_star_catalog(stars, OUT)
+    report_sizes()
 
     print(f"✓ {len(stars)} stars, {sum(1 for s in stars if 'name' in s)} named, "
           f"{len(lines)} constellations with lines, {unmatched} unmatched line vertices")
-    return validate(stars, lines, unmatched)
+    errors = check_round_trip(stars, data, strings)
+    return validate(stars, lines, unmatched, errors)
+
+
+LEVEL1_FILES = ("stars.bin", "star-strings.json", "constellation-lines.json")
+LEVEL1_BUDGET = 1_000_000  # bytes, uncompressed (DATA_SOURCES.md: level 1 < 1 MB)
+
+
+def report_sizes() -> None:
+    for name in ("stars.json", *LEVEL1_FILES):
+        raw = (OUT / name).read_bytes()
+        print(f"  {name:26} {len(raw):>9,} B  gzip {len(gzip.compress(raw, 9)):>8,} B")
 
 
 def match_lines(geojson: dict, stars: list[dict], coords: SkyCoord):
@@ -207,8 +226,7 @@ CONTROLS = {
 }
 
 
-def validate(stars: list[dict], lines: dict, unmatched: int) -> int:
-    errors = []
+def validate(stars: list[dict], lines: dict, unmatched: int, errors: list[str]) -> int:
     by_hip = {s["hip"]: s for s in stars}
     if not 8000 <= len(stars) <= 10000:
         errors.append(f"unexpected star count {len(stars)}")
@@ -236,6 +254,9 @@ def validate(stars: list[dict], lines: dict, unmatched: int) -> int:
         errors.append(f"{len(lines)} constellations with lines (expected 88)")
     if unmatched > 20:
         errors.append(f"{unmatched} unmatched line vertices")
+    level1 = sum((OUT / name).stat().st_size for name in LEVEL1_FILES)
+    if level1 >= LEVEL1_BUDGET:
+        errors.append(f"level 1 files weigh {level1:,} B (budget {LEVEL1_BUDGET:,} B)")
     for e in errors:
         print("✗", e, file=sys.stderr)
     return 1 if errors else 0

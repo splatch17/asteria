@@ -4,10 +4,11 @@ import { cpSync, existsSync, mkdirSync } from "node:fs";
 const from = "packages/sky-data/out";
 const to = "apps/web/public/data";
 
-if (!existsSync(`${from}/stars.json`)) {
-  console.error(`Missing ${from}/stars.json — run: python packages/sky-data/build_stars.py`);
+if (!existsSync(`${from}/stars.bin`)) {
+  console.error(`Missing ${from}/stars.bin — run: python packages/sky-data/build_stars.py`);
   process.exit(1);
 }
 mkdirSync(to, { recursive: true });
-for (const f of ["stars.json", "constellation-lines.json"]) cpSync(`${from}/${f}`, `${to}/${f}`);
+for (const f of ["stars.json", "stars.bin", "star-strings.json", "constellation-lines.json"])
+  cpSync(`${from}/${f}`, `${to}/${f}`);
 console.log(`Synced sky data → ${to}`);
