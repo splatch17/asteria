@@ -4,3 +4,4 @@ node_modules
 packages/sky-data/raw
 packages/sky-data/out
 *.md
+.claude/worktrees

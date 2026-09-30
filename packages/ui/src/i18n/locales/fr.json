@@ -19,5 +19,21 @@
   "place.paris": "Paris",
   "star.distance": "{ly, number} al",
   "star.unknownDistance": "—",
-  "star.close": "Fermer"
+  "star.close": "Fermer",
+  "place.mine": "Ma position",
+  "place.locate": "Utiliser ma position",
+  "place.locating": "Localisation…",
+  "place.locateError": "Position indisponible",
+  "geo.coords": "{lat}°{ns} {lon}°{ew}",
+  "geo.n": "N",
+  "geo.s": "S",
+  "geo.e": "E",
+  "geo.w": "O",
+  "time.now": "Maintenant",
+  "time.live": "En direct",
+  "time.minusDay": "−1 j",
+  "time.minusHour": "−1 h",
+  "time.plusHour": "+1 h",
+  "time.plusDay": "+1 j",
+  "star.constellation": "Constellation"
 }

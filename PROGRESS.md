@@ -15,11 +15,12 @@
 - Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Carte : date/heure, lieu, noms FR des constellations (#20)
+1. Brancher le catalogue binaire (#16) et les histoires (#10) dans l'app
 2. Format binaire des étoiles (#16)
 3. Figures suivantes en style A (pipeline artiste + IA)
 
 ## ✅ Fait récemment
+- 2026-10-01 — #20 Carte : barre de temps (±1 h, ±1 j, maintenant/en direct), géolocalisation mémorisée, noms latins + français des 88 constellations (`@asteria/content`), constellation dans la fiche étoile. Captures fidèles S23 via puppeteer-core (viewport 360×780 @3x).
 - 2026-10-01 — #19 Moteur de carte `SkyMap` : projection stéréographique alt-az entièrement GPU (précession J2000→date validée Meeus 21.b), 8 870 étoiles, 88 constellations, sol tramé + horizon, glisser/pincer/molette avec inertie, sélection d'étoile, rendu à la demande. Polices embarquées (@fontsource, offline).
 - 2026-10-01 — #18 Déploiement GitHub Pages : https://splatch17.github.io/asteria/ (données générées en CI).
 - 2026-09-30 — Repo passé en **public** (historique réécrit sans adresse perso, ancien repo archivé en privé), protection de `main` active.
