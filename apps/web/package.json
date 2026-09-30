@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@asteria/astro-core": "workspace:*",
+    "@asteria/catalog": "workspace:*",
     "@asteria/content": "workspace:*",
     "@asteria/sky-renderer": "workspace:*",
     "@asteria/ui": "workspace:*",
