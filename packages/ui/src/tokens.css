@@ -1,0 +1,27 @@
+/* Asteria design tokens — see docs/ART_DIRECTION.md §2 */
+:root {
+  --ast-night: #101b52;
+  --ast-night-deep: #0a1136;
+  --ast-parchment: #f0e6d2;
+
+  --ast-bg: var(--ast-night);
+  --ast-fg: var(--ast-parchment);
+  --ast-fg-muted: color-mix(in srgb, var(--ast-parchment) 65%, transparent);
+  --ast-hairline: color-mix(in srgb, var(--ast-parchment) 20%, transparent);
+  --ast-surface: color-mix(in srgb, var(--ast-parchment) 6%, var(--ast-night));
+
+  --ast-font-display: "Big Shoulders Display", "Oswald", sans-serif;
+  --ast-font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --ast-font-serif: "Cormorant", "EB Garamond", serif;
+  --ast-tracking-meta: 0.1em;
+  --ast-radius: 0;
+
+  --ast-ease-out: cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* Night vision: remap both tones to red on black */
+:root[data-night="red"] {
+  --ast-night: #000;
+  --ast-night-deep: #000;
+  --ast-parchment: #ff2a1a;
+}

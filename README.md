@@ -25,6 +25,27 @@ Données issues d'institutions publiques : ESA (Hipparcos, Gaia), NASA (HEASARC,
 | [PROGRESS.md](PROGRESS.md) | Journal d'avancement (mis à jour à chaque session) |
 | [CLAUDE.md](CLAUDE.md) | Règles pour les agents IA |
 
+## Démarrage
+
+Prérequis : Node ≥ 22, pnpm 10 (`npm i -g pnpm`), Python 3.11 (pipeline de données).
+
+```bash
+pnpm install
+pnpm dev          # app web → http://localhost:5173
+pnpm test         # tests (dont précision astro)
+pnpm typecheck && pnpm lint
+pnpm build
+```
+
+| Package | Rôle |
+|---|---|
+| `packages/astro-core` | Calculs astronomiques purs (temps, coordonnées) |
+| `packages/sky-renderer` | Rendu du ciel (WebGL) |
+| `packages/ui` | Design tokens, i18n |
+| `packages/content` | Contenu éditorial par langue |
+| `packages/sky-data` | Pipeline Python des catalogues |
+| `apps/web` | Application (Vite + Svelte 5) |
+
 ## Statut
 
 🟡 Phase 0 — Fondations. Voir [PROGRESS.md](PROGRESS.md).
