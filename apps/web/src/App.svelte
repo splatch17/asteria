@@ -2,6 +2,8 @@
   import { onDestroy, onMount } from "svelte";
   import { _ } from "@asteria/ui";
   import { SkyMap, type CatalogStar } from "@asteria/sky-renderer";
+  import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
+  import { decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
 
   const THEMES = {
@@ -16,25 +18,92 @@
   let night = $state(false);
   let lines = $state(true);
   let selected = $state<CatalogStar | null>(null);
-  let now = $state(new Date());
+  let date = $state(new Date());
+  let live = $state(true);
+  let place = $state(loadPlace());
+  let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
+  const names = constellationNames("fr");
+
+  const HOUR = 3_600_000;
+  const PLACE_KEY = "asteria.place";
+
+  interface Place {
+    name: string | null; // null = default city (translated at render time)
+    latitude: number;
+    longitude: number;
+  }
+
+  function loadPlace(): Place {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null");
+      if (saved && Number.isFinite(saved.latitude) && Number.isFinite(saved.longitude))
+        return saved;
+    } catch {
+      // storage unavailable: fall back to the default place
+    }
+    return { name: null, latitude: 48.8566, longitude: 2.3522 };
+  }
+
+  function shiftTime(ms: number) {
+    live = false;
+    date = new Date(date.getTime() + ms);
+    map?.setDate(date);
+  }
+
+  function goLive() {
+    live = true;
+    date = new Date();
+    map?.setDate(date);
+  }
+
+  function locate() {
+    if (!("geolocation" in navigator)) {
+      locating = "error";
+      return;
+    }
+    locating = "busy";
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        place = { name: "mine", latitude: coords.latitude, longitude: coords.longitude };
+        map?.setObserver(place);
+        locating = "idle";
+        try {
+          localStorage.setItem(PLACE_KEY, JSON.stringify(place));
+        } catch {
+          // not persisted: acceptable
+        }
+      },
+      () => (locating = "error"),
+      { enableHighAccuracy: false, timeout: 15_000, maximumAge: 600_000 },
+    );
+  }
 
   onMount(async () => {
     try {
       const base = import.meta.env.BASE_URL;
-      const [stars, constellationLines] = await Promise.all([
-        fetch(`${base}data/stars.json`).then((r) => r.json()),
-        fetch(`${base}data/constellation-lines.json`).then((r) => r.json()),
+      const load = (file: string) =>
+        fetch(`${base}data/${file}`).then((r) => {
+          if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+          return r;
+        });
+      const [catalog, strings, constellationLines] = await Promise.all([
+        load("stars.bin").then((r) => r.arrayBuffer()),
+        load("star-strings.json").then((r) => r.json()),
+        load("constellation-lines.json").then((r) => r.json()),
       ]);
+      const stars = decodeStarCatalog(catalog, strings);
       map = new SkyMap({
         canvas,
         overlay,
         stars,
         lines: constellationLines,
+        constellationNames: names,
         cardinals: $_("map.cardinals").split(","),
         theme: THEMES.day,
         onSelect: (s) => (selected = s),
       });
+      map.setObserver(place);
       status = "ready";
       const params = new URLSearchParams(location.search);
       if (params.get("night") === "1") night = true;
@@ -45,8 +114,7 @@
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
       clock = setInterval(() => {
-        now = new Date();
-        map?.setDate(now);
+        if (live) goLive();
       }, 30_000);
     } catch (e) {
       console.error(e);
@@ -69,7 +137,7 @@
   });
 
   const time = $derived(
-    now.toLocaleString("fr-FR", {
+    date.toLocaleString("fr-FR", {
       weekday: "short",
       day: "numeric",
       month: "short",
@@ -78,6 +146,16 @@
     }),
   );
   const distance = $derived(selected ? parallaxToLightYears(selected.plx) : null);
+  const coords = $derived(
+    $_("geo.coords", {
+      values: {
+        lat: Math.abs(place.latitude).toFixed(2),
+        ns: $_(place.latitude >= 0 ? "geo.n" : "geo.s"),
+        lon: Math.abs(place.longitude).toFixed(2),
+        ew: $_(place.longitude >= 0 ? "geo.e" : "geo.w"),
+      },
+    }),
+  );
 </script>
 
 <canvas class="sky" bind:this={canvas}></canvas>
@@ -85,8 +163,16 @@
 
 <header class="hud top">
   <p class="meta">#02 // {$_("map.title")}</p>
-  <p class="where">{$_("place.paris")} · 48.86°N 2.35°E</p>
-  <p class="when">{time}</p>
+  <button class="where" onclick={locate} title={$_("place.locate")}>
+    {place.name === "mine" ? $_("place.mine") : $_("place.paris")} ⌖
+  </button>
+  <p class="when">
+    {coords} · {time}
+    {#if live}<span class="live">● {$_("time.live")}</span>{/if}
+  </p>
+  {#if locating !== "idle"}
+    <p class="meta">{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</p>
+  {/if}
 </header>
 
 {#if status !== "ready"}
@@ -97,6 +183,7 @@
   <aside class="hud panel">
     <p class="meta">HIP {selected.hip}{selected.bayer ? ` // ${selected.bayer}` : ""}</p>
     <p class="name">{selected.name ?? selected.bayer ?? `HIP ${selected.hip}`}</p>
+    <p class="con">{names[selected.con]} · <i>{CONSTELLATION_LATIN[selected.con]}</i></p>
     <pre class="data">RA   {formatRa(selected.ra)}
 DEC  {formatDec(selected.dec)}
 V    {selected.v.toFixed(2)}{selected.bv !== undefined ? `\nB−V  ${selected.bv.toFixed(2)}` : ""}
@@ -108,6 +195,13 @@ DIST {distance
 {/if}
 
 <nav class="hud bottom">
+  <div class="group time">
+    <button onclick={() => shiftTime(-24 * HOUR)}>{$_("time.minusDay")}</button>
+    <button onclick={() => shiftTime(-HOUR)}>{$_("time.minusHour")}</button>
+    <button aria-pressed={live} onclick={goLive}>{$_("time.now")}</button>
+    <button onclick={() => shiftTime(HOUR)}>{$_("time.plusHour")}</button>
+    <button onclick={() => shiftTime(24 * HOUR)}>{$_("time.plusDay")}</button>
+  </div>
   <div class="group">
     <button aria-pressed={lines} onclick={() => (lines = !lines)}>{$_("map.lines")}</button>
     <button aria-pressed={night} onclick={() => (night = !night)}>{$_("night.toggle")}</button>
@@ -147,6 +241,14 @@ DIST {distance
     color: var(--ast-fg-muted);
   }
   .where {
+    display: block;
+    pointer-events: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ast-fg);
+    cursor: pointer;
+    text-transform: uppercase;
     margin-top: 6px;
     font-family: var(--ast-font-display);
     font-weight: 700;
@@ -157,6 +259,24 @@ DIST {distance
   .when {
     margin-top: 4px;
     color: var(--ast-fg-muted);
+  }
+  .live {
+    white-space: nowrap;
+    margin-left: 6px;
+    color: var(--ast-fg);
+  }
+  .con {
+    margin: -4px 0 8px;
+    font-size: 11px;
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
+  .con i {
+    font-family: var(--ast-font-serif);
+    font-size: 15px;
+    letter-spacing: 0;
+    text-transform: none;
   }
   .status {
     position: fixed;
@@ -174,7 +294,9 @@ DIST {distance
     right: 16px;
     bottom: max(16px, env(safe-area-inset-bottom));
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
   }
   .group {
     display: flex;
@@ -196,6 +318,16 @@ DIST {distance
     padding: 13px 14px;
     cursor: pointer;
   }
+  .time {
+    width: 100%;
+    max-width: 420px;
+    flex-wrap: nowrap;
+  }
+  .time button {
+    flex: 1;
+    padding: 13px 4px;
+    white-space: nowrap;
+  }
   .group button:last-child {
     border-right: 0;
   }
@@ -206,7 +338,7 @@ DIST {distance
   .panel {
     left: 16px;
     right: 16px;
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 60px);
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 108px);
     max-width: 300px;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);

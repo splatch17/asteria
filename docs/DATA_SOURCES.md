@@ -26,6 +26,6 @@
 
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.
-- Niveau 1 embarqué (~mag 6.5, < 1 Mo) ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).
+- Niveau 1 embarqué (~mag 6.5, < 1 Mo) — ✅ format binaire `ASTS` v1 (#16) : `stars.bin` + `star-strings.json` + `constellation-lines.json` = 393 Ko (262 Ko gzip), décrit dans `packages/sky-data/README.md`, décodé par `@asteria/catalog` ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).
 - Requêtes live (SIMBAD, Horizons) uniquement en mode Expert et en ligne.
 - Page « Crédits & sources » dans l'app, générée depuis ce fichier.
