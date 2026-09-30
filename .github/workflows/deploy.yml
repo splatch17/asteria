@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: packages/sky-data/requirements.txt
+      - run: pip install -r packages/sky-data/requirements.txt pillow
+
+      # Downloaded catalogues are cached; the pipeline re-validates its output every run.
+      - uses: actions/cache@v4
+        with:
+          path: packages/sky-data/raw
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py') }}
+      - run: python packages/sky-data/build_stars.py
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm data:sync
+      - run: pnpm --filter @asteria/web build
+        env:
+          BASE_PATH: /asteria/
+      - run: pnpm --filter @asteria/proto-orion build
+      - run: cp -r prototypes/orion/dist apps/web/dist/proto-orion
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

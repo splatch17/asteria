@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "data:build": "python packages/sky-data/build_stars.py",
+    "data:sync": "node tools/sync-data.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -35,3 +35,4 @@ Thumbs.db
 
 # Sources lourdes retéléchargées par les scripts
 prototypes/*/assets-src/
+apps/web/public/data/
