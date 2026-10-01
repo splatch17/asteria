@@ -6,7 +6,7 @@ Sources (see docs/DATA_SOURCES.md):
   - Yale Bright Star Catalogue 5 (CDS V/50)               : HR number, Bayer/Flamsteed
   - IAU Catalog of Star Names (WGSN, IAU-CSN.txt)         : official proper names
   - Constellation membership: astropy get_constellation (Roman 1987, CDS VI/42)
-  - Constellation lines: d3-celestial (O. Frohn, BSD-3-Clause), matched to HIP stars
+  - Constellation lines: Stellarium "modern" sky culture (CC BY-SA 4.0), HIP numbers
 
 Outputs (not versioned):
   out/stars.json               one record per star, V <= MAG_LIMIT
@@ -27,6 +27,7 @@ import numpy as np
 import requests
 from astropy import units as u
 from astropy.coordinates import SkyCoord, get_constellation
+from astropy.table import vstack
 from astroquery.vizier import Vizier
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -38,10 +39,10 @@ RAW = ROOT / "raw"
 OUT = ROOT / "out"
 
 IAU_CSN_URL = "https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt"
-D3_LINES_URL = (
-    "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/constellations.lines.json"
+# Conventional figures (close to Sky & Telescope / IAU charts), e.g. Scorpius' head fanning from Antares.
+STELLARIUM_LINES_URL = (
+    "https://raw.githubusercontent.com/Stellarium/stellarium/master/skycultures/modern/index.json"
 )
-LINE_MATCH_TOLERANCE_DEG = 0.2
 
 GREEK = {
     "Alp": "α", "Bet": "β", "Gam": "γ", "Del": "δ", "Eps": "ε", "Zet": "ζ", "Eta": "η",
@@ -100,7 +101,17 @@ def parse_iau_csn(text: str) -> dict[int, str]:
     return names
 
 
+def load_lines() -> dict[str, list[list[int]]]:
+    """Stellarium modern figures: {"Sco": [[hip, hip, ...], ...]} for the 88 constellations."""
+    culture = json.loads(cached("stellarium-modern.json", STELLARIUM_LINES_URL))
+    return {c["id"].split()[-1]: c["lines"] for c in culture["constellations"]}
+
+
 def main() -> int:
+    print("· Constellation lines (Stellarium modern)…")
+    lines = load_lines()
+    line_hips = {h for polys in lines.values() for poly in polys for h in poly}
+
     print("· Hipparcos I/239 (V, B-V, HD)…")
     main_cat = vizier(
         "I/239/hip_main",
@@ -108,6 +119,14 @@ def main() -> int:
         {"Vmag": f"<={MAG_LIMIT}"},
     )
     print(f"  {len(main_cat)} stars with V <= {MAG_LIMIT}")
+    # Figures occasionally use a star fainter than the magnitude limit: fetch those too.
+    extra = sorted(line_hips - {int(h) for h in main_cat["HIP"]})
+    if extra:
+        main_cat = vstack(
+            [main_cat]
+            + [vizier("I/239/hip_main", ["HIP", "Vmag", "B-V", "HD"], {"HIP": f"={h}"}) for h in extra]
+        )
+        print(f"  + {len(extra)} fainter stars used by constellation figures: {extra}")
 
     print("· Hipparcos new reduction I/311 (astrometry)…")
     hip2 = vizier(
@@ -116,6 +135,10 @@ def main() -> int:
         {"Hpmag": f"<={MAG_LIMIT + 1}"},
     )
     astrometry = {int(r["HIP"]): r for r in hip2}
+    for h in extra:
+        if h not in astrometry:
+            row = vizier("I/311/hip2", ["HIP", "RArad", "DErad", "Plx", "e_Plx", "pmRA", "pmDE"], {"HIP": f"={h}"})
+            astrometry[h] = row[0]
     # VizieR names these columns "RArad"/"DErad" but serves them in degrees: trust the unit.
     to_deg = (1 * hip2["RArad"].unit).to(u.deg).value
 
@@ -159,16 +182,15 @@ def main() -> int:
             rec["name"] = iau[hip]
         stars.append(rec)
 
-    stars.sort(key=lambda s: s["v"])  # before building coords: line matching relies on shared indices
+    stars.sort(key=lambda s: s["v"])
     coords = SkyCoord(
         ra=[s["ra"] for s in stars] * u.deg, dec=[s["dec"] for s in stars] * u.deg, frame="icrs"
     )
     for s, con in zip(stars, get_constellation(coords, short_name=True)):
         s["con"] = str(con)
 
-    print("· Constellation lines (d3-celestial) → HIP…")
-    lines_geo = json.loads(cached("d3-constellations.lines.json", D3_LINES_URL))
-    lines, unmatched = match_lines(lines_geo, stars, coords)
+    known = {s["hip"] for s in stars}
+    unmatched = sorted(line_hips - known)
 
     OUT.mkdir(exist_ok=True)
     (OUT / "stars.json").write_text(json.dumps(stars, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -177,7 +199,7 @@ def main() -> int:
     report_sizes()
 
     print(f"✓ {len(stars)} stars, {sum(1 for s in stars if 'name' in s)} named, "
-          f"{len(lines)} constellations with lines, {unmatched} unmatched line vertices")
+          f"{len(lines)} constellations with lines, {len(unmatched)} line stars missing")
     errors = check_round_trip(stars, data, strings)
     return validate(stars, lines, unmatched, errors)
 
@@ -192,30 +214,6 @@ def report_sizes() -> None:
         print(f"  {name:26} {len(raw):>9,} B  gzip {len(gzip.compress(raw, 9)):>8,} B")
 
 
-def match_lines(geojson: dict, stars: list[dict], coords: SkyCoord):
-    """Snap each line vertex to the nearest catalogue star."""
-    result: dict[str, list[list[int]]] = {}
-    unmatched = 0
-    for feature in geojson["features"]:
-        polylines = []
-        for poly in feature["geometry"]["coordinates"]:
-            pts = SkyCoord(
-                ra=[(lon + 360) % 360 for lon, _ in poly] * u.deg,
-                dec=[lat for _, lat in poly] * u.deg,
-            )
-            idx, sep, _ = pts.match_to_catalog_sky(coords)
-            hips = []
-            for i, d in zip(idx, sep.deg):
-                if d <= LINE_MATCH_TOLERANCE_DEG:
-                    hips.append(stars[int(i)]["hip"])
-                else:
-                    unmatched += 1
-            if len(hips) >= 2:
-                polylines.append(hips)
-        result[feature["id"]] = polylines
-    return result, unmatched
-
-
 # Control stars: values from SIMBAD / Hipparcos (V mag), IAU names.
 CONTROLS = {
     32349: ("Sirius", -1.44, "CMa"),
@@ -226,7 +224,7 @@ CONTROLS = {
 }
 
 
-def validate(stars: list[dict], lines: dict, unmatched: int, errors: list[str]) -> int:
+def validate(stars: list[dict], lines: dict, unmatched: list[int], errors: list[str]) -> int:
     by_hip = {s["hip"]: s for s in stars}
     if not 8000 <= len(stars) <= 10000:
         errors.append(f"unexpected star count {len(stars)}")
@@ -252,8 +250,13 @@ def validate(stars: list[dict], lines: dict, unmatched: int, errors: list[str]) 
         errors.append("Sirius Bayer designation not parsed")
     if len(lines) != 88:
         errors.append(f"{len(lines)} constellations with lines (expected 88)")
-    if unmatched > 20:
-        errors.append(f"{unmatched} unmatched line vertices")
+    if unmatched:
+        errors.append(f"constellation figures use stars missing from the catalogue: {unmatched}")
+    # Conventional Scorpius: the three head stars (β, δ, π) each joined to Antares (α).
+    sco_edges = {frozenset(e) for poly in lines.get("Sco", []) for e in zip(poly, poly[1:])}
+    for head in (78820, 78401, 78265):  # β, δ, π Sco
+        if frozenset((80763, head)) not in sco_edges:  # 80763 = Antares
+            errors.append(f"Scorpius head star HIP {head} is not joined to Antares")
     level1 = sum((OUT / name).stat().st_size for name in LEVEL1_FILES)
     if level1 >= LEVEL1_BUDGET:
         errors.append(f"level 1 files weigh {level1:,} B (budget {LEVEL1_BUDGET:,} B)")
