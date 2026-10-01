@@ -54,5 +54,15 @@
   "time.hint.sidereal": "Les étoiles reviennent au même endroit 4 min plus tôt chaque jour : un tour de Terre par rapport aux étoiles dure 23 h 56 min.",
   "time.hint.year": "Au fil de l'année, la Terre tourne autour du Soleil : les constellations visibles le soir changent avec les saisons.",
   "time.hint.precession": "L'axe de la Terre décrit lentement un cercle en environ 26 000 ans : l'étoile polaire change (modèle simplifié au-delà de 500 ans).",
-  "night.short": "Nuit"
+  "night.short": "Nuit",
+  "body.Sun": "Soleil",
+  "body.Moon": "Lune",
+  "body.altitude": "Hauteur",
+  "body.azimuth": "Azimut",
+  "body.distance": "{km, number} km",
+  "body.distanceAu": "{au, number} ua",
+  "moon.illumination": "{pct, number} % éclairée",
+  "moon.waxing": "croissante",
+  "moon.waning": "décroissante",
+  "sun.warning": "Ne jamais regarder le Soleil directement, ni à travers un instrument sans filtre adapté."
 }

@@ -8,7 +8,16 @@ import {
   type Observer,
   type Vec3,
 } from "@asteria/astro-core";
-import { groundFrag, groundVert, lineFrag, lineVert, starFrag, starVert } from "./shaders";
+import {
+  bodyFrag,
+  bodyVert,
+  groundFrag,
+  groundVert,
+  lineFrag,
+  lineVert,
+  starFrag,
+  starVert,
+} from "./shaders";
 import { LabelLayout } from "./labels";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
@@ -27,8 +36,20 @@ export interface CatalogStar {
 export interface SkyTheme {
   ink: string;
   sky: string;
+  /** Sky colour in full daylight (twilight blends from `sky`). */
+  daySky: string;
   ground: string;
 }
+
+export type BodyName = "Sun" | "Moon";
+
+/** Positions of the Sun and Moon (astrometric J2000, topocentric) and the lunar phase. */
+export interface SkyBodies {
+  sun: { ra: number; dec: number };
+  moon: { ra: number; dec: number; illumination: number };
+}
+
+export type SkySelection = { kind: "star"; star: CatalogStar } | { kind: "body"; body: BodyName };
 
 export interface SkyMapOptions {
   canvas: HTMLCanvasElement;
@@ -42,7 +63,9 @@ export interface SkyMapOptions {
   /** Cardinal point labels, clockwise from North (8 entries). */
   cardinals?: string[];
   theme: SkyTheme;
-  onSelect?: (star: CatalogStar | null) => void;
+  /** Localised names of the Sun and Moon, drawn as labels. */
+  bodyNames?: Record<BodyName, string>;
+  onSelect?: (selection: SkySelection | null) => void;
 }
 
 const FOV_MIN = 2;
@@ -69,6 +92,10 @@ export class SkyMap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly uniforms;
   private readonly lineMesh: THREE.LineSegments;
+  private readonly bodyPoints: THREE.Points;
+  private bodies: { sun: Vec3; moon: Vec3; illumination: number } | null = null;
+  /** 0 = dark night … 1 = full daylight, from the Sun's altitude. */
+  private daylight = 0;
   private readonly starDirs: Vec3[];
   private readonly labels: { text: string; dir: Vec3 }[];
   private eq2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -96,6 +123,9 @@ export class SkyMap {
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
+      uBodySize: { value: 32 },
+      uMoonT: { value: 0 },
+      uSunAngle: { value: 0 },
     };
 
     this.starDirs = stars.map((s) => unitVector(s.ra, s.dec));
@@ -139,7 +169,16 @@ export class SkyMap {
     );
     ground.frustumCulled = false;
 
-    this.scene.add(this.lineMesh, starPoints, ground);
+    // Sun and Moon (positions set by setBodies)
+    const bodyGeo = new THREE.BufferGeometry();
+    bodyGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+    bodyGeo.setAttribute("aDir", new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+    bodyGeo.setAttribute("aKind", new THREE.Float32BufferAttribute([0, 1], 1));
+    this.bodyPoints = new THREE.Points(bodyGeo, this.material(bodyVert, bodyFrag, false));
+    this.bodyPoints.frustumCulled = false;
+    this.bodyPoints.visible = false;
+
+    this.scene.add(this.lineMesh, starPoints, this.bodyPoints, ground);
 
     // Constellation labels at the normalized centroid of their line stars
     this.labels = Object.entries(lines).map(([abbr, polys]) => {
@@ -201,8 +240,26 @@ export class SkyMap {
   setTheme(theme: SkyTheme): void {
     this.uniforms.uInk.value.set(theme.ink);
     this.uniforms.uGround.value.set(theme.ground);
-    this.renderer.setClearColor(theme.sky);
     this.options.theme = theme;
+    this.updateDaylight();
+    this.dirty = true;
+  }
+
+  setBodies(bodies: SkyBodies | null): void {
+    if (!bodies) {
+      this.bodies = null;
+      this.bodyPoints.visible = false;
+    } else {
+      const sun = unitVector(bodies.sun.ra, bodies.sun.dec);
+      const moon = unitVector(bodies.moon.ra, bodies.moon.dec);
+      this.bodies = { sun, moon, illumination: bodies.moon.illumination };
+      const dirs = this.bodyPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+      dirs.set([...sun, ...moon]);
+      dirs.needsUpdate = true;
+      this.uniforms.uMoonT.value = 1 - 2 * bodies.moon.illumination;
+      this.bodyPoints.visible = true;
+    }
+    this.updateDaylight();
     this.dirty = true;
   }
 
@@ -223,7 +280,35 @@ export class SkyMap {
   private updateSky(): void {
     this.eq2hor = j2000ToHorizontalMatrix(this.date, this.observer);
     this.uniforms.uEq2Hor.value = toThreeMat3(this.eq2hor);
+    this.updateDaylight();
     this.dirty = true;
+  }
+
+  /** Twilight model: stars fade out between astronomical twilight (−18°) and sunrise. */
+  private updateDaylight(): void {
+    const sunAltitude = this.bodies
+      ? (Math.asin(applyMat3(this.eq2hor, this.bodies.sun)[2]) * 180) / Math.PI
+      : -90;
+    const k = Math.min(1, Math.max(0, (sunAltitude + 18) / 18));
+    this.daylight = k * k;
+    // Blend in sRGB (THREE.Color.lerp works in linear space and washes the blues out).
+    const night = new THREE.Color(this.options.theme.sky).getRGB(
+      new THREE.Color(),
+      THREE.SRGBColorSpace,
+    );
+    const day = new THREE.Color(this.options.theme.daySky).getRGB(
+      new THREE.Color(),
+      THREE.SRGBColorSpace,
+    );
+    const t = this.daylight;
+    this.renderer.setClearColor(
+      new THREE.Color().setRGB(
+        night.r + (day.r - night.r) * t,
+        night.g + (day.g - night.g) * t,
+        night.b + (day.b - night.b) * t,
+        THREE.SRGBColorSpace,
+      ),
+    );
   }
 
   private clampView(): void {
@@ -274,7 +359,25 @@ export class SkyMap {
     this.uniforms.uView.value = toThreeMat3(view);
     this.uniforms.uViewInv.value = toThreeMat3(transpose(view));
     this.uniforms.uScale.value = stereoScale(this.view.fov);
-    this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov);
+    // Daylight drowns the stars: at noon only magnitude ≲ −1 objects would remain.
+    this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov) - this.daylight * 7;
+    if (this.bodies) {
+      // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
+      const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
+      this.uniforms.uBodySize.value = Math.max(30, 0.53 * pxPerDeg * 1.1);
+      // Direction of the Sun as seen from the Moon, in screen space (lights the crescent).
+      const m = this.eqToView();
+      const moon = this.bodies.moon;
+      const sun = this.bodies.sun;
+      const dot = moon[0] * sun[0] + moon[1] * sun[1] + moon[2] * sun[2];
+      const tangent: Vec3 = [
+        sun[0] - dot * moon[0],
+        sun[1] - dot * moon[1],
+        sun[2] - dot * moon[2],
+      ];
+      const [tx, ty] = applyMat3(m, tangent);
+      this.uniforms.uSunAngle.value = Math.atan2(ty, tx);
+    }
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
   }
@@ -313,8 +416,34 @@ export class SkyMap {
       });
     }
 
-    // 2. Star names, brightest first (the catalogue is sorted by magnitude)
-    const maxMag = this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5;
+    // 2. Sun and Moon
+    if (this.bodies && this.options.bodyNames) {
+      this.setLabelFont("700 11px", "0.12em", 0.95);
+      const offset = this.uniforms.uBodySize.value / 2 + 6;
+      for (const [body, dir] of [
+        ["Sun", this.bodies.sun],
+        ["Moon", this.bodies.moon],
+      ] as const) {
+        if (!aboveHorizon(dir)) continue;
+        const p = this.toScreen(applyMat3(m, dir));
+        if (!p) continue;
+        const label = this.options.bodyNames[body].toUpperCase();
+        const w = ctx.measureText(label).width;
+        const r = layout.place([
+          { x: p[0] + offset, y: p[1] - H / 2, w, h: H },
+          { x: p[0] - offset - w, y: p[1] - H / 2, w, h: H },
+        ]);
+        if (r) ctx.fillText(label, r.x, r.y + H / 2);
+      }
+    }
+
+    // 3. Star names, brightest first (the catalogue is sorted by magnitude)
+    // Never name a star that daylight hides.
+    const visibleLimit = limitingMagnitude(this.view.fov) - this.daylight * 7 - 1;
+    const maxMag = Math.min(
+      visibleLimit,
+      this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5,
+    );
     this.setLabelFont("400 10px", "0.08em", 0.8);
     stars.forEach((s, i) => {
       if (!s.name || s.v > maxMag) return;
@@ -333,7 +462,7 @@ export class SkyMap {
       if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
     });
 
-    // 3. Constellation names
+    // 4. Constellation names
     if (this.showLines) {
       this.setLabelFont("500 10px", "0.18em", 0.55);
       for (const { text, dir } of this.labels) {
@@ -359,8 +488,19 @@ export class SkyMap {
     this.ctx.globalAlpha = alpha;
   }
 
-  private pick(x: number, y: number): CatalogStar | null {
+  private pick(x: number, y: number): SkySelection | null {
     const m = this.eqToView();
+    if (this.bodies) {
+      const radius = Math.max(22, this.uniforms.uBodySize.value / 2);
+      for (const [body, dir] of [
+        ["Moon", this.bodies.moon],
+        ["Sun", this.bodies.sun],
+      ] as const) {
+        if (applyMat3(this.eq2hor, dir)[2] < 0) continue;
+        const p = this.toScreen(applyMat3(m, dir));
+        if (p && Math.hypot(p[0] - x, p[1] - y) < radius) return { kind: "body", body };
+      }
+    }
     const limit = limitingMagnitude(this.view.fov);
     let best: CatalogStar | null = null;
     let bestScore = 26;
@@ -371,7 +511,7 @@ export class SkyMap {
       const score = Math.hypot(p[0] - x, p[1] - y) - (limit - s.v) * 1.5;
       if (score < bestScore) [best, bestScore] = [s, score];
     });
-    return best;
+    return best ? { kind: "star", star: best } : null;
   }
 
   private bindInput(canvas: HTMLCanvasElement): void {

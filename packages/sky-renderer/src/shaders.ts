@@ -128,3 +128,68 @@ export const groundFrag = /* glsl */ `
     gl_FragColor = vec4(mix(col, uInk, line * 0.85), 1.0);
   }
 `;
+
+/** Sun and Moon: one point each (aKind 0 = Sun, 1 = Moon), engraved/dithered like the figures. */
+export const bodyVert = /* glsl */ `
+  ${projection}
+  uniform float uDpr;
+  uniform float uBodySize;
+  attribute vec3 aDir;
+  attribute float aKind;
+  varying float vKind;
+
+  void main() {
+    vec3 h = uEq2Hor * aDir;
+    vec3 v = uView * h;
+    vKind = aKind;
+    if (v.z < -0.6 || h.z < -0.01) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      gl_PointSize = 0.0;
+      return;
+    }
+    gl_Position = projectView(v);
+    gl_PointSize = uBodySize * (aKind < 0.5 ? 1.25 : 1.0) * uDpr;
+  }
+`;
+
+export const bodyFrag = /* glsl */ `
+  precision highp float;
+  uniform vec3 uInk;
+  uniform float uDpr;
+  uniform float uMoonT;      // terminator position: 1 − 2 × illuminated fraction
+  uniform float uSunAngle;   // screen angle of the Sun as seen from the Moon (radians)
+  varying float vKind;
+  ${dither}
+
+  void main() {
+    vec2 p = gl_PointCoord * 2.0 - 1.0;
+    p.y = -p.y;
+    float r = length(p);
+    float threshold = bayer8(gl_FragCoord.xy / uDpr);
+
+    if (vKind < 0.5) {
+      // Sun: stippled disc, engraved ring and sixteen fine rays
+      float disc = (1.0 - smoothstep(0.30, 0.33, r)) * step(threshold, 0.8);
+      float ring = smoothstep(0.36, 0.38, r) * (1.0 - smoothstep(0.40, 0.42, r));
+      float rays = pow(abs(cos(atan(p.y, p.x) * 8.0)), 48.0) * step(0.46, r) * (1.0 - smoothstep(0.85, 1.0, r));
+      float on = max(disc, max(ring, step(0.5, rays)));
+      if (on < 0.5) discard;
+      gl_FragColor = vec4(uInk, 1.0);
+      return;
+    }
+
+    // Moon: rotate so the Sun lies along +x, then light the part beyond the terminator ellipse.
+    if (r > 1.0) discard;
+    float c = cos(uSunAngle);
+    float s = sin(uSunAngle);
+    vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
+    float lit = step(uMoonT * sqrt(max(0.0, 1.0 - q.y * q.y)), q.x);
+    float limb = sqrt(max(0.0, 1.0 - r * r));
+    float density = max(lit * (0.5 + 0.5 * limb), 0.07); // 0.07: earthshine on the dark side
+    float on = step(threshold, density);
+    float rim = smoothstep(0.9, 0.95, r) * (1.0 - smoothstep(0.97, 1.0, r));
+    float a = max(on, rim * 0.7);
+    if (a < 0.1) discard;
+    gl_FragColor = vec4(uInk, a);
+  }
+`;
