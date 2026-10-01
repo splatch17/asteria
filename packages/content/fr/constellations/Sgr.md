@@ -28,4 +28,4 @@ Selon Ératosthène, ce n'était pas un centaure, car les centaures ne se servai
 
 - En regardant vers le Sagittaire, on regarde vers le centre de notre galaxie. Là se cache Sagittarius A*, un trou noir d'environ 4 millions de masses solaires, à quelque 27 000 années-lumière. Sa première image a été dévoilée le 12 mai 2022.
 - Les étoiles principales du Sagittaire dessinent une « théière », posée sur l'une des régions les plus riches de la Voie lactée.
-- L'étoile α du Sagittaire, Rukbat, n'est que la 15e plus brillante de la constellation ! La plus éclatante est ε, Kaus Australis (magnitude 1,8), environ sept fois plus lumineuse à nos yeux.
+- L'étoile α du Sagittaire, Rukbat, n'est qu'environ la 15e plus brillante de la constellation ! La plus éclatante est ε, Kaus Australis (magnitude 1,8), environ sept fois plus lumineuse à nos yeux.
