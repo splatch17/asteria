@@ -1,11 +1,13 @@
 import * as THREE from "three";
 import {
+  PLANETS,
   applyMat3,
   j2000ToHorizontalMatrix,
   multiplyMat3,
   unitVector,
   type Mat3,
   type Observer,
+  type Planet,
   type Vec3,
 } from "@asteria/astro-core";
 import {
@@ -15,6 +17,10 @@ import {
   groundVert,
   lineFrag,
   lineVert,
+  pathFrag,
+  pathVert,
+  planetFrag,
+  planetVert,
   starFrag,
   starVert,
 } from "./shaders";
@@ -49,7 +55,27 @@ export interface SkyBodies {
   moon: { ra: number; dec: number; illumination: number };
 }
 
-export type SkySelection = { kind: "star"; star: CatalogStar } | { kind: "body"; body: BodyName };
+/** A planet's astrometric J2000 position (topocentric) and apparent magnitude. */
+export interface SkyPlanet {
+  name: Planet;
+  ra: number;
+  dec: number;
+  magnitude: number;
+}
+
+/** Apparent path of a planet, sampled regularly (a mark is drawn at each new month). */
+export interface SkyPath {
+  name: Planet;
+  points: { date: Date; ra: number; dec: number }[];
+}
+
+export type SkySelection =
+  | { kind: "star"; star: CatalogStar }
+  | { kind: "body"; body: BodyName }
+  | { kind: "planet"; planet: Planet };
+
+/** Daylight hides planets this many magnitudes later than stars (Venus stays visible by day). */
+export const PLANET_DAYLIGHT_MARGIN = 4;
 
 export interface SkyMapOptions {
   canvas: HTMLCanvasElement;
@@ -65,6 +91,10 @@ export interface SkyMapOptions {
   theme: SkyTheme;
   /** Localised names of the Sun and Moon, drawn as labels. */
   bodyNames?: Record<BodyName, string>;
+  /** Localised planet names, drawn as labels. */
+  planetNames?: Record<Planet, string>;
+  /** Formats the date of a monthly mark on the planets' paths (localised by the caller). */
+  formatPathMark?: (date: Date) => string;
   onSelect?: (selection: SkySelection | null) => void;
   /** Called after each rendered frame whose view changed (compass needle, etc.). */
   onViewChange?: (view: Readonly<ViewState>) => void;
@@ -84,6 +114,12 @@ export function limitingMagnitude(fov: number): number {
   return Math.min(6.5, Math.max(4.6, 5.0 + 2.2 * Math.log10(90 / fov)));
 }
 
+/** On-screen radius (CSS px) of a planet's disc, mirroring planetVert. */
+function planetRadius(p: { name: Planet; magnitude: number }): number {
+  const size = Math.min(20, Math.max(7, 11 - p.magnitude * 1.6));
+  return (size * (p.name === "Saturn" ? 1.6 : 1)) / 2;
+}
+
 export class SkyMap {
   readonly view: ViewState = { azimuth: 180, altitude: 35, fov: 100, roll: 0 };
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
@@ -98,6 +134,13 @@ export class SkyMap {
   private readonly lineMesh: THREE.LineSegments;
   private readonly bodyPoints: THREE.Points;
   private bodies: { sun: Vec3; moon: Vec3; illumination: number } | null = null;
+  private readonly planetPoints: THREE.Points;
+  /** Current planets, in PLANETS order (direction and magnitude), null when unset. */
+  private planets: { name: Planet; dir: Vec3; magnitude: number }[] | null = null;
+  private showPlanets = true;
+  private readonly pathPoints: THREE.Points;
+  private pathMarks: { dir: Vec3; text: string; width: number }[] = [];
+  private showPaths = true;
   /** 0 = dark night … 1 = full daylight, from the Sun's altitude. */
   private daylight = 0;
   private readonly starDirs: Vec3[];
@@ -186,7 +229,40 @@ export class SkyMap {
     this.bodyPoints.frustumCulled = false;
     this.bodyPoints.visible = false;
 
-    this.scene.add(this.lineMesh, starPoints, this.bodyPoints, ground);
+    // Planets (one point each, PLANETS order; positions set by setPlanets)
+    const planetGeo = new THREE.BufferGeometry();
+    const n = PLANETS.length;
+    const planetDirs = new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3);
+    planetGeo.setAttribute("position", planetDirs);
+    planetGeo.setAttribute("aDir", planetDirs);
+    planetGeo.setAttribute("aMag", new THREE.Float32BufferAttribute(new Float32Array(n), 1));
+    planetGeo.setAttribute(
+      "aKind",
+      new THREE.Float32BufferAttribute(
+        PLANETS.map((_, i) => i),
+        1,
+      ),
+    );
+    this.planetPoints = new THREE.Points(planetGeo, this.material(planetVert, planetFrag, false));
+    this.planetPoints.frustumCulled = false;
+    this.planetPoints.visible = false;
+
+    // Apparent paths (dotted; buffers sized by setPaths)
+    this.pathPoints = new THREE.Points(
+      new THREE.BufferGeometry(),
+      this.material(pathVert, pathFrag, false),
+    );
+    this.pathPoints.frustumCulled = false;
+    this.pathPoints.visible = false;
+
+    this.scene.add(
+      this.lineMesh,
+      this.pathPoints,
+      starPoints,
+      this.planetPoints,
+      this.bodyPoints,
+      ground,
+    );
 
     // Constellation labels at the normalized centroid of their line stars
     this.labels = Object.entries(lines).map(([abbr, polys]) => {
@@ -286,6 +362,82 @@ export class SkyMap {
       this.bodyPoints.visible = true;
     }
     this.updateDaylight();
+    this.dirty = true;
+  }
+
+  /** Planet positions, called on each date change: buffers are updated in place. */
+  setPlanets(planets: SkyPlanet[] | null): void {
+    if (!planets) {
+      this.planets = null;
+    } else {
+      const geo = this.planetPoints.geometry;
+      const dirs = geo.getAttribute("aDir") as THREE.BufferAttribute;
+      const mags = geo.getAttribute("aMag") as THREE.BufferAttribute;
+      this.planets ??= PLANETS.map((name) => ({ name, dir: [0, 0, 1], magnitude: 99 }));
+      for (const p of this.planets) p.magnitude = 99; // planets left out stay hidden
+      for (const p of planets) {
+        const slot = this.planets[PLANETS.indexOf(p.name)]!;
+        slot.dir = unitVector(p.ra, p.dec);
+        slot.magnitude = p.magnitude;
+      }
+      this.planets.forEach((p, i) => {
+        dirs.setXYZ(i, p.dir[0], p.dir[1], p.dir[2]);
+        mags.setX(i, p.magnitude);
+      });
+      dirs.needsUpdate = true;
+      mags.needsUpdate = true;
+    }
+    this.planetPoints.visible = this.showPlanets && !!this.planets;
+    this.dirty = true;
+  }
+
+  /** Apparent paths of the planets; a mark (and a dated label) at each new month. */
+  setPaths(paths: SkyPath[] | null): void {
+    this.pathMarks = [];
+    const total = paths?.reduce((n, p) => n + p.points.length, 0) ?? 0;
+    const geo = this.pathPoints.geometry;
+    let dirs = geo.getAttribute("aDir") as THREE.BufferAttribute | undefined;
+    let marks = geo.getAttribute("aMark") as THREE.BufferAttribute | undefined;
+    if (!dirs || !marks || dirs.count < total) {
+      // Headroom so that sliding windows keep reusing the same buffers.
+      const capacity = Math.max(1024, Math.ceil(total * 1.25));
+      dirs = new THREE.Float32BufferAttribute(new Float32Array(capacity * 3), 3);
+      marks = new THREE.Float32BufferAttribute(new Float32Array(capacity), 1);
+      geo.setAttribute("position", dirs);
+      geo.setAttribute("aDir", dirs);
+      geo.setAttribute("aMark", marks);
+    }
+    let k = 0;
+    for (const path of paths ?? []) {
+      let month = -1;
+      for (const pt of path.points) {
+        const d = unitVector(pt.ra, pt.dec);
+        const m = pt.date.getMonth();
+        const mark = month >= 0 && m !== month;
+        month = m;
+        dirs.setXYZ(k, d[0], d[1], d[2]);
+        marks.setX(k, mark ? 1 : 0);
+        if (mark && this.options.formatPathMark)
+          this.pathMarks.push({ dir: d, text: this.options.formatPathMark(pt.date), width: -1 });
+        k++;
+      }
+    }
+    dirs.needsUpdate = true;
+    marks.needsUpdate = true;
+    geo.setDrawRange(0, total);
+    this.pathPoints.visible = this.showPaths && total > 0;
+    this.dirty = true;
+  }
+
+  setPlanetsVisible(visible: boolean): void {
+    this.showPlanets = visible;
+    this.planetPoints.visible = visible && !!this.planets;
+    this.dirty = true;
+  }
+
+  setPathsVisible(visible: boolean): void {
+    this.showPaths = visible;
+    this.pathPoints.visible = visible && this.pathPoints.geometry.drawRange.count > 0;
     this.dirty = true;
   }
 
@@ -465,6 +617,9 @@ export class SkyMap {
         if (!aboveHorizon(dir)) continue;
         const p = this.toScreen(applyMat3(m, dir));
         if (!p) continue;
+        // The disc itself is occupied: later labels (path dates…) must not cover it.
+        const half = offset - 6;
+        layout.place([{ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half }]);
         const label = this.options.bodyNames[body].toUpperCase();
         const w = ctx.measureText(label).width;
         const r = layout.place([
@@ -475,7 +630,29 @@ export class SkyMap {
       }
     }
 
-    // 3. Star names, brightest first (the catalogue is sorted by magnitude)
+    // 3. Planets (those daylight leaves visible)
+    if (this.showPlanets && this.planets && this.options.planetNames) {
+      this.setLabelFont("700 10px", "0.12em", 0.9);
+      for (const p of this.planets) {
+        if (!this.planetVisible(p.magnitude) || !aboveHorizon(p.dir)) continue;
+        const pos = this.toScreen(applyMat3(m, p.dir));
+        if (!pos) continue;
+        const label = this.options.planetNames[p.name].toUpperCase();
+        const w = ctx.measureText(label).width;
+        const off = planetRadius(p) + 5;
+        const [x, y] = pos;
+        layout.place([{ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 }]);
+        const r = layout.place([
+          { x: x + off, y: y - H / 2, w, h: H },
+          { x: x - off - w, y: y - H / 2, w, h: H },
+          { x: x - w / 2, y: y - off - H, w, h: H },
+          { x: x - w / 2, y: y + off, w, h: H },
+        ]);
+        if (r) ctx.fillText(label, r.x, r.y + H / 2);
+      }
+    }
+
+    // 4. Star names, brightest first (the catalogue is sorted by magnitude)
     // Never name a star that daylight hides.
     const visibleLimit = limitingMagnitude(this.view.fov) - this.daylight * 7 - 1;
     const maxMag = Math.min(
@@ -500,7 +677,7 @@ export class SkyMap {
       if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
     });
 
-    // 4. Constellation names
+    // 5. Constellation names
     if (this.showLines) {
       this.setLabelFont("500 10px", "0.18em", 0.55);
       for (const { text, dir } of this.labels) {
@@ -514,6 +691,27 @@ export class SkyMap {
           [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
         );
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
+      }
+    }
+    // 6. Dates of the monthly marks on the planets' paths (lowest priority)
+    if (this.showPaths && this.pathMarks.length) {
+      this.setLabelFont("400 9px", "0.06em", 0.6);
+      const h = 10;
+      for (const mark of this.pathMarks) {
+        const { dir, text } = mark;
+        if (!aboveHorizon(dir)) continue;
+        const p = this.toScreen(applyMat3(m, dir));
+        if (!p) continue;
+        if (mark.width < 0) mark.width = ctx.measureText(text).width; // measured once
+        const w = mark.width;
+        const [x, y] = p;
+        const r = layout.place([
+          { x: x + 6, y: y - h, w, h },
+          { x: x - 6 - w, y: y - h, w, h },
+          { x: x + 6, y, w, h },
+          { x: x - 6 - w, y, w, h },
+        ]);
+        if (r) ctx.fillText(text, r.x, r.y + h / 2);
       }
     }
     if (this.pointing) this.drawReticle();
@@ -549,6 +747,11 @@ export class SkyMap {
     }
   }
 
+  /** Same rule as planetVert: daylight hides planets 4 magnitudes after the stars. */
+  private planetVisible(magnitude: number): boolean {
+    return magnitude <= this.uniforms.uLimitMag.value + PLANET_DAYLIGHT_MARGIN;
+  }
+
   private setLabelFont(weightSize: string, spacing: string, alpha: number): void {
     this.ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
     this.ctx.letterSpacing = spacing;
@@ -568,6 +771,19 @@ export class SkyMap {
         const p = this.toScreen(applyMat3(m, dir));
         if (p && Math.hypot(p[0] - x, p[1] - y) < radius) return { kind: "body", body };
       }
+    }
+    if (this.showPlanets && this.planets) {
+      let found: Planet | null = null;
+      let bestDist = Infinity;
+      for (const pl of this.planets) {
+        if (!this.planetVisible(pl.magnitude) || applyMat3(this.eq2hor, pl.dir)[2] < 0) continue;
+        const p = this.toScreen(applyMat3(m, pl.dir));
+        if (!p) continue;
+        const d = Math.hypot(p[0] - x, p[1] - y);
+        if (d < Math.max(20, planetRadius(pl) + 8) && d < bestDist)
+          [found, bestDist] = [pl.name, d];
+      }
+      if (found) return { kind: "planet", planet: found };
     }
     const limit = limitingMagnitude(this.view.fov);
     let best: CatalogStar | null = null;

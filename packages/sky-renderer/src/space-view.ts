@@ -1,23 +1,26 @@
 import * as THREE from "three";
 import {
+  PLANETS,
   greenwichMeanSiderealTime,
   precessionMatrix,
   unitVector,
   type Mat3,
   type Observer,
+  type Planet,
   type Vec3,
 } from "@asteria/astro-core";
-import { bodyFrag } from "./shaders";
+import { bodyFrag, planetFrag } from "./shaders";
 import {
   globeFrag,
   globeVert,
   skyBodyVert,
   skyLineFrag,
   skyLineVert,
+  skyPlanetVert,
   skyStarFrag,
   skyStarVert,
 } from "./space-shaders";
-import type { CatalogStar, SkyBodies, SkyTheme } from "./sky-map";
+import type { CatalogStar, SkyBodies, SkyPlanet, SkyTheme } from "./sky-map";
 
 export interface EarthAssets {
   relief: HTMLImageElement | ImageBitmap;
@@ -34,6 +37,8 @@ export interface SpaceViewOptions {
   earth: EarthAssets;
   theme: SkyTheme;
   labels: { here: string; sun: string; moon: string; pole: string };
+  /** Localised planet names, drawn as labels. */
+  planetNames?: Record<Planet, string>;
 }
 
 const DEG = Math.PI / 180;
@@ -71,6 +76,10 @@ export class SpaceView {
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
   private bodies: { sun: Vec3; moon: Vec3 } | null = null;
+  private readonly planetPoints: THREE.Points;
+  /** J2000 directions of the planets (PLANETS order), null when unset or hidden. */
+  private planets: (Vec3 | null)[] | null = null;
+  private showPlanets = true;
   private dirty = true;
   private running = false;
   private raf = 0;
@@ -158,7 +167,36 @@ export class SpaceView {
     this.bodyPoints = new THREE.Points(bodyGeo, this.material(skyBodyVert, bodyFrag, false));
     this.bodyPoints.visible = false;
 
-    for (const o of [starPoints, constellationLines, equator, ecliptic, this.bodyPoints]) {
+    // Planets (PLANETS order), on the celestial sphere like the Sun and Moon
+    const planetGeo = new THREE.BufferGeometry();
+    const planetDirs = new THREE.Float32BufferAttribute(new Float32Array(PLANETS.length * 3), 3);
+    planetGeo.setAttribute("position", planetDirs);
+    planetGeo.setAttribute("aDir", planetDirs);
+    planetGeo.setAttribute(
+      "aMag",
+      new THREE.Float32BufferAttribute(new Float32Array(PLANETS.length), 1),
+    );
+    planetGeo.setAttribute(
+      "aKind",
+      new THREE.Float32BufferAttribute(
+        PLANETS.map((_, i) => i),
+        1,
+      ),
+    );
+    this.planetPoints = new THREE.Points(
+      planetGeo,
+      this.material(skyPlanetVert, planetFrag, false),
+    );
+    this.planetPoints.visible = false;
+
+    for (const o of [
+      starPoints,
+      constellationLines,
+      equator,
+      ecliptic,
+      this.bodyPoints,
+      this.planetPoints,
+    ]) {
       o.frustumCulled = false;
       o.renderOrder = 1; // after the globe, so the depth test hides what is behind the Earth
     }
@@ -206,6 +244,7 @@ export class SpaceView {
       constellationLines,
       equator,
       ecliptic,
+      this.planetPoints,
       this.bodyPoints,
     );
     this.setTheme(options.theme);
@@ -238,6 +277,28 @@ export class SpaceView {
         }
       : null;
     if (bodies) this.uniforms.uMoonT.value = 1 - 2 * bodies.moon.illumination;
+    this.update();
+  }
+
+  setPlanets(planets: SkyPlanet[] | null): void {
+    if (!planets) {
+      this.planets = null;
+    } else {
+      this.planets = PLANETS.map(() => null);
+      const mags = this.planetPoints.geometry.getAttribute("aMag") as THREE.BufferAttribute;
+      for (let i = 0; i < PLANETS.length; i++) mags.setX(i, 99); // left out: hidden by the shader
+      for (const p of planets) {
+        const i = PLANETS.indexOf(p.name);
+        this.planets[i] = unitVector(p.ra, p.dec);
+        mags.setX(i, p.magnitude);
+      }
+      mags.needsUpdate = true;
+    }
+    this.update();
+  }
+
+  setPlanetsVisible(visible: boolean): void {
+    this.showPlanets = visible;
     this.update();
   }
 
@@ -372,6 +433,18 @@ export class SpaceView {
       // Sun in the Earth-fixed frame lights the globe (terminator, night lights).
       this.uniforms.uSunEarth.value.copy(sun).applyAxisAngle(new THREE.Vector3(0, 0, 1), -gst);
     }
+    if (this.planets) {
+      const prec = toMatrix3(precessionMatrix(this.date));
+      const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+      const v = new THREE.Vector3();
+      this.planets.forEach((d, i) => {
+        if (d) v.set(...d).applyMatrix3(prec);
+        else v.set(0, 0, 1);
+        dirs.setXYZ(i, v.x, v.y, v.z);
+      });
+      dirs.needsUpdate = true;
+    }
+    this.planetPoints.visible = this.showPlanets && !!this.planets;
     this.dirty = true;
   }
 
@@ -476,6 +549,16 @@ export class SpaceView {
     if (this.bodies) {
       label(labels.sun, this.dirAt(0), true, 20);
       label(labels.moon, this.dirAt(1), true, 18);
+    }
+    const names = this.options.planetNames;
+    if (this.showPlanets && this.planets && names) {
+      ctx.font = "700 10px 'JetBrains Mono', monospace";
+      const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+      const d = new THREE.Vector3();
+      this.planets.forEach((p, i) => {
+        if (!p) return;
+        label(names[PLANETS[i]!], d.fromBufferAttribute(dirs, i), true, 12);
+      });
     }
   }
 
