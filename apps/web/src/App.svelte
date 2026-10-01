@@ -9,6 +9,8 @@
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
   import { devicePointing, pointingToView, smooth } from "./lib/orientation";
+  import Icon from "./components/Icon.svelte";
+  import TimeScrubber from "./components/TimeScrubber.svelte";
   import {
     RANGES,
     RANGE_ORDER,
@@ -448,39 +450,33 @@ DIST {distance
 
 <nav class="hud bottom">
   {#if hint}<p class="hint">{hint}</p>{/if}
-  <div class="group time">
-    <button
-      class="play"
-      onclick={togglePlay}
-      aria-label={playing ? $_("time.pause") : $_("time.play")}
-      aria-pressed={playing}>{playing ? "❚❚" : "▶"}</button
-    >
-    <input
-      class="slider scrub"
-      type="range"
-      aria-label={$_("time.scrub")}
-      min={-RANGES[range].half}
-      max={RANGES[range].half}
-      step={RANGES[range].step}
-      value={offset}
-      oninput={(e) => setOffset(Number(e.currentTarget.value))}
-    />
-    <button class="speed" onclick={cycleSpeed}>{$_(RANGES[range].speeds[speedIndex]!.key)}</button>
-  </div>
+  <TimeScrubber
+    {range}
+    {offset}
+    {playing}
+    {relative}
+    target={time}
+    speedKey={RANGES[range].speeds[speedIndex]!.key}
+    onscrub={setOffset}
+    ontoggle={togglePlay}
+    onspeed={cycleSpeed}
+  />
   <div class="row">
-    <div class="group">
-      <button onclick={cycleRange}>{$_(`time.range.${range}`)}</button>
-      <button aria-pressed={live} onclick={goLive}>{$_("time.now")}</button>
+    <div class="group frame">
+      <button onclick={cycleRange}><Icon name="range" />{$_(`time.range.${range}`)}</button>
+      <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
     </div>
-    <div class="group">
-      <button aria-pressed={lines} onclick={() => (lines = !lines)}>{$_("map.lines")}</button>
+    <div class="group frame">
+      <button aria-pressed={lines} onclick={() => (lines = !lines)} aria-label={$_("map.lines")}
+        ><Icon name="lines" /></button
+      >
       <button aria-pressed={night} onclick={() => (night = !night)} aria-label={$_("night.toggle")}
-        >{$_("night.short")}</button
+        ><Icon name="night" /></button
       >
     </div>
   </div>
   {#if night}
-    <label class="group dim">
+    <label class="group frame dim">
       <span>{$_("night.brightness")}</span>
       <input
         class="slider"
@@ -659,9 +655,6 @@ DIST {distance
     display: flex;
     flex-wrap: wrap;
     max-width: 100%;
-    border: 1px solid var(--ast-hairline);
-    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
-    backdrop-filter: blur(4px);
   }
   button {
     font: 500 11px/1 var(--ast-font-mono);
@@ -672,30 +665,12 @@ DIST {distance
     border: 0;
     border-right: 1px solid var(--ast-hairline);
     border-radius: var(--ast-radius);
-    padding: 13px 14px;
-    cursor: pointer;
-  }
-  .time {
-    width: 100%;
-    max-width: 420px;
-    flex-wrap: nowrap;
-  }
-  .time {
+    display: inline-flex;
     align-items: center;
-  }
-  .time .play {
-    width: 44px;
-    flex: none;
-  }
-  .time .speed {
-    flex: none;
-    min-width: 108px;
-    text-transform: none; /* "1 s = 10 min": unit symbols stay lower-case */
-  }
-  .scrub {
-    flex: 1;
-    min-width: 0;
-    margin: 0 12px;
+    gap: 8px;
+    height: 44px;
+    padding: 0 14px;
+    cursor: pointer;
   }
   .row {
     display: flex;
@@ -708,7 +683,7 @@ DIST {distance
     flex-wrap: nowrap;
   }
   .row button {
-    padding: 13px 10px;
+    padding: 0 12px;
     white-space: nowrap;
   }
   .hint {

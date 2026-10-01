@@ -15,3 +15,29 @@ body {
   color: var(--ast-fg);
   font-family: var(--ast-font-mono);
 }
+
+/* Instrument panel: hairline border with brighter corner brackets (Hermes-like UI). */
+.frame {
+  position: relative;
+  border: 1px solid var(--ast-hairline);
+  background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
+  backdrop-filter: blur(6px);
+}
+.frame::before {
+  --c: var(--ast-fg);
+  --l: 7px;
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--c) 0 0) top left / var(--l) 1px,
+    linear-gradient(var(--c) 0 0) top left / 1px var(--l),
+    linear-gradient(var(--c) 0 0) top right / var(--l) 1px,
+    linear-gradient(var(--c) 0 0) top right / 1px var(--l),
+    linear-gradient(var(--c) 0 0) bottom left / var(--l) 1px,
+    linear-gradient(var(--c) 0 0) bottom left / 1px var(--l),
+    linear-gradient(var(--c) 0 0) bottom right / var(--l) 1px,
+    linear-gradient(var(--c) 0 0) bottom right / 1px var(--l);
+  background-repeat: no-repeat;
+}
