@@ -71,5 +71,11 @@
   "pointing.unavailable": "Boussole et gyroscope indisponibles sur cet appareil (ou connexion non sécurisée).",
   "time.tick.h": "{sign}{n} h",
   "time.tick.months": "{sign}{n} mois",
-  "time.tick.years": "{sign}{n, number}"
+  "time.tick.years": "{sign}{n, number}",
+  "space.title": "Terre & Ciel",
+  "space.toggleToEarth": "Voir la Terre depuis l'espace",
+  "space.toggleToSky": "Revenir au ciel",
+  "space.here": "Vous êtes ici",
+  "space.pole": "Pôle céleste",
+  "space.loading": "Chargement de la Terre…"
 }
