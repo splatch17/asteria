@@ -1,0 +1,42 @@
+<script lang="ts">
+  // Line icons drawn on a 16×16 grid, stroked with currentColor (works in night red).
+  export type IconName = "play" | "pause" | "now" | "lines" | "night" | "range";
+  let { name }: { name: IconName } = $props();
+</script>
+
+<svg viewBox="0 0 16 16" aria-hidden="true">
+  {#if name === "play"}
+    <path d="M4.5 2.5 L13 8 L4.5 13.5 Z" class="fill" />
+  {:else if name === "pause"}
+    <path d="M4.5 3 V13 M11.5 3 V13" />
+  {:else if name === "now"}
+    <circle cx="8" cy="8" r="5.5" />
+    <circle cx="8" cy="8" r="1.6" class="fill" />
+  {:else if name === "lines"}
+    <path d="M2.5 11.5 L6 4.5 L10 8 L13.5 3" />
+    <circle cx="2.5" cy="11.5" r="1.2" class="fill" />
+    <circle cx="6" cy="4.5" r="1.2" class="fill" />
+    <circle cx="10" cy="8" r="1.2" class="fill" />
+    <circle cx="13.5" cy="3" r="1.2" class="fill" />
+  {:else if name === "night"}
+    <path d="M10.5 2.5 A5.5 5.5 0 1 0 13.5 10.5 A4.5 4.5 0 0 1 10.5 2.5 Z" />
+  {:else if name === "range"}
+    <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
+  {/if}
+</svg>
+
+<style>
+  svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: square;
+  }
+  .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+</style>

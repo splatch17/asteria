@@ -68,5 +68,8 @@
   "compass.north": "Remettre la vue face au nord",
   "pointing.toggle": "Viser le ciel avec le téléphone",
   "pointing.hint": "Levez le téléphone vers le ciel",
-  "pointing.unavailable": "Boussole et gyroscope indisponibles sur cet appareil (ou connexion non sécurisée)."
+  "pointing.unavailable": "Boussole et gyroscope indisponibles sur cet appareil (ou connexion non sécurisée).",
+  "time.tick.h": "{sign}{n} h",
+  "time.tick.months": "{sign}{n} mois",
+  "time.tick.years": "{sign}{n, number}"
 }
