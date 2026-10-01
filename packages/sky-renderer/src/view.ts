@@ -15,15 +15,24 @@ export interface ViewState {
   altitude: number;
   /** Vertical field of view in degrees. */
   fov: number;
+  /** Screen rotation in degrees: positive when the top of the screen leans towards the right. */
+  roll?: number;
 }
 
 /** Rows: right, up, forward — expressed in (North, East, Up). */
-export function viewMatrix({ azimuth, altitude }: ViewState): Mat3 {
+export function viewMatrix({ azimuth, altitude, roll = 0 }: ViewState): Mat3 {
   const a = azimuth * RAD;
   const h = altitude * RAD;
+  const r = roll * RAD;
+  // Unrolled basis: right is horizontal, up leans towards the zenith.
+  const right0 = [-Math.sin(a), Math.cos(a), 0];
+  const up0 = [-Math.sin(h) * Math.cos(a), -Math.sin(h) * Math.sin(a), Math.cos(h)];
+  const [c, s] = [Math.cos(r), Math.sin(r)];
+  const right = right0.map((v, i) => c * v - s * up0[i]!);
+  const up = up0.map((v, i) => c * v + s * right0[i]!);
   return [
-    -Math.sin(a), Math.cos(a), 0,
-    -Math.sin(h) * Math.cos(a), -Math.sin(h) * Math.sin(a), Math.cos(h),
+    right[0]!, right[1]!, right[2]!,
+    up[0]!, up[1]!, up[2]!,
     Math.cos(h) * Math.cos(a), Math.cos(h) * Math.sin(a), Math.sin(h),
   ]; // prettier-ignore
 }

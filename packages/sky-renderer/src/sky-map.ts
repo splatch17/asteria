@@ -66,6 +66,10 @@ export interface SkyMapOptions {
   /** Localised names of the Sun and Moon, drawn as labels. */
   bodyNames?: Record<BodyName, string>;
   onSelect?: (selection: SkySelection | null) => void;
+  /** Called after each rendered frame whose view changed (compass needle, etc.). */
+  onViewChange?: (view: Readonly<ViewState>) => void;
+  /** Label for what the central reticle points at, when sensor pointing is on. */
+  describeTarget?: (selection: SkySelection) => string;
 }
 
 const FOV_MIN = 2;
@@ -81,7 +85,7 @@ export function limitingMagnitude(fov: number): number {
 }
 
 export class SkyMap {
-  readonly view: ViewState = { azimuth: 180, altitude: 35, fov: 100 };
+  readonly view: ViewState = { azimuth: 180, altitude: 35, fov: 100, roll: 0 };
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
   private showLines = true;
@@ -100,6 +104,10 @@ export class SkyMap {
   private readonly labels: { text: string; dir: Vec3 }[];
   private eq2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   private dirty = true;
+  /** Sensor pointing: finger rotation is disabled (pinch zoom stays), reticle is shown. */
+  private pointing = false;
+  private animation: { from: ViewState; to: ViewState; start: number; duration: number } | null =
+    null;
   private raf = 0;
   private velocity = { az: 0, alt: 0 };
   private readonly pointers = new Map<number, { x: number; y: number }>();
@@ -237,6 +245,24 @@ export class SkyMap {
     this.dirty = true;
   }
 
+  /** Smoothly turns the view (shortest way round in azimuth). */
+  animateTo(target: Partial<ViewState>, duration = 600): void {
+    const from = { ...this.view };
+    const to = { ...from, ...target };
+    to.azimuth = from.azimuth + ((((to.azimuth - from.azimuth) % 360) + 540) % 360) - 180;
+    this.velocity = { az: 0, alt: 0 };
+    this.animation = { from, to, start: performance.now(), duration };
+  }
+
+  /** Sensor-driven pointing (the caller feeds setView with the phone orientation). */
+  setPointing(on: boolean): void {
+    this.pointing = on;
+    this.animation = null;
+    this.velocity = { az: 0, alt: 0 };
+    if (!on) this.view.roll = 0;
+    this.dirty = true;
+  }
+
   setTheme(theme: SkyTheme): void {
     this.uniforms.uInk.value.set(theme.ink);
     this.uniforms.uGround.value.set(theme.ground);
@@ -343,9 +369,21 @@ export class SkyMap {
       this.clampView();
       this.dirty = true;
     }
+    if (this.animation) {
+      const { from, to, start, duration } = this.animation;
+      const t = Math.min(1, (performance.now() - start) / duration);
+      const e = 1 - (1 - t) ** 3; // ease-out cubic
+      this.view.azimuth = from.azimuth + (to.azimuth - from.azimuth) * e;
+      this.view.altitude = from.altitude + (to.altitude - from.altitude) * e;
+      this.view.fov = from.fov + (to.fov - from.fov) * e;
+      if (t >= 1) this.animation = null;
+      this.clampView();
+      this.dirty = true;
+    }
     if (this.dirty) {
       this.dirty = false;
       this.render();
+      this.options.onViewChange?.(this.view);
     }
   };
 
@@ -478,7 +516,37 @@ export class SkyMap {
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
       }
     }
+    if (this.pointing) this.drawReticle();
     ctx.globalAlpha = 1;
+  }
+
+  private drawReticle(): void {
+    const { ctx } = this;
+    const { canvas, theme } = this.options;
+    const [cx, cy] = [canvas.clientWidth / 2, canvas.clientHeight / 2];
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = theme.ink;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      ctx.moveTo(cx + dx * 28, cy + dy * 28);
+      ctx.lineTo(cx + dx * 40, cy + dy * 40);
+    }
+    ctx.stroke();
+    const target = this.pick(cx, cy);
+    if (target && this.options.describeTarget) {
+      this.setLabelFont("700 12px", "0.12em", 1);
+      ctx.fillStyle = theme.ink;
+      const label = this.options.describeTarget(target).toUpperCase();
+      ctx.textAlign = "center";
+      ctx.fillText(label, cx, cy + 56);
+    }
   }
 
   private setLabelFont(weightSize: string, spacing: string, alpha: number): void {
@@ -534,7 +602,8 @@ export class SkyMap {
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.moved += Math.abs(dx) + Math.abs(dy);
 
-      if (this.pointers.size === 1) {
+      if (this.pointers.size === 1 && !this.pointing) {
+        this.animation = null;
         const degPerPx = this.view.fov / canvas.clientHeight;
         this.velocity = { az: -dx * degPerPx, alt: dy * degPerPx };
         this.view.azimuth += this.velocity.az;
