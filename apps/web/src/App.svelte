@@ -54,7 +54,8 @@
   let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
   let lines = $state(true);
   let showPlanets = $state(readSetting("asteria.planets", true, isBool));
-  let showPaths = $state(readSetting("asteria.planetPaths", false, isBool));
+  // Every planet's path at once (undated): a switch of the future layers panel (#54), off.
+  let showAllPaths = $state(false);
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
@@ -233,6 +234,8 @@
             pole: $_("space.pole"),
           },
           planetNames: planetNames(),
+          formatPathMark: (d) => pathMarkFormat.format(d),
+          onSelect: (s) => (selection = s),
         });
       } catch (e) {
         console.error(e);
@@ -250,6 +253,7 @@
     });
     space.setPlanets(planets);
     space.setPlanetsVisible(showPlanets);
+    space.setSelectedPath(selectedPath);
     space.focusObserver(4);
     mode = "space";
     space.start();
@@ -334,6 +338,14 @@
         ...(Number.isFinite(view[1]) && { altitude: view[1] }),
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
+      // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
+      if (params.get("space") === "1") {
+        await toggleSpace();
+        const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "")
+          .split(",")
+          .map(Number);
+        if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
+      }
       clock = setInterval(() => {
         if (live) goLive();
       }, 30_000);
@@ -387,18 +399,27 @@
     if (!showPlanets && selection?.kind === "planet") selection = null;
   });
   // Paths: ±6 months, recomputed only when the date leaves a 10-day window (the cache returns
-  // the same object otherwise, so this effect does not re-upload). Hidden on the 26 000-year scale.
+  // the same objects otherwise, so these effects do not re-upload). Hidden on the 26 000-year
+  // scale. The selected planet's path is shown with dated monthly marks, in both views.
   const pathCache = new PlanetPathCache();
-  const paths = $derived(
-    showPaths && showPlanets && range !== "26ky" ? pathCache.get(date, place) : null,
+  const pathsAllowed = $derived(showPlanets && range !== "26ky");
+  const selectedPath = $derived(
+    selectedPlanet && pathsAllowed ? pathCache.path(selectedPlanet, date, place) : null,
   );
   $effect(() => {
     if (status !== "ready") return;
-    map?.setPaths(paths);
+    map?.setSelectedPath(selectedPath);
   });
   $effect(() => {
-    map?.setPathsVisible(showPaths && showPlanets);
-    writeSetting("asteria.planetPaths", showPaths);
+    space?.setSelectedPath(selectedPath);
+  });
+  const allPaths = $derived(showAllPaths && pathsAllowed ? pathCache.get(date, place) : null);
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setPaths(allPaths);
+  });
+  $effect(() => {
+    map?.setPathsVisible(showAllPaths && showPlanets);
   });
 
   // Sun and Moon follow the displayed date and place.
@@ -669,14 +690,7 @@ DIST {distance
         aria-label={$_("map.planets")}
         title={$_("map.planets")}><Icon name="planets" /></button
       >
-      <button
-        aria-pressed={showPaths}
-        onclick={() => (showPaths = !showPaths)}
-        class="icon"
-        aria-label={$_("map.paths")}
-        title={$_("map.paths")}
-        disabled={!showPlanets}><Icon name="paths" /></button
-      >
+
       <button
         aria-pressed={night}
         onclick={() => (night = !night)}
@@ -907,13 +921,13 @@ DIST {distance
     flex-wrap: nowrap;
   }
   .row button {
-    padding: 0 9px;
+    padding: 0 7px;
     white-space: nowrap;
   }
-  /* Icon-only toggles: narrower so the whole row fits a 360 px wide phone */
+  /* Icon-only toggles: 44 × 44 px touch targets */
   .row button.icon {
-    padding: 0 8px;
-    min-width: 30px;
+    padding: 0;
+    min-width: 44px;
     justify-content: center;
   }
   .hint {
