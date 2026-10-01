@@ -16,7 +16,8 @@
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
  * partial objects keep working. setLinesVisible / setPlanetsVisible / setPathsVisible remain as
- * aliases. Graduation labels can be localised with the `formatGraduation` option.
+ * aliases. Graduation labels can be localised with the `formatGraduation` option, and kept out
+ * of the HUD with setGraduationExclusions(rects) (CSS px, overlay coordinates).
  */
 import * as THREE from "three";
 import {
@@ -47,7 +48,7 @@ import {
   starFrag,
   starVert,
 } from "./shaders";
-import { LabelLayout } from "./labels";
+import { LabelLayout, type Rect } from "./labels";
 import { fillPathBuffers } from "./paths";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
@@ -255,6 +256,8 @@ export class SkyMap {
   private date2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   /** Graduation texts, by kind and value (built once). */
   private readonly graduationTexts = new Map<string, string>();
+  /** Screen areas (CSS px) covered by the HUD, where graduations are not written. */
+  private graduationExclusions: readonly Rect[] = [];
   /** View matrix of the frame being labelled. */
   private labelView: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   /** The selected planet's path, with dated monthly marks. */
@@ -604,6 +607,15 @@ export class SkyMap {
   }
 
   /** Switches layers on or off; keys left out keep their state. */
+  /**
+   * Screen rectangles (CSS px, overlay coordinates) covered by the interface: grid and ecliptic
+   * graduations are not written there. Other labels are unaffected (they are placed before).
+   */
+  setGraduationExclusions(rects: readonly Rect[]): void {
+    this.graduationExclusions = rects.map((r) => ({ ...r }));
+    this.dirty = true;
+  }
+
   setLayers(partial: Partial<SkyLayers>): void {
     for (const key of Object.keys(partial) as (keyof SkyLayers)[]) {
       const value = partial[key];
@@ -923,6 +935,7 @@ export class SkyMap {
     // 7. Graduations of the grids and of the ecliptic (lightest, last)
     if (this.layers.equatorialGrid || this.layers.azimuthalGrid || this.layers.ecliptic) {
       this.setLabelFont("400 9px", "0.06em", 0.55);
+      layout.reserve(this.graduationExclusions);
       this.labelView = view;
       if (this.layers.equatorialGrid)
         this.drawGridGraduations(layout, multiplyMat3(view, this.date2hor), "ra", "dec");
@@ -993,16 +1006,19 @@ export class SkyMap {
     const w = this.measure(text);
     const h = 10;
     const [x, y] = p;
+    const { clientWidth: width, clientHeight: height } = this.options.canvas;
+    const candidates = below
+      ? [
+          { x: x + 4, y: y + 3, w, h },
+          { x: x - 4 - w, y: y + 3, w, h },
+        ]
+      : [
+          { x: x + 3, y: y - h - 1, w, h },
+          { x: x + 3, y: y + 1, w, h },
+        ];
+    // Whole labels only: a clipped "Az 135°" would read "135°", the ambiguity prefixes remove.
     const r = layout.place(
-      below
-        ? [
-            { x: x + 4, y: y + 3, w, h },
-            { x: x - 4 - w, y: y + 3, w, h },
-          ]
-        : [
-            { x: x + 3, y: y - h - 1, w, h },
-            { x: x + 3, y: y + 1, w, h },
-          ],
+      candidates.filter((c) => c.x >= 0 && c.y >= 0 && c.x + w <= width && c.y + h <= height),
     );
     if (r) this.ctx.fillText(text, r.x, r.y + h / 2);
   }

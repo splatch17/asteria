@@ -21,6 +21,11 @@ export function overlaps(a: Rect, b: Rect): boolean {
 export class LabelLayout {
   private readonly placed: Rect[] = [];
 
+  /** Marks areas as occupied (e.g. HUD panels): later labels avoid them. */
+  reserve(rects: readonly Rect[]): void {
+    this.placed.push(...rects);
+  }
+
   /** Places the first candidate that collides with nothing already placed; null if none fits. */
   place(candidates: Rect[]): Rect | null {
     for (const c of candidates) {
