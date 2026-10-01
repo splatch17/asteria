@@ -77,5 +77,19 @@
   "space.toggleToSky": "Revenir au ciel",
   "space.here": "Vous êtes ici",
   "space.pole": "Pôle céleste",
-  "space.loading": "Chargement de la Terre…"
+  "space.loading": "Chargement de la Terre…",
+  "planet.Mercury": "Mercure",
+  "planet.Venus": "Vénus",
+  "planet.Mars": "Mars",
+  "planet.Jupiter": "Jupiter",
+  "planet.Saturn": "Saturne",
+  "planet.Uranus": "Uranus",
+  "planet.Neptune": "Neptune",
+  "planet.kind": "Planète du Système solaire",
+  "planet.magnitude": "Magnitude",
+  "planet.distance": "{au, number} ua",
+  "planet.lightTime": "{min, number} min-lumière",
+  "planet.lightTimeHours": "{h, number} h {min, number} min-lumière",
+  "map.planets": "Planètes",
+  "map.paths": "Trajectoires des planètes (± 6 mois)"
 }
