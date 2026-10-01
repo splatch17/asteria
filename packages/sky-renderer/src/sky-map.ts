@@ -25,6 +25,7 @@ import {
   starVert,
 } from "./shaders";
 import { LabelLayout } from "./labels";
+import { fillPathBuffers } from "./paths";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
 export interface CatalogStar {
@@ -63,10 +64,13 @@ export interface SkyPlanet {
   magnitude: number;
 }
 
-/** Apparent path of a planet, sampled regularly (a mark is drawn at each new month). */
+/**
+ * Apparent path of a planet, sampled regularly. Points flagged `mark` (the caller puts one at the
+ * start of each month) are drawn larger and, on the selected planet's path, dated.
+ */
 export interface SkyPath {
   name: Planet;
-  points: { date: Date; ra: number; dec: number }[];
+  points: { date: Date; ra: number; dec: number; mark?: boolean }[];
 }
 
 export type SkySelection =
@@ -171,9 +175,12 @@ export class SkyMap {
   /** Current planets, in PLANETS order (direction and magnitude), null when unset. */
   private planets: { name: Planet; dir: Vec3; magnitude: number }[] | null = null;
   private showPlanets = true;
+  /** All planets' paths (the "all paths" layer, undated, off by default). */
   private readonly pathPoints: THREE.Points;
+  private showPaths = false;
+  /** The selected planet's path, with dated monthly marks. */
+  private readonly selectedPathPoints: THREE.Points;
   private pathMarks: { dir: Vec3; text: string; width: number }[] = [];
-  private showPaths = true;
   /** 0 = dark night … 1 = full daylight, from the Sun's altitude. */
   private daylight = 0;
   private sunAltitude = -90;
@@ -282,17 +289,23 @@ export class SkyMap {
     this.planetPoints.frustumCulled = false;
     this.planetPoints.visible = false;
 
-    // Apparent paths (dotted; buffers sized by setPaths)
-    this.pathPoints = new THREE.Points(
-      new THREE.BufferGeometry(),
-      this.material(pathVert, pathFrag, false),
-    );
-    this.pathPoints.frustumCulled = false;
-    this.pathPoints.visible = false;
+    // Apparent paths (dotted; buffers sized by setPaths / setSelectedPath)
+    const pathLayer = () => {
+      const points = new THREE.Points(
+        new THREE.BufferGeometry(),
+        this.material(pathVert, pathFrag, false),
+      );
+      points.frustumCulled = false;
+      points.visible = false;
+      return points;
+    };
+    this.pathPoints = pathLayer();
+    this.selectedPathPoints = pathLayer();
 
     this.scene.add(
       this.lineMesh,
       this.pathPoints,
+      this.selectedPathPoints,
       starPoints,
       this.planetPoints,
       this.bodyPoints,
@@ -426,50 +439,40 @@ export class SkyMap {
     this.dirty = true;
   }
 
-  /** Apparent paths of the planets; a mark (and a dated label) at each new month. */
+  /**
+   * Apparent paths of all the planets (the "all paths" layer, off by default: see
+   * setPathsVisible). Marks are drawn but not dated: dates belong to the selected path.
+   * Call it only when the paths change (the caller's cache returns the same object meanwhile).
+   */
   setPaths(paths: SkyPath[] | null): void {
-    this.pathMarks = [];
-    const total = paths?.reduce((n, p) => n + p.points.length, 0) ?? 0;
-    const geo = this.pathPoints.geometry;
-    let dirs = geo.getAttribute("aDir") as THREE.BufferAttribute | undefined;
-    let marks = geo.getAttribute("aMark") as THREE.BufferAttribute | undefined;
-    if (!dirs || !marks || dirs.count < total) {
-      // Headroom so that sliding windows keep reusing the same buffers.
-      const capacity = Math.max(1024, Math.ceil(total * 1.25));
-      dirs = new THREE.Float32BufferAttribute(new Float32Array(capacity * 3), 3);
-      marks = new THREE.Float32BufferAttribute(new Float32Array(capacity), 1);
-      geo.setAttribute("position", dirs);
-      geo.setAttribute("aDir", dirs);
-      geo.setAttribute("aMark", marks);
-    }
-    let k = 0;
-    for (const path of paths ?? []) {
-      let month = -1;
-      for (const pt of path.points) {
-        const d = unitVector(pt.ra, pt.dec);
-        const m = pt.date.getMonth();
-        const mark = month >= 0 && m !== month;
-        month = m;
-        dirs.setXYZ(k, d[0], d[1], d[2]);
-        marks.setX(k, mark ? 1 : 0);
-        if (mark && this.options.formatPathMark)
-          this.pathMarks.push({ dir: d, text: this.options.formatPathMark(pt.date), width: -1 });
-        k++;
-      }
-    }
-    dirs.needsUpdate = true;
-    marks.needsUpdate = true;
-    geo.setDrawRange(0, total);
+    const total = fillPathBuffers(this.pathPoints, paths ?? []);
     this.pathPoints.visible = this.showPaths && total > 0;
+    this.dirty = true;
+  }
+
+  /** Path of the selected planet, with a dated label at each mark (null: nothing selected). */
+  setSelectedPath(path: SkyPath | null): void {
+    this.pathMarks = [];
+    const total = fillPathBuffers(this.selectedPathPoints, path ? [path] : []);
+    const format = this.options.formatPathMark;
+    if (path && format) {
+      for (const pt of path.points)
+        if (pt.mark)
+          this.pathMarks.push({ dir: unitVector(pt.ra, pt.dec), text: format(pt.date), width: -1 });
+    }
+    this.selectedPathPoints.visible = this.showPlanets && total > 0;
     this.dirty = true;
   }
 
   setPlanetsVisible(visible: boolean): void {
     this.showPlanets = visible;
     this.planetPoints.visible = visible && !!this.planets;
+    this.selectedPathPoints.visible =
+      visible && this.selectedPathPoints.geometry.drawRange.count > 0;
     this.dirty = true;
   }
 
+  /** The "all paths" layer (every planet's path, undated); the selected path is independent. */
   setPathsVisible(visible: boolean): void {
     this.showPaths = visible;
     this.pathPoints.visible = visible && this.pathPoints.geometry.drawRange.count > 0;
@@ -733,8 +736,8 @@ export class SkyMap {
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
       }
     }
-    // 6. Dates of the monthly marks on the planets' paths (lowest priority)
-    if (this.showPaths && this.pathMarks.length) {
+    // 6. Dates of the monthly marks on the selected planet's path (lowest priority)
+    if (this.selectedPathPoints.visible && this.pathMarks.length) {
       this.setLabelFont("400 9px", "0.06em", 0.6);
       const h = 10;
       for (const mark of this.pathMarks) {

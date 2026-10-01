@@ -4,23 +4,25 @@ import {
   greenwichMeanSiderealTime,
   precessionMatrix,
   unitVector,
-  type Mat3,
   type Observer,
   type Planet,
   type Vec3,
 } from "@asteria/astro-core";
-import { bodyFrag, planetFrag } from "./shaders";
+import { bodyFrag, pathFrag, planetFrag } from "./shaders";
+import { LabelLayout } from "./labels";
+import { fillPathBuffers } from "./paths";
 import {
   globeFrag,
   globeVert,
   skyBodyVert,
   skyLineFrag,
   skyLineVert,
+  skyPathVert,
   skyPlanetVert,
   skyStarFrag,
   skyStarVert,
 } from "./space-shaders";
-import type { CatalogStar, SkyBodies, SkyPlanet, SkyTheme } from "./sky-map";
+import type { CatalogStar, SkyBodies, SkyPath, SkyPlanet, SkySelection, SkyTheme } from "./sky-map";
 
 export interface EarthAssets {
   relief: HTMLImageElement | ImageBitmap;
@@ -39,14 +41,16 @@ export interface SpaceViewOptions {
   labels: { here: string; sun: string; moon: string; pole: string };
   /** Localised planet names, drawn as labels. */
   planetNames?: Record<Planet, string>;
+  /** Formats the date of a monthly mark on the selected planet's path (localised by the caller). */
+  formatPathMark?: (date: Date) => string;
+  /** Tap on the Sun, the Moon or a planet (null: tap on nothing). Stars are not pickable here. */
+  onSelect?: (selection: SkySelection | null) => void;
 }
 
 const DEG = Math.PI / 180;
 const OBLIQUITY = 23.4392911 * DEG;
 const DIST_MIN = 1.6;
 const DIST_MAX = 40;
-
-const toMatrix3 = (m: Mat3) => new THREE.Matrix3().set(...m);
 
 /** Earth-fixed unit vector for a geographic position. */
 function geo(lonDeg: number, latDeg: number, r = 1): THREE.Vector3 {
@@ -80,11 +84,17 @@ export class SpaceView {
   /** J2000 directions of the planets (PLANETS order), null when unset or hidden. */
   private planets: (Vec3 | null)[] | null = null;
   private showPlanets = true;
+  /** The selected planet's path (J2000 directions, precessed by the shader). */
+  private readonly pathPoints: THREE.Points;
+  /** Dated marks of that path: J2000 direction, world direction (follows the date), label. */
+  private pathMarks: { j2000: THREE.Vector3; world: THREE.Vector3; text: string }[] = [];
+  private readonly precession = new THREE.Matrix3();
   private dirty = true;
   private running = false;
   private raf = 0;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private velocity = { lon: 0, lat: 0 };
+  private moved = 0;
   private readonly resizeObserver: ResizeObserver;
 
   constructor(private readonly options: SpaceViewOptions) {
@@ -189,7 +199,15 @@ export class SpaceView {
     );
     this.planetPoints.visible = false;
 
+    // Selected planet's path (buffers sized by setSelectedPath)
+    this.pathPoints = new THREE.Points(
+      new THREE.BufferGeometry(),
+      this.material(skyPathVert, pathFrag, false),
+    );
+    this.pathPoints.visible = false;
+
     for (const o of [
+      this.pathPoints,
       starPoints,
       constellationLines,
       equator,
@@ -244,6 +262,7 @@ export class SpaceView {
       constellationLines,
       equator,
       ecliptic,
+      this.pathPoints,
       this.planetPoints,
       this.bodyPoints,
     );
@@ -302,6 +321,22 @@ export class SpaceView {
     this.update();
   }
 
+  /** Path of the selected planet, with dated monthly marks (null: nothing selected). */
+  setSelectedPath(path: SkyPath | null): void {
+    fillPathBuffers(this.pathPoints, path ? [path] : []);
+    this.pathMarks = [];
+    const format = this.options.formatPathMark;
+    if (path && format) {
+      for (const pt of path.points) {
+        if (!pt.mark) continue;
+        const j2000 = new THREE.Vector3(...unitVector(pt.ra, pt.dec));
+        const world = j2000.clone().applyMatrix3(this.precession);
+        this.pathMarks.push({ j2000, world, text: format(pt.date) });
+      }
+    }
+    this.update();
+  }
+
   setTheme(theme: SkyTheme): void {
     this.options.theme = theme;
     this.uniforms.uInk.value.set(theme.ink);
@@ -312,6 +347,18 @@ export class SpaceView {
       const m = (o as THREE.LineSegments).material as THREE.LineBasicMaterial | undefined;
       if (m?.userData?.ink) m.color.set(theme.ink);
     });
+    this.dirty = true;
+  }
+
+  /**
+   * Places the camera: longitude/latitude in the world (equator of date) frame, in degrees, and
+   * distance in Earth radii. The camera always looks at the Earth's centre.
+   */
+  setOrbit(orbit: Partial<{ lon: number; lat: number; dist: number }>): void {
+    Object.assign(this.orbit, orbit);
+    this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat));
+    this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.orbit.dist));
+    this.velocity = { lon: 0, lat: 0 };
     this.dirty = true;
   }
 
@@ -420,10 +467,11 @@ export class SpaceView {
   private update(): void {
     const gst = greenwichMeanSiderealTime(this.date) * DEG;
     this.earth.rotation.set(0, 0, gst);
-    this.uniforms.uPrec.value = toMatrix3(precessionMatrix(this.date));
+    const prec = this.precession.set(...precessionMatrix(this.date));
+    this.uniforms.uPrec.value.copy(prec);
+    for (const m of this.pathMarks) m.world.copy(m.j2000).applyMatrix3(prec);
     if (this.bodies) {
-      const prec = precessionMatrix(this.date);
-      const toWorld = (v: Vec3) => new THREE.Vector3(...v).applyMatrix3(toMatrix3(prec));
+      const toWorld = (v: Vec3) => new THREE.Vector3(...v).applyMatrix3(prec);
       const sun = toWorld(this.bodies.sun);
       const moon = toWorld(this.bodies.moon);
       const dirs = this.bodyPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
@@ -434,7 +482,6 @@ export class SpaceView {
       this.uniforms.uSunEarth.value.copy(sun).applyAxisAngle(new THREE.Vector3(0, 0, 1), -gst);
     }
     if (this.planets) {
-      const prec = toMatrix3(precessionMatrix(this.date));
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       const v = new THREE.Vector3();
       this.planets.forEach((d, i) => {
@@ -445,6 +492,7 @@ export class SpaceView {
       dirs.needsUpdate = true;
     }
     this.planetPoints.visible = this.showPlanets && !!this.planets;
+    this.pathPoints.visible = this.showPlanets && this.pathPoints.geometry.drawRange.count > 0;
     this.dirty = true;
   }
 
@@ -560,6 +608,58 @@ export class SpaceView {
         label(names[PLANETS[i]!], d.fromBufferAttribute(dirs, i), true, 12);
       });
     }
+    // Dated monthly marks of the selected planet's path, without overlaps.
+    if (this.pathPoints.visible && this.pathMarks.length) {
+      ctx.font = "400 9px 'JetBrains Mono', monospace";
+      ctx.letterSpacing = "0.06em";
+      ctx.globalAlpha = 0.65;
+      const layout = new LabelLayout();
+      const h = 10;
+      for (const { world, text } of this.pathMarks) {
+        if (this.hiddenByEarth(world, true)) continue;
+        const s = this.screenOf(world, true);
+        if (!s) continue;
+        const w = ctx.measureText(text).width;
+        const [x, y] = s;
+        const r = layout.place([
+          { x: x + 6, y: y - h, w, h },
+          { x: x - 6 - w, y: y - h, w, h },
+          { x: x + 6, y, w, h },
+          { x: x - 6 - w, y, w, h },
+        ]);
+        if (r) ctx.fillText(text, r.x, r.y + h / 2);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /** Sun, Moon or planet under a tap (CSS px), unless hidden behind the globe. */
+  private pick(x: number, y: number): SkySelection | null {
+    let best: SkySelection | null = null;
+    let bestDist = Infinity;
+    const consider = (dir: THREE.Vector3, radius: number, selection: SkySelection) => {
+      if (this.hiddenByEarth(dir, true)) return;
+      const s = this.screenOf(dir, true);
+      if (!s) return;
+      const d = Math.hypot(s[0] - x, s[1] - y);
+      if (d < radius && d < bestDist) [best, bestDist] = [selection, d];
+    };
+    if (this.bodies) {
+      const r = Math.max(22, this.uniforms.uBodySize.value / 2);
+      consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
+      consider(this.dirAt(1), r, { kind: "body", body: "Moon" });
+    }
+    if (this.showPlanets && this.planets) {
+      const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+      this.planets.forEach((p, i) => {
+        if (p)
+          consider(new THREE.Vector3().fromBufferAttribute(dirs, i), 22, {
+            kind: "planet",
+            planet: PLANETS[i]!,
+          });
+      });
+    }
+    return best;
   }
 
   private bindInput(canvas: HTMLCanvasElement): void {
@@ -573,6 +673,7 @@ export class SpaceView {
       canvas.setPointerCapture(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.velocity = { lon: 0, lat: 0 };
+      this.moved = 0;
       if (this.pointers.size === 2) pinch = distance();
     });
     canvas.addEventListener("pointermove", (e) => {
@@ -580,6 +681,7 @@ export class SpaceView {
       if (!prev) return;
       const [dx, dy] = [e.clientX - prev.x, e.clientY - prev.y];
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.moved += Math.abs(dx) + Math.abs(dy);
       if (this.pointers.size === 1) {
         // Dragging turns the globe under the finger (the camera orbits the other way).
         const k = (60 / canvas.clientHeight) * (this.orbit.dist / 4);
@@ -594,7 +696,11 @@ export class SpaceView {
       this.dirty = true;
     });
     const end = (e: PointerEvent) => {
-      this.pointers.delete(e.pointerId);
+      if (!this.pointers.delete(e.pointerId)) return;
+      if (this.pointers.size === 0 && this.moved < 6 && e.type === "pointerup") {
+        const rect = canvas.getBoundingClientRect();
+        this.options.onSelect?.(this.pick(e.clientX - rect.left, e.clientY - rect.top));
+      }
       pinch = 0;
     };
     canvas.addEventListener("pointerup", end);

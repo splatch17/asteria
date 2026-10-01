@@ -89,6 +89,21 @@ export const skyPlanetVert = /* glsl */ `
   }
 `;
 
+/** Apparent path of a planet at infinity (J2000 directions, precessed): same fragment as the map. */
+export const skyPathVert = /* glsl */ `
+  ${atInfinity}
+  uniform mat3 uPrec;
+  uniform float uDpr;
+  attribute vec3 aDir;
+  attribute float aMark;
+  varying float vMark;
+  void main() {
+    vMark = aMark;
+    gl_Position = projectDirection(uPrec * aDir);
+    gl_PointSize = (aMark > 0.5 ? 5.0 : 2.2) * uDpr;
+  }
+`;
+
 /** Globe: positions are Earth-fixed unit vectors; modelMatrix applies the Earth's rotation. */
 export const globeVert = /* glsl */ `
   varying vec3 vEarth;
