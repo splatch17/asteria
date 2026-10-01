@@ -273,3 +273,41 @@ export const pathFrag = /* glsl */ `
     gl_FragColor = vec4(uInk, a * 0.75);
   }
 `;
+
+/**
+ * Reference lines (coordinate grids, ecliptic): engraved, 1-bit stippled wires.
+ * aDir is expressed in the layer's own frame; uFrame takes it to horizontal coordinates.
+ * aDash (degrees along the line) cuts dashes when uDash > 0.
+ */
+export const guideVert = /* glsl */ `
+  ${projection}
+  uniform mat3 uFrame;
+  attribute vec3 aDir;
+  attribute float aDash;
+  varying float vVisible;
+  varying float vDash;
+  void main() {
+    vec3 v = uView * (uFrame * aDir);
+    vVisible = v.z > -0.6 ? 1.0 : 0.0;
+    vDash = aDash;
+    gl_Position = projectView(v);
+  }
+`;
+
+export const guideFrag = /* glsl */ `
+  precision highp float;
+  uniform vec3 uInk;
+  uniform float uDpr;
+  uniform float uOpacity;
+  uniform float uDensity; // share of the line's pixels kept by the ordered dither
+  uniform float uDash;    // dash period in degrees (0: continuous)
+  varying float vVisible;
+  varying float vDash;
+  ${dither}
+  void main() {
+    if (vVisible < 0.999) discard;
+    if (uDash > 0.0 && fract(vDash / uDash) > 0.6) discard;
+    if (bayer4(gl_FragCoord.xy / uDpr) + 0.001 > uDensity) discard;
+    gl_FragColor = vec4(uInk, uOpacity);
+  }
+`;

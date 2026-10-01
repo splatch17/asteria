@@ -1,0 +1,18 @@
+/** Names of the line icons drawn by components/Icon.svelte. */
+export type IconName =
+  | "play"
+  | "pause"
+  | "now"
+  | "lines"
+  | "night"
+  | "range"
+  | "earth"
+  | "sky"
+  | "planets"
+  | "paths"
+  | "layers"
+  | "conNames"
+  | "starNames"
+  | "eqGrid"
+  | "azGrid"
+  | "ecliptic";

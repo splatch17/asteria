@@ -15,4 +15,13 @@ describe("LabelLayout", () => {
     expect(layout.place([a, below])).toEqual(below);
     expect(layout.place([a, below])).toBeNull();
   });
+
+  it("keeps labels out of reserved areas", () => {
+    const layout = new LabelLayout();
+    layout.reserve([{ x: 0, y: 0, w: 100, h: 40 }]);
+    const inside = { x: 10, y: 10, w: 20, h: 10 };
+    const outside = { x: 10, y: 60, w: 20, h: 10 };
+    expect(layout.place([inside])).toBeNull();
+    expect(layout.place([inside, outside])).toEqual(outside);
+  });
 });
