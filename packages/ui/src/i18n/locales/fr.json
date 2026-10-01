@@ -35,5 +35,6 @@
   "time.minusHour": "−1 h",
   "time.plusHour": "+1 h",
   "time.plusDay": "+1 j",
-  "star.constellation": "Constellation"
+  "star.constellation": "Constellation",
+  "night.brightness": "Luminosité"
 }
