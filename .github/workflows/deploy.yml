@@ -31,8 +31,11 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: packages/sky-data/raw
-          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py') }}
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py') }}
       - run: python packages/sky-data/build_stars.py
+        env:
+          PYTHONIOENCODING: utf-8
+      - run: python packages/sky-data/build_earth.py
         env:
           PYTHONIOENCODING: utf-8
 
