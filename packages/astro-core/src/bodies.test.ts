@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bodyPath, bodyPosition, moonPhase, subsolarPoint } from "./index";
+import { bodyPath, bodyPosition, constellationOf, moonPhase, subsolarPoint } from "./index";
 
 // Reference: JPL Horizons, observer Paris (2.3522°E, 48.8566°N, 35 m), 2026-10-01 00:00 UT.
 // Quantities 1 (astrometric RA/Dec J2000), 4 (airless azimuth/elevation), 10 (illuminated %).
@@ -66,5 +66,19 @@ describe("bodyPath", () => {
     const ras = path.map((p) => p.ra);
     const retro = ras.some((ra, i) => i > 0 && ra < ras[i - 1]!);
     expect(retro).toBe(true);
+  });
+});
+
+describe("constellationOf (IAU boundaries, Roman 1987)", () => {
+  // J2000 positions from SIMBAD.
+  it.each([
+    ["Betelgeuse", 88.792939, 7.407064, "Ori"],
+    ["Vega", 279.234735, 38.783689, "Lyr"],
+    ["Polaris", 37.954561, 89.264109, "UMi"],
+    ["Sirius", 101.287155, -16.716116, "CMa"],
+    ["Antares", 247.351915, -26.432003, "Sco"],
+    ["Alpheratz", 2.096916, 29.090431, "And"],
+  ])("%s → %s", (_name, ra, dec, con) => {
+    expect(constellationOf(ra, dec)).toBe(con);
   });
 });

@@ -72,6 +72,38 @@ export const skyBodyVert = /* glsl */ `
   }
 `;
 
+/** Planets at infinity (directions precessed on the CPU): same fragment shader as the map. */
+export const skyPlanetVert = /* glsl */ `
+  ${atInfinity}
+  uniform float uDpr;
+  attribute vec3 aDir;
+  attribute float aMag;
+  attribute float aKind;
+  varying float vKind;
+  void main() {
+    vKind = aKind;
+    if (aMag > 50.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    gl_Position = projectDirection(aDir);
+    float saturn = 1.0 - step(0.5, abs(aKind - 4.0));
+    gl_PointSize = clamp(9.0 - aMag * 1.3, 6.0, 16.0) * mix(1.0, 1.6, saturn) * uDpr;
+  }
+`;
+
+/** Apparent path of a planet at infinity (J2000 directions, precessed): same fragment as the map. */
+export const skyPathVert = /* glsl */ `
+  ${atInfinity}
+  uniform mat3 uPrec;
+  uniform float uDpr;
+  attribute vec3 aDir;
+  attribute float aMark;
+  varying float vMark;
+  void main() {
+    vMark = aMark;
+    gl_Position = projectDirection(uPrec * aDir);
+    gl_PointSize = (aMark > 0.5 ? 5.0 : 2.2) * uDpr;
+  }
+`;
+
 /** Globe: positions are Earth-fixed unit vectors; modelMatrix applies the Earth's rotation. */
 export const globeVert = /* glsl */ `
   varying vec3 vEarth;

@@ -193,3 +193,83 @@ export const bodyFrag = /* glsl */ `
     gl_FragColor = vec4(uInk, a);
   }
 `;
+
+/**
+ * Planets: engraved discs sized by magnitude; aKind = index in PLANETS (4 = Saturn, ringed).
+ * uPlanetLimit = planetLimitingMagnitude(): with the Sun high, only Venus remains.
+ */
+export const planetVert = /* glsl */ `
+  ${projection}
+  uniform float uDpr;
+  uniform float uPlanetLimit;
+  attribute vec3 aDir;
+  attribute float aMag;
+  attribute float aKind;
+  varying float vKind;
+  void main() {
+    vec3 h = uEq2Hor * aDir;
+    vec3 v = uView * h;
+    vKind = aKind;
+    if (v.z < -0.6 || h.z < -0.01 || aMag > uPlanetLimit) {
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      gl_PointSize = 0.0;
+      return;
+    }
+    gl_Position = projectView(v);
+    float saturn = 1.0 - step(0.5, abs(aKind - 4.0));
+    gl_PointSize = clamp(11.0 - aMag * 1.6, 7.0, 20.0) * mix(1.0, 1.6, saturn) * uDpr;
+  }
+`;
+
+export const planetFrag = /* glsl */ `
+  precision highp float;
+  uniform vec3 uInk;
+  uniform float uDpr;
+  varying float vKind;
+  ${dither}
+  void main() {
+    vec2 p = gl_PointCoord * 2.0 - 1.0;
+    float saturn = step(3.5, vKind) * step(vKind, 4.5);
+    float scale = mix(1.0, 1.6, saturn);
+    float r = length(p) * scale;
+    // stippled disc with a crisp outline
+    float disc = (1.0 - step(0.62, r)) * step(bayer8(gl_FragCoord.xy / uDpr) + 0.001, 0.75);
+    float outline = smoothstep(0.66, 0.7, r) * (1.0 - smoothstep(0.76, 0.8, r));
+    // Saturn's ring: thin tilted ellipse around the disc
+    vec2 q = vec2(p.x, p.y * 2.6) * scale;
+    float rr = length(q);
+    float ring = saturn * smoothstep(0.95, 1.0, rr) * (1.0 - smoothstep(1.06, 1.12, rr)) * step(0.0, abs(p.y) * 6.0 - (1.0 - step(0.62, r)) * 6.0);
+    float a = max(max(disc, outline), ring);
+    if (a < 0.5) discard;
+    gl_FragColor = vec4(uInk, 1.0);
+  }
+`;
+
+/** Apparent paths: small dots; monthly marks larger (aMark = 1). */
+export const pathVert = /* glsl */ `
+  ${projection}
+  uniform float uDpr;
+  attribute vec3 aDir;
+  attribute float aMark;
+  varying float vMark;
+  void main() {
+    vec3 h = uEq2Hor * aDir;
+    vec3 v = uView * h;
+    vMark = aMark;
+    if (v.z < -0.6) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    gl_Position = projectView(v);
+    gl_PointSize = (aMark > 0.5 ? 5.0 : 2.4) * uDpr;
+  }
+`;
+
+export const pathFrag = /* glsl */ `
+  precision highp float;
+  uniform vec3 uInk;
+  varying float vMark;
+  void main() {
+    float r = length(gl_PointCoord * 2.0 - 1.0);
+    float a = vMark > 0.5 ? (1.0 - smoothstep(0.8, 1.0, r)) * (smoothstep(0.35, 0.5, r) + step(r, 0.2)) : 1.0 - smoothstep(0.6, 1.0, r);
+    if (a < 0.1) discard;
+    gl_FragColor = vec4(uInk, a * 0.75);
+  }
+`;

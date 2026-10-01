@@ -8,12 +8,19 @@
     type CatalogStar,
     type SkySelection,
   } from "@asteria/sky-renderer";
-  import { bodyPosition, moonPhase } from "@asteria/astro-core";
+  import {
+    PLANETS,
+    bodyPosition,
+    constellationOf,
+    moonPhase,
+    type Planet,
+  } from "@asteria/astro-core";
   import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
   import { decodeCoastlines, decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
+  import { PlanetPathCache } from "./lib/planet-paths";
   import { devicePointing, pointingToView, smooth } from "./lib/orientation";
   import Icon from "./components/Icon.svelte";
   import TimeScrubber from "./components/TimeScrubber.svelte";
@@ -46,9 +53,13 @@
   let night = $state(readSetting("asteria.night", false, isBool));
   let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
   let lines = $state(true);
+  let showPlanets = $state(readSetting("asteria.planets", true, isBool));
+  // Every planet's path at once (undated): a switch of the future layers panel (#54), off.
+  let showAllPaths = $state(false);
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
+  const selectedPlanet = $derived(selection?.kind === "planet" ? selection.planet : null);
   let date = $state(new Date());
   let live = $state(true);
   let range = $state<TimeRange>("48h");
@@ -64,6 +75,11 @@
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
   const names = constellationNames("fr");
+  // One formatter for the ~80 path marks (toLocaleDateString builds a new one on each call).
+  const pathMarkFormat = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+  const planetName = (p: Planet) => $_(`planet.${p}`);
+  const planetNames = () =>
+    Object.fromEntries(PLANETS.map((p) => [p, planetName(p)])) as Record<Planet, string>;
 
   const PLACE_KEY = "asteria.place";
 
@@ -217,6 +233,9 @@
             moon: $_("body.Moon"),
             pole: $_("space.pole"),
           },
+          planetNames: planetNames(),
+          formatPathMark: (d) => pathMarkFormat.format(d),
+          onSelect: (s) => (selection = s),
         });
       } catch (e) {
         console.error(e);
@@ -232,6 +251,9 @@
       sun: bodies.sun,
       moon: { ...bodies.moon, illumination: bodies.phase.illumination },
     });
+    space.setPlanets(planets);
+    space.setPlanetsVisible(showPlanets);
+    space.setSelectedPath(selectedPath);
     space.focusObserver(4);
     mode = "space";
     space.start();
@@ -288,6 +310,8 @@
         cardinals: $_("map.cardinals").split(","),
         theme: THEMES.day,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
+        planetNames: planetNames(),
+        formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: (s) => (selection = s),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
@@ -296,7 +320,9 @@
         describeTarget: (t) =>
           t.kind === "body"
             ? $_(`body.${t.body}` as `body.${BodyName}`)
-            : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
+            : t.kind === "planet"
+              ? planetName(t.planet)
+              : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
       });
       map.setObserver(place);
       status = "ready";
@@ -312,6 +338,14 @@
         ...(Number.isFinite(view[1]) && { altitude: view[1] }),
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
+      // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
+      if (params.get("space") === "1") {
+        await toggleSpace();
+        const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "")
+          .split(",")
+          .map(Number);
+        if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
+      }
       clock = setInterval(() => {
         if (live) goLive();
       }, 30_000);
@@ -347,6 +381,45 @@
 
   $effect(() => {
     map?.setLinesVisible(lines);
+  });
+
+  // Planets follow the displayed date (≈ 0.3 ms for the seven on a desktop CPU).
+  const planets = $derived(PLANETS.map((name) => ({ name, ...bodyPosition(name, date, place) })));
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setPlanets(planets);
+  });
+  $effect(() => {
+    space?.setPlanets(planets);
+  });
+  $effect(() => {
+    map?.setPlanetsVisible(showPlanets);
+    space?.setPlanetsVisible(showPlanets);
+    writeSetting("asteria.planets", showPlanets);
+    if (!showPlanets && selection?.kind === "planet") selection = null;
+  });
+  // Paths: ±6 months, recomputed only when the date leaves a 10-day window (the cache returns
+  // the same objects otherwise, so these effects do not re-upload). Hidden on the 26 000-year
+  // scale. The selected planet's path is shown with dated monthly marks, in both views.
+  const pathCache = new PlanetPathCache();
+  const pathsAllowed = $derived(showPlanets && range !== "26ky");
+  const selectedPath = $derived(
+    selectedPlanet && pathsAllowed ? pathCache.path(selectedPlanet, date, place) : null,
+  );
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setSelectedPath(selectedPath);
+  });
+  $effect(() => {
+    space?.setSelectedPath(selectedPath);
+  });
+  const allPaths = $derived(showAllPaths && pathsAllowed ? pathCache.get(date, place) : null);
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setPaths(allPaths);
+  });
+  $effect(() => {
+    map?.setPathsVisible(showAllPaths && showPlanets);
   });
 
   // Sun and Moon follow the displayed date and place.
@@ -389,6 +462,35 @@
               })
             : $_("body.distance", { values: { km: Math.round(b.distanceKm) } })
         }`,
+      ].join("\n"),
+    };
+  });
+
+  const LIGHT_KM_PER_MIN = 299_792.458 * 60;
+  const planetInfo = $derived.by(() => {
+    if (!selectedPlanet) return null;
+    const p = planets.find((q) => q.name === selectedPlanet)!;
+    const con = constellationOf(p.ra, p.dec);
+    const minutes = Math.round(p.distanceKm / LIGHT_KM_PER_MIN);
+    const light =
+      minutes < 60
+        ? $_("planet.lightTime", { values: { min: minutes } })
+        : $_("planet.lightTimeHours", {
+            values: { h: Math.floor(minutes / 60), min: minutes % 60 },
+          });
+    return {
+      name: planetName(p.name),
+      con: { name: names[con], latin: CONSTELLATION_LATIN[con] },
+      lines: [
+        `${$_("planet.magnitude").padEnd(9)} ${p.magnitude.toFixed(1)}`,
+        `${$_("body.altitude").padEnd(9)} ${p.altitude.toFixed(1)}°`,
+        `${$_("body.azimuth").padEnd(9)} ${p.azimuth.toFixed(1)}°`,
+        `RA        ${formatRa(p.ra)}`,
+        `DEC       ${formatDec(p.dec)}`,
+        `DIST      ${$_("planet.distance", {
+          values: { au: Math.round((p.distanceKm / KM_PER_AU) * 100) / 100 },
+        })}`,
+        `          ${light}`,
       ].join("\n"),
     };
   });
@@ -545,6 +647,17 @@ DIST {distance
   </aside>
 {/if}
 
+{#if planetInfo}
+  <aside class="hud panel">
+    <p class="meta">{$_("planet.kind")}</p>
+    <p class="name">{planetInfo.name}</p>
+    <p class="con">{planetInfo.con.name} · <i>{planetInfo.con.latin}</i></p>
+    <pre class="data">{planetInfo.lines}</pre>
+    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
+    >
+  </aside>
+{/if}
+
 <nav class="hud bottom">
   {#if hint}<p class="hint">{hint}</p>{/if}
   <TimeScrubber
@@ -564,11 +677,25 @@ DIST {distance
       <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
     </div>
     <div class="group frame">
-      <button aria-pressed={lines} onclick={() => (lines = !lines)} aria-label={$_("map.lines")}
-        ><Icon name="lines" /></button
+      <button
+        aria-pressed={lines}
+        onclick={() => (lines = !lines)}
+        class="icon"
+        aria-label={$_("map.lines")}><Icon name="lines" /></button
       >
-      <button aria-pressed={night} onclick={() => (night = !night)} aria-label={$_("night.toggle")}
-        ><Icon name="night" /></button
+      <button
+        aria-pressed={showPlanets}
+        onclick={() => (showPlanets = !showPlanets)}
+        class="icon"
+        aria-label={$_("map.planets")}
+        title={$_("map.planets")}><Icon name="planets" /></button
+      >
+
+      <button
+        aria-pressed={night}
+        onclick={() => (night = !night)}
+        class="icon"
+        aria-label={$_("night.toggle")}><Icon name="night" /></button
       >
     </div>
   </div>
@@ -784,7 +911,8 @@ DIST {distance
   }
   .row {
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px;
     width: 100%;
     max-width: 420px;
     justify-content: space-between;
@@ -793,8 +921,14 @@ DIST {distance
     flex-wrap: nowrap;
   }
   .row button {
-    padding: 0 12px;
+    padding: 0 7px;
     white-space: nowrap;
+  }
+  /* Icon-only toggles: 44 × 44 px touch targets */
+  .row button.icon {
+    padding: 0;
+    min-width: 44px;
+    justify-content: center;
   }
   .hint {
     max-width: 420px;
@@ -845,6 +979,10 @@ DIST {distance
     border: 0;
     border-radius: 0;
     background: var(--ast-fg);
+  }
+  .group button:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
   .group button:last-child {
     border-right: 0;
