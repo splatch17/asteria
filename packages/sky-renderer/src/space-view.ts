@@ -52,6 +52,8 @@ const OBLIQUITY = 23.4392911 * DEG;
 const DIST_MIN = 1.6;
 const DIST_MAX = 40;
 
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+
 /** Earth-fixed unit vector for a geographic position. */
 function geo(lonDeg: number, latDeg: number, r = 1): THREE.Vector3 {
   const [lon, lat] = [lonDeg * DEG, latDeg * DEG];
@@ -89,6 +91,9 @@ export class SpaceView {
   /** Dated marks of that path: J2000 direction, world direction (follows the date), label. */
   private pathMarks: { j2000: THREE.Vector3; world: THREE.Vector3; text: string }[] = [];
   private readonly precession = new THREE.Matrix3();
+  private readonly scratch = new THREE.Vector3();
+  /** Date-dependent state (rotation, precession, body directions) needs recomputing. */
+  private stale = true;
   private dirty = true;
   private running = false;
   private raf = 0;
@@ -283,7 +288,11 @@ export class SpaceView {
   }
 
   setObserver(observer: Observer): void {
+    const same =
+      observer.latitude === this.observer.latitude &&
+      observer.longitude === this.observer.longitude;
     this.observer = observer;
+    if (same) return;
     this.buildObserverMarker();
     this.update();
   }
@@ -441,6 +450,10 @@ export class SpaceView {
 
   /** "You are here": dot, local horizon disc and zenith line, in Earth-fixed coordinates. */
   private buildObserverMarker(): void {
+    for (const o of this.observerMarker.children as THREE.LineSegments[]) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
     this.observerMarker.clear();
     const { latitude, longitude } = this.observer;
     const up = geo(longitude, latitude);
@@ -464,26 +477,33 @@ export class SpaceView {
     this.setTheme(this.options.theme);
   }
 
+  /** Marks the date-dependent state stale; it is recomputed once, before the next frame. */
   private update(): void {
+    this.stale = true;
+    this.dirty = true;
+  }
+
+  private refresh(): void {
+    this.stale = false;
     const gst = greenwichMeanSiderealTime(this.date) * DEG;
     this.earth.rotation.set(0, 0, gst);
     const prec = this.precession.set(...precessionMatrix(this.date));
     this.uniforms.uPrec.value.copy(prec);
     for (const m of this.pathMarks) m.world.copy(m.j2000).applyMatrix3(prec);
+    const v = this.scratch;
     if (this.bodies) {
-      const toWorld = (v: Vec3) => new THREE.Vector3(...v).applyMatrix3(prec);
-      const sun = toWorld(this.bodies.sun);
-      const moon = toWorld(this.bodies.moon);
       const dirs = this.bodyPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
-      dirs.set([...sun.toArray(), ...moon.toArray()]);
+      v.set(...this.bodies.moon).applyMatrix3(prec);
+      dirs.setXYZ(1, v.x, v.y, v.z);
+      v.set(...this.bodies.sun).applyMatrix3(prec);
+      dirs.setXYZ(0, v.x, v.y, v.z);
       dirs.needsUpdate = true;
       this.bodyPoints.visible = true;
       // Sun in the Earth-fixed frame lights the globe (terminator, night lights).
-      this.uniforms.uSunEarth.value.copy(sun).applyAxisAngle(new THREE.Vector3(0, 0, 1), -gst);
+      this.uniforms.uSunEarth.value.copy(v).applyAxisAngle(Z_AXIS, -gst);
     }
     if (this.planets) {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
-      const v = new THREE.Vector3();
       this.planets.forEach((d, i) => {
         if (d) v.set(...d).applyMatrix3(prec);
         else v.set(0, 0, 1);
@@ -493,7 +513,6 @@ export class SpaceView {
     }
     this.planetPoints.visible = this.showPlanets && !!this.planets;
     this.pathPoints.visible = this.showPlanets && this.pathPoints.geometry.drawRange.count > 0;
-    this.dirty = true;
   }
 
   private resize(): void {
@@ -523,6 +542,7 @@ export class SpaceView {
       this.velocity.lat *= 0.9;
       this.dirty = true;
     }
+    if (this.stale) this.refresh();
     if (this.dirty) {
       this.dirty = false;
       this.render();

@@ -184,6 +184,10 @@ export class SkyMap {
   /** 0 = dark night … 1 = full daylight, from the Sun's altitude. */
   private daylight = 0;
   private sunAltitude = -90;
+  /** Current label font (see setLabelFont) and cached text widths per font. */
+  private fontKey = "";
+  private readonly textWidths = new Map<string, Map<string, number>>();
+  private widths = new Map<string, number>();
   private readonly starDirs: Vec3[];
   private readonly labels: { text: string; dir: Vec3 }[];
   private eq2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -327,6 +331,13 @@ export class SkyMap {
     });
 
     this.setTheme(options.theme);
+    // Widths measured before the web font finished loading are wrong: measure again.
+    document.fonts?.addEventListener("loadingdone", () => {
+      this.textWidths.clear();
+      this.fontKey = "";
+      for (const m of this.pathMarks) m.width = -1;
+      this.dirty = true;
+    });
     this.bindInput(canvas);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -543,6 +554,7 @@ export class SkyMap {
     overlay.width = w * dpr;
     overlay.height = h * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.fontKey = ""; // resizing the canvas resets its context state
     this.uniforms.uAspect.value = w / h;
     this.dirty = true;
   }
@@ -643,7 +655,7 @@ export class SkyMap {
         const a = (i * 45 * Math.PI) / 180;
         const p = this.toScreen(applyMat3(view, [Math.cos(a), Math.sin(a), 0]));
         if (!p) return;
-        const w = ctx.measureText(label).width;
+        const w = this.measure(label);
         const r = layout.place([{ x: p[0] - w / 2, y: p[1] + 16 - H / 2, w, h: H }]);
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
       });
@@ -664,7 +676,7 @@ export class SkyMap {
         const half = offset - 6;
         layout.place([{ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half }]);
         const label = this.options.bodyNames[body].toUpperCase();
-        const w = ctx.measureText(label).width;
+        const w = this.measure(label);
         const r = layout.place([
           { x: p[0] + offset, y: p[1] - H / 2, w, h: H },
           { x: p[0] - offset - w, y: p[1] - H / 2, w, h: H },
@@ -681,7 +693,7 @@ export class SkyMap {
         const pos = this.toScreen(applyMat3(m, p.dir));
         if (!pos) continue;
         const label = this.options.planetNames[p.name].toUpperCase();
-        const w = ctx.measureText(label).width;
+        const w = this.measure(label);
         const off = planetRadius(p) + 5;
         const [x, y] = pos;
         layout.place([{ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 }]);
@@ -709,7 +721,7 @@ export class SkyMap {
       if (!aboveHorizon(d)) return;
       const p = this.toScreen(applyMat3(m, d));
       if (!p) return;
-      const w = ctx.measureText(s.name).width;
+      const w = this.measure(s.name);
       const [x, y] = p;
       const r = layout.place([
         { x: x + 9, y: y - H / 2, w, h: H }, // right
@@ -728,7 +740,7 @@ export class SkyMap {
         const p = this.toScreen(applyMat3(m, dir));
         if (!p) continue;
         const label = text.toUpperCase();
-        const w = ctx.measureText(label).width;
+        const w = this.measure(label);
         const [x, y] = p;
         const r = layout.place(
           [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
@@ -795,11 +807,29 @@ export class SkyMap {
     return magnitude <= this.uniforms.uPlanetLimit.value;
   }
 
+  /**
+   * Sets the label font. Assigning ctx.font / letterSpacing re-parses the font even when unchanged,
+   * so the current one is remembered; text widths are cached per font (labels repeat every frame).
+   */
   private setLabelFont(weightSize: string, spacing: string, alpha: number): void {
-    this.ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
-    this.ctx.letterSpacing = spacing;
+    const key = `${weightSize}|${spacing}`;
+    if (key !== this.fontKey) {
+      this.fontKey = key;
+      this.ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
+      this.ctx.letterSpacing = spacing;
+      let widths = this.textWidths.get(key);
+      if (!widths) this.textWidths.set(key, (widths = new Map()));
+      this.widths = widths;
+    }
     this.ctx.textAlign = "left";
     this.ctx.globalAlpha = alpha;
+  }
+
+  /** Width of a label in the current label font (cached). */
+  private measure(text: string): number {
+    let w = this.widths.get(text);
+    if (w === undefined) this.widths.set(text, (w = this.ctx.measureText(text).width));
+    return w;
   }
 
   private pick(x: number, y: number): SkySelection | null {
