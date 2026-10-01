@@ -6,7 +6,9 @@
     SpaceView,
     type BodyName,
     type CatalogStar,
+    type SkyLayers,
     type SkySelection,
+    DEFAULT_SKY_LAYERS,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
@@ -52,10 +54,19 @@
   const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
   let night = $state(readSetting("asteria.night", false, isBool));
   let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
-  let lines = $state(true);
-  let showPlanets = $state(readSetting("asteria.planets", true, isBool));
-  // Every planet's path at once (undated): a switch of the future layers panel (#54), off.
-  let showAllPaths = $state(false);
+  // Map layers (renderer API: SkyMap.setLayers). The layers panel (#54) will edit this object;
+  // only `planets` is remembered for now.
+  let layers = $state<SkyLayers>({
+    ...DEFAULT_SKY_LAYERS,
+    planets: readSetting("asteria.planets", true, isBool),
+  });
+  const showPlanets = $derived(layers.planets);
+  const lines = $derived(layers.constellationLines);
+  const toggleLines = () => {
+    const on = !layers.constellationLines;
+    layers.constellationLines = on;
+    layers.constellationNames = on;
+  };
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
@@ -252,7 +263,10 @@
       moon: { ...bodies.moon, illumination: bodies.phase.illumination },
     });
     space.setPlanets(planets);
-    space.setPlanetsVisible(showPlanets);
+    space.setLayers({
+      constellationLines: layers.constellationLines,
+      planets: layers.planets,
+    });
     space.setSelectedPath(selectedPath);
     space.focusObserver(4);
     mode = "space";
@@ -338,6 +352,9 @@
         ...(Number.isFinite(view[1]) && { altitude: view[1] }),
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
+      // Layers switched on from the URL (captures): ?layers=equatorialGrid,ecliptic
+      for (const key of (params.get("layers") ?? "").split(","))
+        if (key in layers) layers[key as keyof SkyLayers] = true;
       // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
       if (params.get("space") === "1") {
         await toggleSpace();
@@ -380,7 +397,14 @@
   });
 
   $effect(() => {
-    map?.setLinesVisible(lines);
+    if (status !== "ready") return;
+    map?.setLayers({ ...layers });
+  });
+  $effect(() => {
+    space?.setLayers({
+      constellationLines: layers.constellationLines,
+      planets: layers.planets,
+    });
   });
 
   // Planets follow the displayed date (≈ 0.3 ms for the seven on a desktop CPU).
@@ -393,8 +417,6 @@
     space?.setPlanets(planets);
   });
   $effect(() => {
-    map?.setPlanetsVisible(showPlanets);
-    space?.setPlanetsVisible(showPlanets);
     writeSetting("asteria.planets", showPlanets);
     if (!showPlanets && selection?.kind === "planet") selection = null;
   });
@@ -413,13 +435,11 @@
   $effect(() => {
     space?.setSelectedPath(selectedPath);
   });
-  const allPaths = $derived(showAllPaths && pathsAllowed ? pathCache.get(date, place) : null);
+  // Every planet's path at once (undated): the `allPaths` layer, off by default.
+  const allPaths = $derived(layers.allPaths && pathsAllowed ? pathCache.get(date, place) : null);
   $effect(() => {
     if (status !== "ready") return;
     map?.setPaths(allPaths);
-  });
-  $effect(() => {
-    map?.setPathsVisible(showAllPaths && showPlanets);
   });
 
   // Sun and Moon follow the displayed date and place.
@@ -677,15 +697,12 @@ DIST {distance
       <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
     </div>
     <div class="group frame">
-      <button
-        aria-pressed={lines}
-        onclick={() => (lines = !lines)}
-        class="icon"
-        aria-label={$_("map.lines")}><Icon name="lines" /></button
+      <button aria-pressed={lines} onclick={toggleLines} class="icon" aria-label={$_("map.lines")}
+        ><Icon name="lines" /></button
       >
       <button
         aria-pressed={showPlanets}
-        onclick={() => (showPlanets = !showPlanets)}
+        onclick={() => (layers.planets = !layers.planets)}
         class="icon"
         aria-label={$_("map.planets")}
         title={$_("map.planets")}><Icon name="planets" /></button
