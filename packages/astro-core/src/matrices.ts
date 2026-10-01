@@ -38,12 +38,38 @@ export function multiplyMat3(a: Mat3, b: Mat3): Mat3 {
   return out as Mat3;
 }
 
+/** Beyond ±5 centuries the IAU 1976 polynomials diverge: switch to the long-term model. */
+const IAU1976_VALID_CENTURIES = 5;
+const OBLIQUITY_J2000 = 23.4392911 * RAD;
+/** General precession in longitude, IAU 2006 linear term (″ per Julian century). */
+const GENERAL_PRECESSION = 5028.796195 * ARCSEC;
+
 /**
- * Precession J2000.0 → mean equator and equinox of `date` (IAU 1976, Meeus eq. 21.2–21.4).
- * Built by precessing the three basis vectors, which is exact since precession is a rotation.
+ * Precession J2000.0 → mean equator and equinox of `date`.
+ * Within ±5 centuries: IAU 1976 (Meeus eq. 21.2–21.4, arcsecond-level).
+ * Beyond: simplified long-term model (uniform rotation about the J2000 ecliptic pole);
+ * it ignores the motion of the ecliptic and the change of obliquity, so it is only good to
+ * about a degree over millennia — enough to show the ~26 000-year cycle of the celestial pole.
  */
 export function precessionMatrix(date: Date): Mat3 {
   const t = (julianDate(date) - JD_J2000) / 36_525;
+  if (Math.abs(t) > IAU1976_VALID_CENTURIES) return longTermPrecessionMatrix(t);
+  return iau1976PrecessionMatrix(t);
+}
+
+/** Uniform precession of the equinox about the J2000 ecliptic pole, `t` in Julian centuries. */
+export function longTermPrecessionMatrix(t: number): Mat3 {
+  const p = GENERAL_PRECESSION * t;
+  const [ce, se] = [Math.cos(OBLIQUITY_J2000), Math.sin(OBLIQUITY_J2000)];
+  const toEcliptic: Mat3 = [1, 0, 0, 0, ce, se, 0, -se, ce];
+  const toEquator: Mat3 = [1, 0, 0, 0, ce, -se, 0, se, ce];
+  // Ecliptic longitudes of date grow by p (the equinox regresses).
+  const rotate: Mat3 = [Math.cos(p), -Math.sin(p), 0, Math.sin(p), Math.cos(p), 0, 0, 0, 1];
+  return multiplyMat3(toEquator, multiplyMat3(rotate, toEcliptic));
+}
+
+/** IAU 1976 precession matrix, built by precessing the three basis vectors (exact: it is a rotation). */
+function iau1976PrecessionMatrix(t: number): Mat3 {
   const zeta = (2306.2181 * t + 0.30188 * t * t + 0.017998 * t ** 3) * ARCSEC;
   const z = (2306.2181 * t + 1.09468 * t * t + 0.018203 * t ** 3) * ARCSEC;
   const theta = (2004.3109 * t - 0.42665 * t * t - 0.041833 * t ** 3) * ARCSEC;
