@@ -5,6 +5,8 @@
   import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
   import { decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
+  import { MIN_DIM, nightInk } from "./lib/night";
+  import { readSetting, writeSetting } from "./lib/storage";
 
   const THEMES = {
     day: { ink: "#f0e6d2", sky: "#101b52", ground: "#0a1136" },
@@ -15,7 +17,10 @@
   let overlay: HTMLCanvasElement;
   let map: SkyMap | undefined;
   let status = $state<"loading" | "ready" | "error">("loading");
-  let night = $state(false);
+  const isBool = (v: unknown): v is boolean => typeof v === "boolean";
+  const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  let night = $state(readSetting("asteria.night", false, isBool));
+  let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
   let lines = $state(true);
   let selected = $state<CatalogStar | null>(null);
   let date = $state(new Date());
@@ -128,8 +133,18 @@
   });
 
   $effect(() => {
-    document.documentElement.dataset.night = night ? "red" : "";
-    map?.setTheme(night ? THEMES.red : THEMES.day);
+    const root = document.documentElement;
+    root.dataset.night = night ? "red" : "";
+    const ink = nightInk(brightness);
+    // Android paints the browser chrome with theme-color: keep it black at night.
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", night ? "#000000" : "#101b52");
+    if (night) root.style.setProperty("--ast-parchment", ink);
+    else root.style.removeProperty("--ast-parchment");
+    map?.setTheme(night ? { ...THEMES.red, ink } : THEMES.day);
+    writeSetting("asteria.night", night);
+    writeSetting("asteria.nightBrightness", brightness);
   });
 
   $effect(() => {
@@ -205,6 +220,12 @@ DIST {distance
   <div class="group">
     <button aria-pressed={lines} onclick={() => (lines = !lines)}>{$_("map.lines")}</button>
     <button aria-pressed={night} onclick={() => (night = !night)}>{$_("night.toggle")}</button>
+    {#if night}
+      <label class="dim">
+        <span>{$_("night.brightness")}</span>
+        <input type="range" min={MIN_DIM} max="1" step="0.05" bind:value={brightness} />
+      </label>
+    {/if}
   </div>
 </nav>
 
@@ -327,6 +348,47 @@ DIST {distance
     flex: 1;
     padding: 13px 4px;
     white-space: nowrap;
+  }
+  .dim {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 11px;
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
+  /* Fully themed slider: native tracks are white/grey, which would break night vision */
+  .dim input {
+    appearance: none;
+    width: 100px;
+    height: 20px;
+    background: transparent;
+  }
+  .dim input::-webkit-slider-runnable-track {
+    height: 1px;
+    background: var(--ast-fg);
+  }
+  .dim input::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -6px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ast-fg);
+  }
+  .dim input::-moz-range-track {
+    height: 1px;
+    background: var(--ast-fg);
+  }
+  .dim input::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ast-fg);
   }
   .group button:last-child {
     border-right: 0;
