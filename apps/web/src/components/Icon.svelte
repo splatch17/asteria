@@ -1,6 +1,6 @@
 <script lang="ts">
   // Line icons drawn on a 16×16 grid, stroked with currentColor (works in night red).
-  export type IconName = "play" | "pause" | "now" | "lines" | "night" | "range";
+  export type IconName = "play" | "pause" | "now" | "lines" | "night" | "range" | "earth" | "sky";
   let { name }: { name: IconName } = $props();
 </script>
 
@@ -20,6 +20,14 @@
     <circle cx="13.5" cy="3" r="1.2" class="fill" />
   {:else if name === "night"}
     <path d="M10.5 2.5 A5.5 5.5 0 1 0 13.5 10.5 A4.5 4.5 0 0 1 10.5 2.5 Z" />
+  {:else if name === "earth"}
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M2.5 8 H13.5 M8 2.5 C5.5 5 5.5 11 8 13.5 M8 2.5 C10.5 5 10.5 11 8 13.5" />
+  {:else if name === "sky"}
+    <path d="M2 12.5 H14" />
+    <path
+      d="M8 3 L8.9 5.6 L11.5 5.6 L9.4 7.2 L10.2 9.8 L8 8.2 L5.8 9.8 L6.6 7.2 L4.5 5.6 L7.1 5.6 Z"
+    />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
   {/if}

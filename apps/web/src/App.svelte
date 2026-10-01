@@ -1,10 +1,16 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { _ } from "@asteria/ui";
-  import { SkyMap, type BodyName, type SkySelection } from "@asteria/sky-renderer";
+  import {
+    SkyMap,
+    SpaceView,
+    type BodyName,
+    type CatalogStar,
+    type SkySelection,
+  } from "@asteria/sky-renderer";
   import { bodyPosition, moonPhase } from "@asteria/astro-core";
   import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
-  import { decodeStarCatalog } from "@asteria/catalog";
+  import { decodeCoastlines, decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
@@ -28,6 +34,12 @@
   let canvas: HTMLCanvasElement;
   let overlay: HTMLCanvasElement;
   let map: SkyMap | undefined;
+  let spaceCanvas: HTMLCanvasElement;
+  let spaceOverlay: HTMLCanvasElement;
+  let space = $state<SpaceView | undefined>();
+  let mode = $state<"sky" | "space">("sky");
+  let spaceLoading = $state(false);
+  let catalog: { stars: CatalogStar[]; lines: Record<string, number[][]> } | undefined;
   let status = $state<"loading" | "ready" | "error">("loading");
   const isBool = (v: unknown): v is boolean => typeof v === "boolean";
   const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -172,6 +184,59 @@
     pointing = "off";
   }
 
+  async function toggleSpace() {
+    if (mode === "space") {
+      mode = "sky";
+      space?.stop();
+      return;
+    }
+    if (pointing !== "off") stopPointing();
+    if (!space && catalog) {
+      spaceLoading = true;
+      try {
+        const base = import.meta.env.BASE_URL;
+        const image = (file: string) =>
+          fetch(`${base}data/earth/${file}`)
+            .then((r) => r.blob())
+            .then((b) => createImageBitmap(b));
+        const [relief, lights, coast] = await Promise.all([
+          image("relief.webp"),
+          image("lights.webp"),
+          fetch(`${base}data/earth/coastlines.bin`).then((r) => r.arrayBuffer()),
+        ]);
+        space = new SpaceView({
+          canvas: spaceCanvas,
+          overlay: spaceOverlay,
+          stars: catalog.stars,
+          lines: catalog.lines,
+          earth: { relief, lights, coastlines: decodeCoastlines(coast) },
+          theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+          labels: {
+            here: $_("space.here"),
+            sun: $_("body.Sun"),
+            moon: $_("body.Moon"),
+            pole: $_("space.pole"),
+          },
+        });
+      } catch (e) {
+        console.error(e);
+        return;
+      } finally {
+        spaceLoading = false;
+      }
+    }
+    if (!space) return;
+    space.setObserver(place);
+    space.setDate(date);
+    space.setBodies({
+      sun: bodies.sun,
+      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
+    });
+    space.focusObserver(4);
+    mode = "space";
+    space.start();
+  }
+
   function faceNorth() {
     if (pointing === "on") return;
     map?.animateTo({ azimuth: 0 });
@@ -207,12 +272,13 @@
           if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
           return r;
         });
-      const [catalog, strings, constellationLines] = await Promise.all([
+      const [catalogBuffer, strings, constellationLines] = await Promise.all([
         load("stars.bin").then((r) => r.arrayBuffer()),
         load("star-strings.json").then((r) => r.json()),
         load("constellation-lines.json").then((r) => r.json()),
       ]);
-      const stars = decodeStarCatalog(catalog, strings);
+      const stars = decodeStarCatalog(catalogBuffer, strings);
+      catalog = { stars, lines: constellationLines };
       map = new SkyMap({
         canvas,
         overlay,
@@ -256,6 +322,7 @@
   });
 
   onDestroy(() => {
+    space?.dispose();
     stopPointing();
     stopPlaying();
     clearInterval(clock);
@@ -273,6 +340,7 @@
     if (night) root.style.setProperty("--ast-parchment", ink);
     else root.style.removeProperty("--ast-parchment");
     map?.setTheme(night ? { ...THEMES.red, ink } : THEMES.day);
+    space?.setTheme(night ? { ...THEMES.red, ink } : THEMES.day);
     writeSetting("asteria.night", night);
     writeSetting("asteria.nightBrightness", brightness);
   });
@@ -286,6 +354,15 @@
     const sun = bodyPosition("Sun", date, place);
     const moon = bodyPosition("Moon", date, place);
     return { sun, moon, phase: moonPhase(date) };
+  });
+  $effect(() => {
+    if (!space) return;
+    space.setObserver(place);
+    space.setDate(date);
+    space.setBodies({
+      sun: bodies.sun,
+      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
+    });
   });
   $effect(() => {
     if (status !== "ready") return;
@@ -354,11 +431,20 @@
   );
 </script>
 
-<canvas class="sky" bind:this={canvas}></canvas>
-<canvas class="overlay" bind:this={overlay}></canvas>
+<div class="view" class:hidden={mode !== "sky"}>
+  <canvas class="sky" bind:this={canvas}></canvas>
+  <canvas class="overlay" bind:this={overlay}></canvas>
+</div>
+<div class="view" class:hidden={mode !== "space"}>
+  <canvas class="sky" bind:this={spaceCanvas}></canvas>
+  <canvas class="overlay" bind:this={spaceOverlay}></canvas>
+</div>
 
 <header class="hud top">
-  <p class="meta">#02 // {$_("map.title")}</p>
+  <p class="meta">
+    {mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
+    {#if spaceLoading}· {$_("space.loading")}{/if}
+  </p>
   <button class="where" onclick={locate} title={$_("place.locate")}>
     {place.name === "mine" ? $_("place.mine") : $_("place.paris")} ⌖
   </button>
@@ -376,33 +462,44 @@
 <div class="hud compass">
   <button
     class="dial"
-    onclick={faceNorth}
-    aria-label={$_("compass.north")}
-    title={$_("compass.north")}
-    disabled={pointing === "on"}
+    onclick={toggleSpace}
+    aria-pressed={mode === "space"}
+    aria-label={mode === "space" ? $_("space.toggleToSky") : $_("space.toggleToEarth")}
+    title={mode === "space" ? $_("space.toggleToSky") : $_("space.toggleToEarth")}
   >
-    <svg viewBox="-20 -20 40 40" aria-hidden="true">
-      <circle r="18" class="ring" />
-      <g transform={`rotate(${-viewAzimuth - viewRoll})`}>
-        <path d="M0 -15 L4 0 L0 3 L-4 0 Z" class="north" />
-        <path d="M0 15 L4 0 L0 -3 L-4 0 Z" class="south" />
-        <text y="-7" text-anchor="middle" class="n">N</text>
-      </g>
-    </svg>
+    <span class="dial-icon"><Icon name={mode === "space" ? "sky" : "earth"} /></span>
   </button>
-  <button
-    class="dial"
-    onclick={togglePointing}
-    aria-pressed={pointing === "on" || pointing === "waiting"}
-    aria-label={$_("pointing.toggle")}
-    title={$_("pointing.toggle")}
-  >
-    <svg viewBox="-20 -20 40 40" aria-hidden="true">
-      <circle r="9" class="ring" />
-      <path d="M0 -18 V-12 M0 12 V18 M-18 0 H-12 M12 0 H18" class="ring" />
-      <circle r="2" class="north" />
-    </svg>
-  </button>
+  {#if mode === "sky"}
+    <button
+      class="dial"
+      onclick={faceNorth}
+      aria-label={$_("compass.north")}
+      title={$_("compass.north")}
+      disabled={pointing === "on"}
+    >
+      <svg viewBox="-20 -20 40 40" aria-hidden="true">
+        <circle r="18" class="ring" />
+        <g transform={`rotate(${-viewAzimuth - viewRoll})`}>
+          <path d="M0 -15 L4 0 L0 3 L-4 0 Z" class="north" />
+          <path d="M0 15 L4 0 L0 -3 L-4 0 Z" class="south" />
+          <text y="-7" text-anchor="middle" class="n">N</text>
+        </g>
+      </svg>
+    </button>
+    <button
+      class="dial"
+      onclick={togglePointing}
+      aria-pressed={pointing === "on" || pointing === "waiting"}
+      aria-label={$_("pointing.toggle")}
+      title={$_("pointing.toggle")}
+    >
+      <svg viewBox="-20 -20 40 40" aria-hidden="true">
+        <circle r="9" class="ring" />
+        <path d="M0 -18 V-12 M0 12 V18 M-18 0 H-12 M12 0 H18" class="ring" />
+        <circle r="2" class="north" />
+      </svg>
+    </button>
+  {/if}
 </div>
 {#if pointing === "waiting"}
   <p class="hud toast">{$_("pointing.hint")}</p>
@@ -565,6 +662,19 @@ DIST {distance
     font-size: 10px;
     line-height: 1.5;
     color: var(--ast-fg);
+  }
+  .view.hidden {
+    display: none;
+  }
+  .dial-icon {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    color: var(--ast-fg);
+  }
+  .dial[aria-pressed="true"] .dial-icon {
+    color: var(--ast-bg);
   }
   .compass {
     top: max(16px, env(safe-area-inset-top));
