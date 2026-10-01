@@ -9,6 +9,7 @@ import {
   type Vec3,
 } from "@asteria/astro-core";
 import { groundFrag, groundVert, lineFrag, lineVert, starFrag, starVert } from "./shaders";
+import { LabelLayout } from "./labels";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
 export interface CatalogStar {
@@ -45,7 +46,7 @@ export interface SkyMapOptions {
 }
 
 const FOV_MIN = 2;
-const FOV_MAX = 150;
+const FOV_MAX = 200;
 const FRICTION = 0.9;
 
 const toThreeMat3 = (m: Mat3) => new THREE.Matrix3().set(...m);
@@ -279,7 +280,7 @@ export class SkyMap {
   }
 
   private toScreen(v: Vec3): [number, number] | null {
-    if (v[2] < 0.05) return null;
+    if (v[2] < -0.5) return null; // wide fields of view reach ~120° from the centre
     const { clientWidth: w, clientHeight: h } = this.options.canvas;
     const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
     if (Math.abs(nx) > 1.1 || Math.abs(ny) > 1.1) return null;
@@ -295,47 +296,67 @@ export class SkyMap {
     const m = this.eqToView();
     const view = viewMatrix(this.view);
     const aboveHorizon = (d: Vec3) => applyMat3(this.eq2hor, d)[2] > 0;
+    // Labels are placed by priority; a label that collides with every fallback is dropped.
+    const layout = new LabelLayout();
+    const H = 12;
 
-    // Constellation names
-    if (this.showLines) {
-      ctx.globalAlpha = 0.55;
-      ctx.font = "500 10px 'JetBrains Mono', monospace";
-      ctx.letterSpacing = "0.18em";
-      ctx.textAlign = "center";
-      for (const { text, dir } of this.labels) {
-        if (!aboveHorizon(dir)) continue;
-        const p = this.toScreen(applyMat3(m, dir));
-        if (p) ctx.fillText(text.toUpperCase(), p[0], p[1]);
-      }
+    // 1. Cardinal points on the horizon
+    if (cardinals) {
+      this.setLabelFont("700 13px", "0.1em", 0.9);
+      cardinals.forEach((label, i) => {
+        const a = (i * 45 * Math.PI) / 180;
+        const p = this.toScreen(applyMat3(view, [Math.cos(a), Math.sin(a), 0]));
+        if (!p) return;
+        const w = ctx.measureText(label).width;
+        const r = layout.place([{ x: p[0] - w / 2, y: p[1] + 16 - H / 2, w, h: H }]);
+        if (r) ctx.fillText(label, r.x, r.y + H / 2);
+      });
     }
 
-    // Bright star names (more appear when zooming in)
+    // 2. Star names, brightest first (the catalogue is sorted by magnitude)
     const maxMag = this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5;
-    ctx.globalAlpha = 0.8;
-    ctx.font = "400 10px 'JetBrains Mono', monospace";
-    ctx.letterSpacing = "0.08em";
-    ctx.textAlign = "left";
+    this.setLabelFont("400 10px", "0.08em", 0.8);
     stars.forEach((s, i) => {
       if (!s.name || s.v > maxMag) return;
       const d = this.starDirs[i]!;
       if (!aboveHorizon(d)) return;
       const p = this.toScreen(applyMat3(m, d));
-      if (p) ctx.fillText(s.name, p[0] + 9, p[1]);
+      if (!p) return;
+      const w = ctx.measureText(s.name).width;
+      const [x, y] = p;
+      const r = layout.place([
+        { x: x + 9, y: y - H / 2, w, h: H }, // right
+        { x: x - 9 - w, y: y - H / 2, w, h: H }, // left
+        { x: x - w / 2, y: y - 8 - H, w, h: H }, // above
+        { x: x - w / 2, y: y + 8, w, h: H }, // below
+      ]);
+      if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
     });
 
-    // Cardinal points on the horizon
-    if (cardinals) {
-      ctx.globalAlpha = 0.9;
-      ctx.font = "700 13px 'JetBrains Mono', monospace";
-      ctx.letterSpacing = "0.1em";
-      ctx.textAlign = "center";
-      cardinals.forEach((label, i) => {
-        const a = (i * 45 * Math.PI) / 180;
-        const p = this.toScreen(applyMat3(view, [Math.cos(a), Math.sin(a), 0]));
-        if (p) ctx.fillText(label, p[0], p[1] + 16);
-      });
+    // 3. Constellation names
+    if (this.showLines) {
+      this.setLabelFont("500 10px", "0.18em", 0.55);
+      for (const { text, dir } of this.labels) {
+        if (!aboveHorizon(dir)) continue;
+        const p = this.toScreen(applyMat3(m, dir));
+        if (!p) continue;
+        const label = text.toUpperCase();
+        const w = ctx.measureText(label).width;
+        const [x, y] = p;
+        const r = layout.place(
+          [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
+        );
+        if (r) ctx.fillText(label, r.x, r.y + H / 2);
+      }
     }
     ctx.globalAlpha = 1;
+  }
+
+  private setLabelFont(weightSize: string, spacing: string, alpha: number): void {
+    this.ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
+    this.ctx.letterSpacing = spacing;
+    this.ctx.textAlign = "left";
+    this.ctx.globalAlpha = alpha;
   }
 
   private pick(x: number, y: number): CatalogStar | null {

@@ -35,7 +35,7 @@ export const starVert = /* glsl */ `
     float size = clamp(2.3 * sqrt(rel), 0.0, 26.0);
     vAlpha = clamp(0.35 + rel * 0.9, 0.0, 1.0);
     vSpike = aMag < 1.6 ? 1.0 : 0.0;
-    if (v.z < -0.2 || h.z < -0.02 || rel < 0.35) {
+    if (v.z < -0.6 || h.z < -0.02 || rel < 0.35) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -70,7 +70,7 @@ export const lineVert = /* glsl */ `
 
   void main() {
     vec3 v = uView * (uEq2Hor * aDir);
-    vVisible = v.z > -0.2 ? 1.0 : 0.0;
+    vVisible = v.z > -0.6 ? 1.0 : 0.0;
     gl_Position = projectView(v);
   }
 `;
