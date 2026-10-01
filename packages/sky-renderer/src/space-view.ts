@@ -22,7 +22,27 @@ import {
   skyStarFrag,
   skyStarVert,
 } from "./space-shaders";
-import type { CatalogStar, SkyBodies, SkyPath, SkyPlanet, SkySelection, SkyTheme } from "./sky-map";
+import {
+  DEFAULT_SKY_LAYERS,
+  type CatalogStar,
+  type SkyBodies,
+  type SkyLayers,
+  type SkyPath,
+  type SkyPlanet,
+  type SkySelection,
+  type SkyTheme,
+} from "./sky-map";
+import { sphericalGrid } from "./grids";
+
+/**
+ * Layers honoured by the Earth view (setLayers takes the same Partial<SkyLayers> as the map;
+ * other keys are ignored): constellationLines, planets, ecliptic, equatorialGrid.
+ * Defaults differ from the map: the ecliptic is shown (it explains the seasons from space).
+ */
+export const DEFAULT_SPACE_LAYERS: Readonly<SkyLayers> = Object.freeze({
+  ...DEFAULT_SKY_LAYERS,
+  ecliptic: true,
+});
 
 export interface EarthAssets {
   relief: HTMLImageElement | ImageBitmap;
@@ -85,7 +105,10 @@ export class SpaceView {
   private readonly planetPoints: THREE.Points;
   /** J2000 directions of the planets (PLANETS order), null when unset or hidden. */
   private planets: (Vec3 | null)[] | null = null;
-  private showPlanets = true;
+  private readonly layers: SkyLayers = { ...DEFAULT_SPACE_LAYERS };
+  private readonly constellationLines: THREE.LineSegments;
+  private readonly eclipticLine: THREE.LineSegments;
+  private readonly equatorialGrid: THREE.LineSegments;
   /** The selected planet's path (J2000 directions, precessed by the shader). */
   private readonly pathPoints: THREE.Points;
   /** Dated marks of that path: J2000 direction, world direction (follows the date), label. */
@@ -159,7 +182,8 @@ export class SpaceView {
         }
       }
     }
-    const constellationLines = this.skyLines(segs, 0.28);
+    this.constellationLines = this.skyLines(segs, 0.28);
+    const constellationLines = this.constellationLines;
 
     // Celestial equator and ecliptic (J2000 directions, precessed like the stars)
     const circle = (tilt: number) => {
@@ -173,6 +197,17 @@ export class SpaceView {
     };
     const equator = this.skyLines(circle(0), 0.35);
     const ecliptic = this.skyLines(circle(OBLIQUITY), 0.5);
+    this.eclipticLine = ecliptic;
+    // RA/Dec grid of date: already in the world frame, so no precession (uPrec = identity).
+    const equatorialGrid = this.skyLines(
+      Array.from(sphericalGrid({ lonStep: 15, latStep: 10, latMax: 80 }).positions),
+      0.12,
+    );
+    (equatorialGrid.material as THREE.ShaderMaterial).uniforms.uPrec = {
+      value: new THREE.Matrix3(),
+    };
+    equatorialGrid.visible = false;
+    this.equatorialGrid = equatorialGrid;
 
     // Sun and Moon glyphs (reuse the sky map's engraved fragment shader)
     const bodyGeo = new THREE.BufferGeometry();
@@ -215,6 +250,7 @@ export class SpaceView {
       this.pathPoints,
       starPoints,
       constellationLines,
+      equatorialGrid,
       equator,
       ecliptic,
       this.bodyPoints,
@@ -265,6 +301,7 @@ export class SpaceView {
       axis,
       starPoints,
       constellationLines,
+      equatorialGrid,
       equator,
       ecliptic,
       this.pathPoints,
@@ -325,9 +362,25 @@ export class SpaceView {
     this.update();
   }
 
-  setPlanetsVisible(visible: boolean): void {
-    this.showPlanets = visible;
+  /** Switches layers (see DEFAULT_SPACE_LAYERS); keys left out keep their state. */
+  setLayers(partial: Partial<SkyLayers>): void {
+    for (const key of Object.keys(partial) as (keyof SkyLayers)[]) {
+      const value = partial[key];
+      if (typeof value === "boolean" && key in this.layers) this.layers[key] = value;
+    }
+    this.constellationLines.visible = this.layers.constellationLines;
+    this.eclipticLine.visible = this.layers.ecliptic;
+    this.equatorialGrid.visible = this.layers.equatorialGrid;
     this.update();
+  }
+
+  getLayers(): Readonly<SkyLayers> {
+    return this.layers;
+  }
+
+  /** Alias of setLayers({ planets }). */
+  setPlanetsVisible(visible: boolean): void {
+    this.setLayers({ planets: visible });
   }
 
   /** Path of the selected planet, with dated monthly marks (null: nothing selected). */
@@ -511,8 +564,8 @@ export class SpaceView {
       });
       dirs.needsUpdate = true;
     }
-    this.planetPoints.visible = this.showPlanets && !!this.planets;
-    this.pathPoints.visible = this.showPlanets && this.pathPoints.geometry.drawRange.count > 0;
+    this.planetPoints.visible = this.layers.planets && !!this.planets;
+    this.pathPoints.visible = this.layers.planets && this.pathPoints.geometry.drawRange.count > 0;
   }
 
   private resize(): void {
@@ -619,7 +672,7 @@ export class SpaceView {
       label(labels.moon, this.dirAt(1), true, 18);
     }
     const names = this.options.planetNames;
-    if (this.showPlanets && this.planets && names) {
+    if (this.layers.planets && this.planets && names) {
       ctx.font = "700 10px 'JetBrains Mono', monospace";
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       const d = new THREE.Vector3();
@@ -669,7 +722,7 @@ export class SpaceView {
       consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
       consider(this.dirAt(1), r, { kind: "body", body: "Moon" });
     }
-    if (this.showPlanets && this.planets) {
+    if (this.layers.planets && this.planets) {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       this.planets.forEach((p, i) => {
         if (p)
