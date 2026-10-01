@@ -8,6 +8,7 @@
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
+  import { devicePointing, pointingToView, smooth } from "./lib/orientation";
   import {
     RANGES,
     RANGE_ORDER,
@@ -42,6 +43,9 @@
   let playing = $state(false);
   let speedIndex = $state(1);
   let playFrame = 0;
+  let viewAzimuth = $state(180);
+  let viewRoll = $state(0);
+  let pointing = $state<"off" | "waiting" | "on" | "unavailable">("off");
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
@@ -114,6 +118,63 @@
     playing = false;
   }
 
+  // --- Sensor pointing (DeviceOrientation, needs HTTPS)
+  let smoothed: { forward: [number, number, number]; up: [number, number, number] } | null = null;
+  let pointingTimeout: ReturnType<typeof setTimeout>;
+
+  function onOrientation(e: DeviceOrientationEvent) {
+    if (e.alpha === null || e.beta === null || e.gamma === null) return;
+    // Only an absolute (north-referenced) heading is usable for the sky.
+    if (e.type === "deviceorientation" && !e.absolute) return;
+    const raw = devicePointing(e.alpha, e.beta, e.gamma, screen.orientation?.angle ?? 0);
+    smoothed = {
+      forward: smooth(smoothed?.forward ?? null, raw.forward, 0.25),
+      up: smooth(smoothed?.up ?? null, raw.up, 0.25),
+    };
+    pointing = "on";
+    clearTimeout(pointingTimeout);
+    map?.setView(pointingToView(smoothed.forward, smoothed.up));
+  }
+
+  // "deviceorientationabsolute" is not in lib.dom's event map: listen through a generic handler.
+  const onOrientationEvent = (e: Event) => onOrientation(e as DeviceOrientationEvent);
+
+  async function togglePointing() {
+    if (pointing === "on" || pointing === "waiting") return stopPointing();
+    // iOS Safari asks for permission; Android Chrome does not.
+    const request = (
+      DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }
+    ).requestPermission;
+    if (request && (await request().catch(() => "denied")) !== "granted") {
+      pointing = "unavailable";
+      return;
+    }
+    smoothed = null;
+    pointing = "waiting";
+    map?.setPointing(true);
+    addEventListener("deviceorientationabsolute", onOrientationEvent);
+    addEventListener("deviceorientation", onOrientationEvent);
+    pointingTimeout = setTimeout(() => {
+      if (pointing === "waiting") {
+        stopPointing();
+        pointing = "unavailable";
+      }
+    }, 2000);
+  }
+
+  function stopPointing() {
+    clearTimeout(pointingTimeout);
+    removeEventListener("deviceorientationabsolute", onOrientationEvent);
+    removeEventListener("deviceorientation", onOrientationEvent);
+    map?.setPointing(false);
+    pointing = "off";
+  }
+
+  function faceNorth() {
+    if (pointing === "on") return;
+    map?.animateTo({ azimuth: 0 });
+  }
+
   function locate() {
     if (!("geolocation" in navigator)) {
       locating = "error";
@@ -160,6 +221,14 @@
         theme: THEMES.day,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         onSelect: (s) => (selection = s),
+        onViewChange: (v) => {
+          viewAzimuth = v.azimuth;
+          viewRoll = v.roll ?? 0;
+        },
+        describeTarget: (t) =>
+          t.kind === "body"
+            ? $_(`body.${t.body}` as `body.${BodyName}`)
+            : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
       });
       map.setObserver(place);
       status = "ready";
@@ -185,6 +254,7 @@
   });
 
   onDestroy(() => {
+    stopPointing();
     stopPlaying();
     clearInterval(clock);
     map?.dispose();
@@ -300,6 +370,43 @@
     <p class="meta">{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</p>
   {/if}
 </header>
+
+<div class="hud compass">
+  <button
+    class="dial"
+    onclick={faceNorth}
+    aria-label={$_("compass.north")}
+    title={$_("compass.north")}
+    disabled={pointing === "on"}
+  >
+    <svg viewBox="-20 -20 40 40" aria-hidden="true">
+      <circle r="18" class="ring" />
+      <g transform={`rotate(${-viewAzimuth - viewRoll})`}>
+        <path d="M0 -15 L4 0 L0 3 L-4 0 Z" class="north" />
+        <path d="M0 15 L4 0 L0 -3 L-4 0 Z" class="south" />
+        <text y="-7" text-anchor="middle" class="n">N</text>
+      </g>
+    </svg>
+  </button>
+  <button
+    class="dial"
+    onclick={togglePointing}
+    aria-pressed={pointing === "on" || pointing === "waiting"}
+    aria-label={$_("pointing.toggle")}
+    title={$_("pointing.toggle")}
+  >
+    <svg viewBox="-20 -20 40 40" aria-hidden="true">
+      <circle r="9" class="ring" />
+      <path d="M0 -18 V-12 M0 12 V18 M-18 0 H-12 M12 0 H18" class="ring" />
+      <circle r="2" class="north" />
+    </svg>
+  </button>
+</div>
+{#if pointing === "waiting"}
+  <p class="hud toast">{$_("pointing.hint")}</p>
+{:else if pointing === "unavailable"}
+  <button class="hud toast" onclick={() => (pointing = "off")}>{$_("pointing.unavailable")}</button>
+{/if}
 
 {#if status !== "ready"}
   <p class="status">{status === "error" ? $_("map.error") : $_("map.loading")}</p>
@@ -463,6 +570,71 @@ DIST {distance
     line-height: 1.5;
     color: var(--ast-fg);
   }
+  .compass {
+    top: max(16px, env(safe-area-inset-top));
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dial {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--ast-hairline);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
+    backdrop-filter: blur(4px);
+  }
+  .dial[aria-pressed="true"] {
+    background: var(--ast-fg);
+  }
+  .dial:disabled {
+    opacity: 0.5;
+  }
+  .dial svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .dial .ring {
+    fill: none;
+    stroke: var(--ast-fg-muted);
+    stroke-width: 1;
+  }
+  .dial .north {
+    fill: var(--ast-fg);
+  }
+  .dial .south {
+    fill: none;
+    stroke: var(--ast-fg-muted);
+    stroke-width: 1;
+  }
+  .dial .n {
+    font: 700 6px var(--ast-font-mono);
+    fill: var(--ast-fg);
+  }
+  .dial[aria-pressed="true"] .ring,
+  .dial[aria-pressed="true"] .north {
+    stroke: var(--ast-bg);
+    fill: var(--ast-bg);
+  }
+  .dial[aria-pressed="true"] .ring {
+    fill: none;
+  }
+  .toast {
+    top: calc(max(16px, env(safe-area-inset-top)) + 110px);
+    left: 16px;
+    right: 16px;
+    margin: 0 auto;
+    max-width: 320px;
+    padding: 10px 12px;
+    border: 1px solid var(--ast-hairline);
+    background: color-mix(in srgb, var(--ast-bg) 88%, transparent);
+    font: 11px/1.5 var(--ast-font-mono);
+    color: var(--ast-fg);
+    text-align: center;
+  }
   .status {
     position: fixed;
     inset: 0;
@@ -517,7 +689,8 @@ DIST {distance
   }
   .time .speed {
     flex: none;
-    min-width: 84px;
+    min-width: 108px;
+    text-transform: none; /* "1 s = 10 min": unit symbols stay lower-case */
   }
   .scrub {
     flex: 1;

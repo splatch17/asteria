@@ -28,6 +28,17 @@ describe("viewMatrix", () => {
   });
 });
 
+describe("viewMatrix roll", () => {
+  it("leaning the screen top right by 90° puts the zenith on the left", () => {
+    const v = viewMatrix({ azimuth: 0, altitude: 0, fov: 60, roll: 90 });
+    const [x, y] = applyMat3(v, [0, 0, 1]);
+    expect(x).toBeCloseTo(-1, 12);
+    expect(y).toBeCloseTo(0, 12);
+    // and East (formerly on the right) is now up
+    expect(applyMat3(v, [0, 1, 0])[1]).toBeCloseTo(1, 12);
+  });
+});
+
 describe("stereographic projection", () => {
   it("maps half the field of view to the screen edge", () => {
     const fov = 90;
