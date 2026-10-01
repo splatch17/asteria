@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @asteria/web dev",
+    "dev:phone": "pnpm --filter @asteria/web dev:phone",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
