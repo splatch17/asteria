@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { _ } from "@asteria/ui";
-  import { SkyMap, type CatalogStar } from "@asteria/sky-renderer";
+  import { SkyMap, type BodyName, type SkySelection } from "@asteria/sky-renderer";
+  import { bodyPosition, moonPhase } from "@asteria/astro-core";
   import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
   import { decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
@@ -17,8 +18,8 @@
   } from "./lib/timeline";
 
   const THEMES = {
-    day: { ink: "#f0e6d2", sky: "#101b52", ground: "#0a1136" },
-    red: { ink: "#ff2a1a", sky: "#000000", ground: "#000000" },
+    day: { ink: "#f0e6d2", sky: "#101b52", daySky: "#2b4597", ground: "#0a1136" },
+    red: { ink: "#ff2a1a", sky: "#000000", daySky: "#1f0303", ground: "#000000" },
   };
 
   let canvas: HTMLCanvasElement;
@@ -30,7 +31,9 @@
   let night = $state(readSetting("asteria.night", false, isBool));
   let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
   let lines = $state(true);
-  let selected = $state<CatalogStar | null>(null);
+  let selection = $state<SkySelection | null>(null);
+  const selected = $derived(selection?.kind === "star" ? selection.star : null);
+  const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
   let date = $state(new Date());
   let live = $state(true);
   let range = $state<TimeRange>("48h");
@@ -155,7 +158,8 @@
         constellationNames: names,
         cardinals: $_("map.cardinals").split(","),
         theme: THEMES.day,
-        onSelect: (s) => (selected = s),
+        bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
+        onSelect: (s) => (selection = s),
       });
       map.setObserver(place);
       status = "ready";
@@ -203,6 +207,41 @@
 
   $effect(() => {
     map?.setLinesVisible(lines);
+  });
+
+  // Sun and Moon follow the displayed date and place.
+  const bodies = $derived.by(() => {
+    const sun = bodyPosition("Sun", date, place);
+    const moon = bodyPosition("Moon", date, place);
+    return { sun, moon, phase: moonPhase(date) };
+  });
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setBodies({
+      sun: bodies.sun,
+      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
+    });
+  });
+  const KM_PER_AU = 149_597_870.7;
+  const bodyInfo = $derived.by(() => {
+    if (!selectedBody) return null;
+    const b = selectedBody === "Sun" ? bodies.sun : bodies.moon;
+    return {
+      name: $_(`body.${selectedBody}` as `body.${BodyName}`),
+      lines: [
+        `${$_("body.altitude").padEnd(8)} ${b.altitude.toFixed(1)}°`,
+        `${$_("body.azimuth").padEnd(8)} ${b.azimuth.toFixed(1)}°`,
+        `RA       ${formatRa(b.ra)}`,
+        `DEC      ${formatDec(b.dec)}`,
+        `DIST     ${
+          selectedBody === "Sun"
+            ? $_("body.distanceAu", {
+                values: { au: Math.round((b.distanceKm / KM_PER_AU) * 1000) / 1000 },
+              })
+            : $_("body.distance", { values: { km: Math.round(b.distanceKm) } })
+        }`,
+      ].join("\n"),
+    };
   });
 
   const time = $derived(
@@ -277,7 +316,26 @@ V    {selected.v.toFixed(2)}{selected.bv !== undefined ? `\nB−V  ${selected.bv
 DIST {distance
         ? $_("star.distance", { values: { ly: Math.round(distance) } })
         : $_("star.unknownDistance")}</pre>
-    <button class="close" onclick={() => (selected = null)} aria-label={$_("star.close")}>×</button>
+    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
+    >
+  </aside>
+{/if}
+
+{#if bodyInfo}
+  <aside class="hud panel">
+    <p class="meta">
+      {#if selectedBody === "Moon"}
+        {$_("moon.illumination", { values: { pct: Math.round(bodies.phase.illumination * 100) } })}
+        · {bodies.phase.waxing ? $_("moon.waxing") : $_("moon.waning")}
+      {:else}
+        G2V
+      {/if}
+    </p>
+    <p class="name">{bodyInfo.name}</p>
+    <pre class="data">{bodyInfo.lines}</pre>
+    {#if selectedBody === "Sun"}<p class="warn">{$_("sun.warning")}</p>{/if}
+    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
+    >
   </aside>
 {/if}
 
@@ -398,6 +456,12 @@ DIST {distance
     font-size: 15px;
     letter-spacing: 0;
     text-transform: none;
+  }
+  .warn {
+    margin: 8px 0 0;
+    font-size: 10px;
+    line-height: 1.5;
+    color: var(--ast-fg);
   }
   .status {
     position: fixed;
