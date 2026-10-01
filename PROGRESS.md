@@ -2,8 +2,8 @@
 
 > Journal vivant. Chaque agent/humain le met à jour au début et à la fin de chaque tâche. Les entrées les plus récentes en haut.
 
-**Phase actuelle** : Phase 0 — Fondations
-**Milestone** : M0-Fondations
+**Phase actuelle** : Phase 2 — Carte Découverte / mode Terre & Ciel
+**Milestone** : M2-Carte + M2b-Terre-Ciel
 
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
@@ -15,11 +15,17 @@
 - Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Brancher le catalogue binaire (#16) et les histoires (#10) dans l'app
+1. Soleil et Lune sur la carte, ciel de jour (#34)
+2. Données Terre (#35) puis vue Terre depuis l'espace (#36)
+3. Fiche constellation avec les histoires (#10 intégré)
 2. Format binaire des étoiles (#16)
 3. Figures suivantes en style A (pipeline artiste + IA)
 
 ## ✅ Fait récemment
+- 2026-10-01 — #33 Curseur de temps : 48 h / 1 an / 26 000 ans, lecture accélérée, vitesses, indications pédagogiques ; précession long terme (modèle simplifié au-delà de ±5 siècles, Véga polaire vers 14 000).
+- 2026-10-01 — #32 Soleil, Lune (phase), point subsolaire via astronomy-engine, validés contre JPL Horizons (< 0,01° / 0,02°).
+- 2026-10-01 — #10 Histoires et anecdotes (15 constellations) fusionnées après relecture scientifique (8 corrections). #7 mode nuit (luminosité, mémorisation), #26 libellés sans chevauchement + dézoom 200°, #16 catalogue binaire 392 Ko.
+- 2026-10-01 — Épique #31 « Terre & Ciel » créée (tickets #32–#39, jalon M2b).
 - 2026-10-01 — #20 Carte : barre de temps (±1 h, ±1 j, maintenant/en direct), géolocalisation mémorisée, noms latins + français des 88 constellations (`@asteria/content`), constellation dans la fiche étoile. Captures fidèles S23 via puppeteer-core (viewport 360×780 @3x).
 - 2026-10-01 — #19 Moteur de carte `SkyMap` : projection stéréographique alt-az entièrement GPU (précession J2000→date validée Meeus 21.b), 8 870 étoiles, 88 constellations, sol tramé + horizon, glisser/pincer/molette avec inertie, sélection d'étoile, rendu à la demande. Polices embarquées (@fontsource, offline).
 - 2026-10-01 — #18 Déploiement GitHub Pages : https://splatch17.github.io/asteria/ (données générées en CI).

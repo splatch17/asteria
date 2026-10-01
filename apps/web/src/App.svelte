@@ -7,6 +7,14 @@
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
+  import {
+    RANGES,
+    RANGE_ORDER,
+    clampOffset,
+    dateAt,
+    offsetParts,
+    type TimeRange,
+  } from "./lib/timeline";
 
   const THEMES = {
     day: { ink: "#f0e6d2", sky: "#101b52", ground: "#0a1136" },
@@ -25,12 +33,17 @@
   let selected = $state<CatalogStar | null>(null);
   let date = $state(new Date());
   let live = $state(true);
+  let range = $state<TimeRange>("48h");
+  let anchor = new Date();
+  let offset = $state(0);
+  let playing = $state(false);
+  let speedIndex = $state(1);
+  let playFrame = 0;
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
   const names = constellationNames("fr");
 
-  const HOUR = 3_600_000;
   const PLACE_KEY = "asteria.place";
 
   interface Place {
@@ -50,16 +63,52 @@
     return { name: null, latitude: 48.8566, longitude: 2.3522 };
   }
 
-  function shiftTime(ms: number) {
+  function setOffset(value: number) {
+    offset = clampOffset(value, range);
     live = false;
-    date = new Date(date.getTime() + ms);
+    date = dateAt(anchor, offset, range);
     map?.setDate(date);
   }
 
   function goLive() {
+    stopPlaying();
+    anchor = new Date();
+    offset = 0;
     live = true;
-    date = new Date();
+    date = anchor;
     map?.setDate(date);
+  }
+
+  function cycleRange() {
+    stopPlaying();
+    range = RANGE_ORDER[(RANGE_ORDER.indexOf(range) + 1) % RANGE_ORDER.length]!;
+    anchor = date;
+    offset = 0;
+    speedIndex = 1;
+  }
+
+  function cycleSpeed() {
+    speedIndex = (speedIndex + 1) % RANGES[range].speeds.length;
+  }
+
+  function togglePlay() {
+    if (playing) return stopPlaying();
+    if (offset >= RANGES[range].half) setOffset(-RANGES[range].half); // restart from the beginning
+    playing = true;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000); // cap: a background tab must not jump
+      last = now;
+      setOffset(offset + RANGES[range].speeds[speedIndex]!.value * dt);
+      if (offset >= RANGES[range].half) return stopPlaying();
+      playFrame = requestAnimationFrame(tick);
+    };
+    playFrame = requestAnimationFrame(tick);
+  }
+
+  function stopPlaying() {
+    cancelAnimationFrame(playFrame);
+    playing = false;
   }
 
   function locate() {
@@ -112,6 +161,10 @@
       status = "ready";
       const params = new URLSearchParams(location.search);
       if (params.get("night") === "1") night = true;
+      const r = params.get("range");
+      if (r === "48h" || r === "1y" || r === "26ky") range = r;
+      const off = Number(params.get("offset"));
+      if (Number.isFinite(off) && off !== 0) setOffset(off);
       const view = ["az", "alt", "fov"].map((k) => Number(params.get(k) ?? NaN));
       map.setView({
         ...(Number.isFinite(view[0]) && { azimuth: view[0] }),
@@ -128,6 +181,7 @@
   });
 
   onDestroy(() => {
+    stopPlaying();
     clearInterval(clock);
     map?.dispose();
   });
@@ -152,14 +206,30 @@
   });
 
   const time = $derived(
-    date.toLocaleString("fr-FR", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
+    range === "26ky"
+      ? $_("time.year", { values: { year: date.getUTCFullYear() } })
+      : date.toLocaleString("fr-FR", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
   );
+  const relative = $derived.by(() => {
+    if (live) return "";
+    const p = offsetParts(offset, range);
+    if (p.years !== undefined)
+      return $_("time.offset.years", { values: { sign: p.sign, y: p.years } });
+    if (p.days) return $_("time.offset.days", { values: { sign: p.sign, d: p.days, h: p.hours } });
+    return $_("time.offset.short", { values: { sign: p.sign, h: p.hours, m: p.minutes } });
+  });
+  const HINTS: Record<TimeRange, string> = {
+    "48h": "time.hint.sidereal",
+    "1y": "time.hint.year",
+    "26ky": "time.hint.precession",
+  };
+  const hint = $derived(playing ? $_(HINTS[range]) : "");
   const distance = $derived(selected ? parallaxToLightYears(selected.plx) : null);
   const coords = $derived(
     $_("geo.coords", {
@@ -183,7 +253,9 @@
   </button>
   <p class="when">
     {coords} · {time}
-    {#if live}<span class="live">● {$_("time.live")}</span>{/if}
+    {#if live}<span class="live">● {$_("time.live")}</span>{:else}<span class="live"
+        >{relative}</span
+      >{/if}
   </p>
   {#if locating !== "idle"}
     <p class="meta">{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</p>
@@ -210,23 +282,51 @@ DIST {distance
 {/if}
 
 <nav class="hud bottom">
+  {#if hint}<p class="hint">{hint}</p>{/if}
   <div class="group time">
-    <button onclick={() => shiftTime(-24 * HOUR)}>{$_("time.minusDay")}</button>
-    <button onclick={() => shiftTime(-HOUR)}>{$_("time.minusHour")}</button>
-    <button aria-pressed={live} onclick={goLive}>{$_("time.now")}</button>
-    <button onclick={() => shiftTime(HOUR)}>{$_("time.plusHour")}</button>
-    <button onclick={() => shiftTime(24 * HOUR)}>{$_("time.plusDay")}</button>
+    <button
+      class="play"
+      onclick={togglePlay}
+      aria-label={playing ? $_("time.pause") : $_("time.play")}
+      aria-pressed={playing}>{playing ? "❚❚" : "▶"}</button
+    >
+    <input
+      class="slider scrub"
+      type="range"
+      aria-label={$_("time.scrub")}
+      min={-RANGES[range].half}
+      max={RANGES[range].half}
+      step={RANGES[range].step}
+      value={offset}
+      oninput={(e) => setOffset(Number(e.currentTarget.value))}
+    />
+    <button class="speed" onclick={cycleSpeed}>{$_(RANGES[range].speeds[speedIndex]!.key)}</button>
   </div>
-  <div class="group">
-    <button aria-pressed={lines} onclick={() => (lines = !lines)}>{$_("map.lines")}</button>
-    <button aria-pressed={night} onclick={() => (night = !night)}>{$_("night.toggle")}</button>
-    {#if night}
-      <label class="dim">
-        <span>{$_("night.brightness")}</span>
-        <input type="range" min={MIN_DIM} max="1" step="0.05" bind:value={brightness} />
-      </label>
-    {/if}
+  <div class="row">
+    <div class="group">
+      <button onclick={cycleRange}>{$_(`time.range.${range}`)}</button>
+      <button aria-pressed={live} onclick={goLive}>{$_("time.now")}</button>
+    </div>
+    <div class="group">
+      <button aria-pressed={lines} onclick={() => (lines = !lines)}>{$_("map.lines")}</button>
+      <button aria-pressed={night} onclick={() => (night = !night)} aria-label={$_("night.toggle")}
+        >{$_("night.short")}</button
+      >
+    </div>
   </div>
+  {#if night}
+    <label class="group dim">
+      <span>{$_("night.brightness")}</span>
+      <input
+        class="slider"
+        type="range"
+        min={MIN_DIM}
+        max="1"
+        step="0.05"
+        bind:value={brightness}
+      />
+    </label>
+  {/if}
 </nav>
 
 <style>
@@ -344,10 +444,44 @@ DIST {distance
     max-width: 420px;
     flex-wrap: nowrap;
   }
-  .time button {
+  .time {
+    align-items: center;
+  }
+  .time .play {
+    width: 44px;
+    flex: none;
+  }
+  .time .speed {
+    flex: none;
+    min-width: 84px;
+  }
+  .scrub {
     flex: 1;
-    padding: 13px 4px;
+    min-width: 0;
+    margin: 0 12px;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    justify-content: space-between;
+  }
+  .row .group {
+    flex-wrap: nowrap;
+  }
+  .row button {
+    padding: 13px 10px;
     white-space: nowrap;
+  }
+  .hint {
+    max-width: 420px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--ast-hairline);
+    background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
+    font: 11px/1.5 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
   }
   .dim {
     display: flex;
@@ -360,17 +494,17 @@ DIST {distance
     color: var(--ast-fg-muted);
   }
   /* Fully themed slider: native tracks are white/grey, which would break night vision */
-  .dim input {
+  .slider {
     appearance: none;
     width: 100px;
     height: 20px;
     background: transparent;
   }
-  .dim input::-webkit-slider-runnable-track {
+  .slider::-webkit-slider-runnable-track {
     height: 1px;
     background: var(--ast-fg);
   }
-  .dim input::-webkit-slider-thumb {
+  .slider::-webkit-slider-thumb {
     appearance: none;
     width: 12px;
     height: 12px;
@@ -379,11 +513,11 @@ DIST {distance
     border-radius: 0;
     background: var(--ast-fg);
   }
-  .dim input::-moz-range-track {
+  .slider::-moz-range-track {
     height: 1px;
     background: var(--ast-fg);
   }
-  .dim input::-moz-range-thumb {
+  .slider::-moz-range-thumb {
     width: 12px;
     height: 12px;
     border: 0;
@@ -400,7 +534,7 @@ DIST {distance
   .panel {
     left: 16px;
     right: 16px;
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 108px);
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 116px);
     max-width: 300px;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);

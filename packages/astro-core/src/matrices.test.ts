@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  longTermPrecessionMatrix,
   applyMat3,
   equatorialToHorizontal,
   equatorialToHorizontalMatrix,
@@ -52,5 +53,35 @@ describe("equatorialToHorizontalMatrix", () => {
       expect(Math.asin(u) * DEG).toBeCloseTo(ref.altitude, 9);
       expect((Math.atan2(e, n) * DEG + 360) % 360).toBeCloseTo(ref.azimuth, 9);
     }
+  });
+});
+
+describe("long-term precession", () => {
+  it("agrees with IAU 1976 within 0.05° over a century", () => {
+    const date = new Date("2100-01-01T12:00:00Z");
+    const t = 1.0; // ≈ Julian centuries since J2000
+    for (const [ra, dec] of [
+      [88.79, 7.41],
+      [279.23, 38.78],
+      [37.95, 89.26],
+    ] as const) {
+      const a = applyMat3(precessionMatrix(date), unitVector(ra, dec));
+      const b = applyMat3(longTermPrecessionMatrix(t), unitVector(ra, dec));
+      const dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      expect(Math.acos(Math.min(1, dot)) * DEG).toBeLessThan(0.05);
+    }
+  });
+
+  it("makes Vega the pole star around AD 14 000 (δ > 83°)", () => {
+    const vega = unitVector(279.2347, 38.7837);
+    const { dec } = toRaDec(applyMat3(precessionMatrix(new Date("+013800-01-01T00:00:00Z")), vega));
+    expect(dec).toBeGreaterThan(83);
+  });
+
+  it("brings Polaris back after one full cycle (~25 770 years)", () => {
+    const polaris = unitVector(37.9461, 89.2641);
+    const years = 360 / (5028.796195 / 3600 / 100);
+    const { dec } = toRaDec(applyMat3(longTermPrecessionMatrix(years / 100), polaris));
+    expect(dec).toBeCloseTo(89.2641, 6);
   });
 });
