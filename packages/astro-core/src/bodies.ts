@@ -7,7 +7,17 @@
 import * as Astronomy from "astronomy-engine";
 import type { Observer } from "./coords";
 
-export type SolarSystemBody = "Sun" | "Moon";
+export const PLANETS = [
+  "Mercury",
+  "Venus",
+  "Mars",
+  "Jupiter",
+  "Saturn",
+  "Uranus",
+  "Neptune",
+] as const;
+export type Planet = (typeof PLANETS)[number];
+export type SolarSystemBody = "Sun" | "Moon" | Planet;
 
 export interface BodyPosition {
   /** Astrometric J2000 right ascension / declination, topocentric (feeds the J2000 → view pipeline). */
@@ -18,6 +28,8 @@ export interface BodyPosition {
   altitude: number;
   /** Distance from the observer in km. */
   distanceKm: number;
+  /** Apparent visual magnitude (geocentric). */
+  magnitude: number;
 }
 
 const toAstroObserver = ({ latitude, longitude }: Observer) =>
@@ -35,6 +47,7 @@ export function bodyPosition(body: SolarSystemBody, date: Date, observer: Observ
     azimuth: hor.azimuth,
     altitude: hor.altitude,
     distanceKm: j2000.dist * Astronomy.KM_PER_AU,
+    magnitude: Astronomy.Illumination(b, date).mag,
   };
 }
 
@@ -68,4 +81,32 @@ export function subsolarPoint(date: Date): { latitude: number; longitude: number
   const gast = Astronomy.SiderealTime(date) * 15;
   const longitude = ((((sun.ra * 15 - gast) % 360) + 540) % 360) - 180;
   return { latitude: sun.dec, longitude };
+}
+
+export interface PathPoint {
+  date: Date;
+  ra: number;
+  dec: number;
+}
+
+/**
+ * Apparent path of a body across the sky (astrometric J2000, topocentric), sampled every
+ * `stepDays` between `start` and `end`. Shows retrograde loops of the outer planets.
+ */
+export function bodyPath(
+  body: SolarSystemBody,
+  start: Date,
+  end: Date,
+  stepDays: number,
+  observer: Observer,
+): PathPoint[] {
+  const obs = toAstroObserver(observer);
+  const b = Astronomy.Body[body];
+  const points: PathPoint[] = [];
+  for (let t = start.getTime(); t <= end.getTime(); t += stepDays * 86_400_000) {
+    const date = new Date(t);
+    const eq = Astronomy.Equator(b, date, obs, false, false);
+    points.push({ date, ra: eq.ra * 15, dec: eq.dec });
+  }
+  return points;
 }
