@@ -9,6 +9,7 @@
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
 | #53 | Planètes et trajectoires (carte + vue Terre) — en attente de test sur S23, PR non ouverte | sky-renderer (agent) | `feat/53-planets-layers` | 2026-10-02 |
+| #54 | Calques : rendu + API `setLayers` faits (grilles, écliptique), panneau UI à faire (ui-designer) | sky-renderer (agent) | `feat/54-layers-panel` (empilée sur #53) | 2026-10-02 |
 
 ## ⛔ Blocages / décisions en attente
 - Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
@@ -40,4 +41,5 @@
 - 2026-09-30 — Création du repo, docs de plan/workflow/DA/données, agents et procédures, templates GitHub, labels & milestones.
 
 ## 📝 Notes de passation
+- 2026-10-02 — #54 (branche `feat/54-layers-panel`, empilée sur `feat/53-planets-layers`, non poussée) : API de calques `SkyMap.setLayers(partial: Partial<SkyLayers>)` / `getLayers()` (constellationLines, constellationNames, starNames, planets, allPaths, equatorialGrid, azimuthalGrid, ecliptic ; défauts `DEFAULT_SKY_LAYERS`), même API sur `SpaceView` (lignes, planètes, écliptique, grille équatoriale). Grilles et écliptique en fils tramés avec graduations légères. L'App pilote un objet `layers` unique : reste le panneau UI (agent ui-designer) et la mémorisation des calques. Captures `docs/design/map/s23-layers-*.jpg`.
 - 2026-10-02 — #53 (branche `feat/53-planets-layers`, non poussée) : planètes sur la carte et dans la vue Terre ; retours du porteur appliqués : la trajectoire (±6 mois, repères datés exactement au 1er du mois) n'apparaît plus que pour la planète touchée, dans la vue Ciel comme dans la vue Terre (sélection au toucher Soleil/Lune/planètes dans `SpaceView`) ; bouton Trajectoires retiré (« toutes les trajectoires » reste disponible via `setPathsVisible`, futur panneau Calques #54) ; boutons-icônes 44 px ; plein jour : seule Vénus reste visible (`planetLimitingMagnitude`). Perf : fuite de la vue Terre corrigée (marqueur reconstruit à chaque date). Captures `docs/design/map/s23-planet-*.jpg`, `s23-space-selected-path.jpg`, `s23-planets-day-rule.jpg`. Reste : test du porteur sur le S23, puis push + PR.
