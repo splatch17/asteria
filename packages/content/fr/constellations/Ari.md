@@ -16,6 +16,9 @@ sources:
   - title: "Hygin, De Astronomia II.20 (trad. M. Grant, Theoi Project)"
     url: "https://www.theoi.com/Text/HyginusAstronomica2.html"
     license: "Traduction © Theoi Project (consultation, texte non repris)"
+  - title: "Gamma Arietis — Wikipedia (en)"
+    url: "https://en.wikipedia.org/wiki/Gamma_Arietis"
+    license: "CC BY-SA 4.0"
 ---
 
 ## Histoire
@@ -28,4 +31,4 @@ Les récits ne s'accordent pas sur la suite. Selon la version la plus courante, 
 
 - Il y a un peu plus de 2 000 ans, le Soleil se trouvait dans le Bélier à l'équinoxe de printemps : on parle encore du « premier point du Bélier ». Mais l'axe de la Terre oscille lentement (la précession), et ce point est aujourd'hui dans les Poissons.
 - Son étoile la plus brillante, Hamal, doit son nom à l'arabe *al-ḥamal*, « l'agneau », nom que les astronomes arabes donnaient à toute la constellation.
-- Mesarthim (γ du Bélier) fut l'une des premières étoiles doubles découvertes au télescope, par l'Anglais Robert Hooke en 1664 : une petite lunette montre deux étoiles presque jumelles, de magnitudes 4,75 et 4,83.
+- Mesarthim (γ du Bélier) fut l'une des premières étoiles doubles découvertes au télescope, par l'Anglais Robert Hooke en 1664 : une petite lunette montre deux étoiles presque jumelles, de magnitude 4,6 environ chacune.

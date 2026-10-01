@@ -16,6 +16,9 @@ sources:
   - title: "Star Tales — Orion, parties 1 et 2 (Ian Ridpath)"
     url: "http://www.ianridpath.com/startales/orion.html"
     license: "© Ian Ridpath, tous droits réservés (faits cités, texte non repris)"
+  - title: "Betelgeuse — Wikipedia (en)"
+    url: "https://en.wikipedia.org/wiki/Betelgeuse"
+    license: "CC BY-SA 4.0"
 ---
 
 ## Histoire
@@ -26,6 +29,6 @@ Il existe d'autres récits. Selon Hygin, Artémis aimait Orion, ce qui déplaisa
 
 ## Anecdotes
 
-- Fin 2019, Bételgeuse, l'épaule rouge d'Orion, a soudain perdu de son éclat, au point de passer de la 8e à la 21e place des étoiles les plus brillantes en 2020. La cause : un nuage de poussière formé après que l'étoile a éjecté une grande bulle de gaz. Elle a ensuite retrouvé peu à peu son éclat.
+- Fin 2019, Bételgeuse, l'épaule rouge d'Orion, a soudain perdu de son éclat, au point de sortir en 2020 des vingt étoiles les plus brillantes du ciel, alors qu'elle fait d'habitude partie des dix premières. La cause : un nuage de poussière formé après que l'étoile a éjecté une grande bulle de gaz. Elle a ensuite retrouvé peu à peu son éclat.
 - Sous le Baudrier, la nébuleuse d'Orion (M42) se devine à l'œil nu comme une petite tache floue. C'est une pouponnière d'étoiles située à environ 1 350 années-lumière, l'une des plus proches de nous.
 - Les noms des trois étoiles du Baudrier, que l'on surnomme aussi les « Trois Rois », viennent de l'arabe : Alnitak et Mintaka signifient « la ceinture », et Alnilam « le collier de perles ».
