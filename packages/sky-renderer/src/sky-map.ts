@@ -74,8 +74,41 @@ export type SkySelection =
   | { kind: "body"; body: BodyName }
   | { kind: "planet"; planet: Planet };
 
-/** Daylight hides planets this many magnitudes later than stars (Venus stays visible by day). */
+/** At night, planets are hidden this many magnitudes later than stars (they are never lost). */
 export const PLANET_DAYLIGHT_MARGIN = 4;
+
+/** Daylight cap on planet magnitudes: (Sun altitude in degrees, faintest magnitude) nodes. */
+const PLANET_DAY_CAP: readonly (readonly [number, number])[] = [
+  [-18, 10],
+  [-6, 1.0],
+  [0, -2.0],
+  [10, -3.4],
+];
+
+/**
+ * Faintest planet magnitude shown, from the stars' limiting magnitude and the Sun's altitude.
+ *
+ * Night: the stars' limit + PLANET_DAYLIGHT_MARGIN. As the Sun rises, a daylight cap takes over,
+ * linear between these (Sun altitude → magnitude) nodes:
+ *   −18° → 10 (no cap: fainter than Neptune)
+ *   −6° → 1.0 (end of civil twilight: Mercury, Saturn, Mars, Jupiter)
+ *   0° → −2.0 (sunrise: Jupiter still, Mercury gone) · ≥ +10° → −3.4 (full day: Venus only)
+ * −3.4 sits between Jupiter's brightest (−2.9) and Venus's faintest (−3.8), so with the Sun high
+ * only Venus remains, and Jupiter only shows in twilight.
+ */
+export function planetLimitingMagnitude(starLimit: number, sunAltitude: number): number {
+  const nodes = PLANET_DAY_CAP;
+  let cap = sunAltitude <= nodes[0]![0] ? nodes[0]![1] : nodes.at(-1)![1];
+  for (let i = 1; i < nodes.length; i++) {
+    const [a0, m0] = nodes[i - 1]!;
+    const [a1, m1] = nodes[i]!;
+    if (sunAltitude > a0 && sunAltitude <= a1) {
+      cap = m0 + ((m1 - m0) * (sunAltitude - a0)) / (a1 - a0);
+      break;
+    }
+  }
+  return Math.min(starLimit + PLANET_DAYLIGHT_MARGIN, cap);
+}
 
 export interface SkyMapOptions {
   canvas: HTMLCanvasElement;
@@ -143,6 +176,7 @@ export class SkyMap {
   private showPaths = true;
   /** 0 = dark night … 1 = full daylight, from the Sun's altitude. */
   private daylight = 0;
+  private sunAltitude = -90;
   private readonly starDirs: Vec3[];
   private readonly labels: { text: string; dir: Vec3 }[];
   private eq2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -171,6 +205,7 @@ export class SkyMap {
       uAspect: { value: 1 },
       uDpr: { value: this.renderer.getPixelRatio() },
       uLimitMag: { value: 5 },
+      uPlanetLimit: { value: 9 },
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
@@ -467,6 +502,7 @@ export class SkyMap {
     const sunAltitude = this.bodies
       ? (Math.asin(applyMat3(this.eq2hor, this.bodies.sun)[2]) * 180) / Math.PI
       : -90;
+    this.sunAltitude = sunAltitude;
     const k = Math.min(1, Math.max(0, (sunAltitude + 18) / 18));
     this.daylight = k * k;
     // Blend in sRGB (THREE.Color.lerp works in linear space and washes the blues out).
@@ -551,6 +587,10 @@ export class SkyMap {
     this.uniforms.uScale.value = stereoScale(this.view.fov);
     // Daylight drowns the stars: at noon only magnitude ≲ −1 objects would remain.
     this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov) - this.daylight * 7;
+    this.uniforms.uPlanetLimit.value = planetLimitingMagnitude(
+      this.uniforms.uLimitMag.value,
+      this.sunAltitude,
+    );
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
@@ -747,9 +787,9 @@ export class SkyMap {
     }
   }
 
-  /** Same rule as planetVert: daylight hides planets 4 magnitudes after the stars. */
+  /** Same rule as planetVert (see planetLimitingMagnitude). */
   private planetVisible(magnitude: number): boolean {
-    return magnitude <= this.uniforms.uLimitMag.value + PLANET_DAYLIGHT_MARGIN;
+    return magnitude <= this.uniforms.uPlanetLimit.value;
   }
 
   private setLabelFont(weightSize: string, spacing: string, alpha: number): void {

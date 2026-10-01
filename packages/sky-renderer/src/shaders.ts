@@ -196,12 +196,12 @@ export const bodyFrag = /* glsl */ `
 
 /**
  * Planets: engraved discs sized by magnitude; aKind = index in PLANETS (4 = Saturn, ringed).
- * Daylight hides them like stars, but 4 magnitudes later: Venus stays visible in full day.
+ * uPlanetLimit = planetLimitingMagnitude(): with the Sun high, only Venus remains.
  */
 export const planetVert = /* glsl */ `
   ${projection}
   uniform float uDpr;
-  uniform float uLimitMag;
+  uniform float uPlanetLimit;
   attribute vec3 aDir;
   attribute float aMag;
   attribute float aKind;
@@ -210,7 +210,7 @@ export const planetVert = /* glsl */ `
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
     vKind = aKind;
-    if (v.z < -0.6 || h.z < -0.01 || aMag > uLimitMag + 4.0) {
+    if (v.z < -0.6 || h.z < -0.01 || aMag > uPlanetLimit) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
