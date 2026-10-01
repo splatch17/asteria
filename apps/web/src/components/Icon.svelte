@@ -1,7 +1,6 @@
 <script lang="ts">
   // Line icons drawn on a 16×16 grid, stroked with currentColor (works in night red).
-  export type IconName =
-    "play" | "pause" | "now" | "lines" | "night" | "range" | "earth" | "sky" | "planets" | "paths";
+  import type { IconName } from "../lib/icons";
   let { name }: { name: IconName } = $props();
 </script>
 
@@ -38,6 +37,27 @@
       stroke-dasharray="1.6 1.4"
     />
     <circle cx="14.5" cy="3.5" r="1.4" class="fill" />
+  {:else if name === "layers"}
+    <path d="M8 2 L14 5 L8 8 L2 5 Z" />
+    <path d="M2 8 L8 11 L14 8" />
+    <path d="M2 11 L8 14 L14 11" />
+  {:else if name === "conNames"}
+    <path d="M2.5 13 L5.5 3 L8.5 13 M3.6 9.5 H7.4" />
+    <path d="M10.5 13 H14 M10.5 10 H14" stroke-dasharray="1.2 1.2" />
+  {:else if name === "starNames"}
+    <path d="M5 2 L6 5 L9 5 L6.6 6.8 L7.5 9.8 L5 8 L2.5 9.8 L3.4 6.8 L1 5 L4 5 Z" />
+    <path d="M9.5 12.5 H15 M11 9.5 H15" />
+  {:else if name === "eqGrid"}
+    <circle cx="8" cy="8" r="6" />
+    <path d="M2 8 H14 M3 4.8 H13 M3 11.2 H13 M8 2 V14" />
+  {:else if name === "azGrid"}
+    <path d="M1.5 13.5 H14.5" />
+    <path d="M2.5 13.5 A5.5 5.5 0 0 1 13.5 13.5 M5 13.5 A3 3 0 0 1 11 13.5" />
+    <path d="M8 13.5 V8 M8 13.5 L3.8 9.6 M8 13.5 L12.2 9.6" stroke-dasharray="1.2 1" />
+  {:else if name === "ecliptic"}
+    <path d="M1.5 9.5 H14.5" class="thin" />
+    <path d="M1.5 12.5 L14.5 5" stroke-dasharray="1.6 1.2" />
+    <circle cx="9.9" cy="7.7" r="1.9" class="fill" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
   {/if}
@@ -52,6 +72,9 @@
     stroke: currentColor;
     stroke-width: 1.3;
     stroke-linecap: square;
+  }
+  .thin {
+    stroke-width: 0.8;
   }
   .fill {
     fill: currentColor;

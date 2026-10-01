@@ -9,6 +9,7 @@
     type SkyLayers,
     type SkySelection,
     DEFAULT_SKY_LAYERS,
+    DEFAULT_SPACE_LAYERS,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
@@ -26,6 +27,17 @@
   import { devicePointing, pointingToView, smooth } from "./lib/orientation";
   import Icon from "./components/Icon.svelte";
   import TimeScrubber from "./components/TimeScrubber.svelte";
+  import LayersPanel from "./components/LayersPanel.svelte";
+  import {
+    LAYERS_STORAGE_KEY,
+    graduationFormatter,
+    isRecord,
+    layersFromUrl,
+    restoreLayers,
+    serializeLayers,
+    type LayerKey,
+    type LayerView,
+  } from "./lib/layers";
   import {
     RANGES,
     RANGE_ORDER,
@@ -54,19 +66,28 @@
   const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
   let night = $state(readSetting("asteria.night", false, isBool));
   let brightness = $state(readSetting("asteria.nightBrightness", 0.7, isNum));
-  // Map layers (renderer API: SkyMap.setLayers). The layers panel (#54) will edit this object;
-  // only `planets` is remembered for now.
-  let layers = $state<SkyLayers>({
-    ...DEFAULT_SKY_LAYERS,
-    planets: readSetting("asteria.planets", true, isBool),
+  // Layers (#54): one state per view (the Earth view keeps the ecliptic by default), edited by
+  // the layers panel and remembered between sessions. `?layers=` (captures) takes precedence and
+  // is then not saved.
+  const urlLayers = new URLSearchParams(location.search).get("layers");
+  function initialLayers(view: LayerView): SkyLayers {
+    const defaults = view === "sky" ? DEFAULT_SKY_LAYERS : DEFAULT_SPACE_LAYERS;
+    const fromUrl = layersFromUrl(urlLayers, defaults);
+    if (fromUrl) return fromUrl;
+    const saved = readSetting<unknown>(LAYERS_STORAGE_KEY[view], null, isRecord);
+    // Before #54 only the planets switch was remembered.
+    if (saved === null && view === "sky")
+      return { ...defaults, planets: readSetting("asteria.planets", true, isBool) };
+    return restoreLayers(saved, defaults);
+  }
+  let viewLayers = $state<Record<LayerView, SkyLayers>>({
+    sky: initialLayers("sky"),
+    space: initialLayers("space"),
   });
-  const showPlanets = $derived(layers.planets);
-  const lines = $derived(layers.constellationLines);
-  const toggleLines = () => {
-    const on = !layers.constellationLines;
-    layers.constellationLines = on;
-    layers.constellationNames = on;
-  };
+  const setLayer = (key: LayerKey, value: boolean) => (viewLayers[mode][key] = value);
+  const showPlanets = $derived(viewLayers[mode].planets);
+  let layersOpen = $state(false);
+  let layersButton = $state<HTMLButtonElement>();
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
@@ -263,10 +284,7 @@
       moon: { ...bodies.moon, illumination: bodies.phase.illumination },
     });
     space.setPlanets(planets);
-    space.setLayers({
-      constellationLines: layers.constellationLines,
-      planets: layers.planets,
-    });
+    space.setLayers({ ...viewLayers.space });
     space.setSelectedPath(selectedPath);
     space.focusObserver(4);
     mode = "space";
@@ -322,6 +340,7 @@
         lines: constellationLines,
         constellationNames: names,
         cardinals: $_("map.cardinals").split(","),
+        formatGraduation: graduationFormatter($_),
         theme: THEMES.day,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
@@ -340,6 +359,7 @@
       });
       map.setObserver(place);
       status = "ready";
+      observeHud();
       const params = new URLSearchParams(location.search);
       if (params.get("night") === "1") night = true;
       const r = params.get("range");
@@ -352,9 +372,7 @@
         ...(Number.isFinite(view[1]) && { altitude: view[1] }),
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
-      // Layers switched on from the URL (captures): ?layers=equatorialGrid,ecliptic
-      for (const key of (params.get("layers") ?? "").split(","))
-        if (key in layers) layers[key as keyof SkyLayers] = true;
+      if (params.get("panel") === "layers") layersOpen = true; // captures
       // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
       if (params.get("space") === "1") {
         await toggleSpace();
@@ -372,7 +390,30 @@
     }
   });
 
+  // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).
+  let header: HTMLElement;
+  let compass: HTMLElement;
+  let bottomNav: HTMLElement;
+  let hudObserver: ResizeObserver | undefined;
+  function updateGraduationExclusions() {
+    const m = 4; // margin around each block, CSS px
+    map?.setGraduationExclusions(
+      [header, compass, bottomNav].map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
+      }),
+    );
+  }
+  function observeHud() {
+    hudObserver = new ResizeObserver(updateGraduationExclusions);
+    for (const el of [header, compass, bottomNav]) hudObserver.observe(el);
+    addEventListener("resize", updateGraduationExclusions);
+  }
+  let controlsHeight = $state(140);
+
   onDestroy(() => {
+    hudObserver?.disconnect();
+    removeEventListener("resize", updateGraduationExclusions);
     space?.dispose();
     stopPointing();
     stopPlaying();
@@ -398,13 +439,17 @@
 
   $effect(() => {
     if (status !== "ready") return;
-    map?.setLayers({ ...layers });
+    map?.setLayers({ ...viewLayers.sky });
   });
   $effect(() => {
-    space?.setLayers({
-      constellationLines: layers.constellationLines,
-      planets: layers.planets,
-    });
+    space?.setLayers({ ...viewLayers.space });
+  });
+  $effect(() => {
+    const sky = serializeLayers(viewLayers.sky);
+    const earth = serializeLayers(viewLayers.space);
+    if (urlLayers !== null) return; // capture state: never saved over the user's choice
+    writeSetting(LAYERS_STORAGE_KEY.sky, sky);
+    writeSetting(LAYERS_STORAGE_KEY.space, earth);
   });
 
   // Planets follow the displayed date (≈ 0.3 ms for the seven on a desktop CPU).
@@ -417,7 +462,6 @@
     space?.setPlanets(planets);
   });
   $effect(() => {
-    writeSetting("asteria.planets", showPlanets);
     if (!showPlanets && selection?.kind === "planet") selection = null;
   });
   // Paths: ±6 months, recomputed only when the date leaves a 10-day window (the cache returns
@@ -436,7 +480,9 @@
     space?.setSelectedPath(selectedPath);
   });
   // Every planet's path at once (undated): the `allPaths` layer, off by default.
-  const allPaths = $derived(layers.allPaths && pathsAllowed ? pathCache.get(date, place) : null);
+  const allPaths = $derived(
+    viewLayers.sky.allPaths && pathsAllowed ? pathCache.get(date, place) : null,
+  );
   $effect(() => {
     if (status !== "ready") return;
     map?.setPaths(allPaths);
@@ -562,7 +608,7 @@
   <canvas class="overlay" bind:this={spaceOverlay}></canvas>
 </div>
 
-<header class="hud top">
+<header class="hud top" bind:this={header}>
   <p class="meta">
     {mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
     {#if spaceLoading}· {$_("space.loading")}{/if}
@@ -581,7 +627,7 @@
   {/if}
 </header>
 
-<div class="hud compass">
+<div class="hud compass" bind:this={compass}>
   <button
     class="dial"
     onclick={toggleSpace}
@@ -678,57 +724,67 @@ DIST {distance
   </aside>
 {/if}
 
-<nav class="hud bottom">
-  {#if hint}<p class="hint">{hint}</p>{/if}
-  <TimeScrubber
-    {range}
-    {offset}
-    {playing}
-    {relative}
-    target={time}
-    speedKey={RANGES[range].speeds[speedIndex]!.key}
-    onscrub={setOffset}
-    ontoggle={togglePlay}
-    onspeed={cycleSpeed}
-  />
-  <div class="row">
-    <div class="group frame">
-      <button onclick={cycleRange}><Icon name="range" />{$_(`time.range.${range}`)}</button>
-      <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
-    </div>
-    <div class="group frame">
-      <button aria-pressed={lines} onclick={toggleLines} class="icon" aria-label={$_("map.lines")}
-        ><Icon name="lines" /></button
-      >
-      <button
-        aria-pressed={showPlanets}
-        onclick={() => (layers.planets = !layers.planets)}
-        class="icon"
-        aria-label={$_("map.planets")}
-        title={$_("map.planets")}><Icon name="planets" /></button
-      >
-
-      <button
-        aria-pressed={night}
-        onclick={() => (night = !night)}
-        class="icon"
-        aria-label={$_("night.toggle")}><Icon name="night" /></button
-      >
-    </div>
-  </div>
-  {#if night}
-    <label class="group frame dim">
-      <span>{$_("night.brightness")}</span>
-      <input
-        class="slider"
-        type="range"
-        min={MIN_DIM}
-        max="1"
-        step="0.05"
-        bind:value={brightness}
-      />
-    </label>
+<nav class="hud bottom" bind:this={bottomNav} style:--controls-h={`${controlsHeight}px`}>
+  {#if layersOpen}
+    <LayersPanel
+      view={mode}
+      layers={viewLayers[mode]}
+      onchange={setLayer}
+      onclose={() => (layersOpen = false)}
+      toggle={layersButton}
+    />
   {/if}
+  <div class="controls" bind:clientHeight={controlsHeight}>
+    {#if hint}<p class="hint">{hint}</p>{/if}
+    <TimeScrubber
+      {range}
+      {offset}
+      {playing}
+      {relative}
+      target={time}
+      speedKey={RANGES[range].speeds[speedIndex]!.key}
+      onscrub={setOffset}
+      ontoggle={togglePlay}
+      onspeed={cycleSpeed}
+    />
+    <div class="row">
+      <div class="group frame">
+        <button onclick={cycleRange}><Icon name="range" />{$_(`time.range.${range}`)}</button>
+        <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
+      </div>
+      <div class="group frame">
+        <button
+          bind:this={layersButton}
+          aria-expanded={layersOpen}
+          aria-controls="layers-panel"
+          onclick={() => (layersOpen = !layersOpen)}
+          class="icon"
+          aria-label={$_("layers.open")}
+          title={$_("layers.open")}><Icon name="layers" /></button
+        >
+
+        <button
+          aria-pressed={night}
+          onclick={() => (night = !night)}
+          class="icon"
+          aria-label={$_("night.toggle")}><Icon name="night" /></button
+        >
+      </div>
+    </div>
+    {#if night}
+      <label class="group frame dim">
+        <span>{$_("night.brightness")}</span>
+        <input
+          class="slider"
+          type="range"
+          min={MIN_DIM}
+          max="1"
+          step="0.05"
+          bind:value={brightness}
+        />
+      </label>
+    {/if}
+  </div>
 </nav>
 
 <style>
@@ -905,6 +961,13 @@ DIST {distance
     align-items: center;
     gap: 8px;
   }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
   .group {
     display: flex;
     flex-wrap: wrap;
@@ -1004,7 +1067,8 @@ DIST {distance
   .group button:last-child {
     border-right: 0;
   }
-  button[aria-pressed="true"] {
+  button[aria-pressed="true"],
+  button[aria-expanded="true"] {
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
