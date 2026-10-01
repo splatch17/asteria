@@ -8,7 +8,7 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| #53 | Planètes et trajectoires (carte + vue Terre) — en attente de test sur S23, PR non ouverte | sky-renderer (agent) | `feat/53-planets-layers` | 2026-10-02 |
 
 ## ⛔ Blocages / décisions en attente
 - Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
@@ -40,4 +40,4 @@
 - 2026-09-30 — Création du repo, docs de plan/workflow/DA/données, agents et procédures, templates GitHub, labels & milestones.
 
 ## 📝 Notes de passation
-_(vide)_
+- 2026-10-02 — #53 (branche `feat/53-planets-layers`, non poussée) : planètes sur la carte et dans la vue Terre, trajectoires ±6 mois avec repères mensuels datés (cache incrémental `apps/web/src/lib/planet-paths.ts`, fenêtre de 10 j, masquées sur l'échelle 26 000 ans), fiche planète (magnitude, ua, minutes-lumière, constellation via `constellationOf`), boutons Planètes / Trajectoires mémorisés. Captures `docs/design/map/s23-planets-*.jpg`. Reste : test du porteur sur le S23 (fluidité en lecture 1 s = 10 j avec trajectoires), puis push + PR.
