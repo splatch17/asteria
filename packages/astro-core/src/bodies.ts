@@ -110,3 +110,13 @@ export function bodyPath(
   }
   return points;
 }
+
+/**
+ * IAU constellation (3-letter abbreviation, e.g. "Ori") containing a J2000 position, from the
+ * official boundaries (Delporte 1930, as tabulated by Roman 1987, CDS VI/42) via astronomy-engine.
+ * Positions are J2000 (as returned by bodyPosition), so no date is needed: astronomy-engine
+ * precesses them to B1875, the epoch of the boundaries.
+ */
+export function constellationOf(ra: number, dec: number): string {
+  return Astronomy.Constellation((((ra % 360) + 360) % 360) / 15, dec).symbol;
+}
