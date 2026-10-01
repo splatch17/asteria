@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bodyPosition, moonPhase, subsolarPoint } from "./index";
+import { bodyPath, bodyPosition, moonPhase, subsolarPoint } from "./index";
 
 // Reference: JPL Horizons, observer Paris (2.3522°E, 48.8566°N, 35 m), 2026-10-01 00:00 UT.
 // Quantities 1 (astrometric RA/Dec J2000), 4 (airless azimuth/elevation), 10 (illuminated %).
@@ -34,5 +34,37 @@ describe("subsolarPoint", () => {
   it("puts the Sun at the zenith there", () => {
     const p = subsolarPoint(DATE);
     expect(bodyPosition("Sun", DATE, p).altitude).toBeGreaterThan(89.9);
+  });
+});
+
+describe("planets vs JPL Horizons (Paris, 2026-10-01 0 h UT)", () => {
+  // RA/Dec astrometric J2000, apparent magnitude, distance (au) — Horizons quantities 1, 9, 20
+  const REF = {
+    Mars: { ra: 123.786393913, dec: 20.853191985, mag: 1.097, au: 1.66543730787509 },
+    Jupiter: { ra: 141.834286135, dec: 15.624165707, mag: -1.871, au: 5.92083936263814 },
+    Venus: { ra: 213.214738701, dec: -20.850372721, mag: -4.768, au: 0.34769571079072 },
+  } as const;
+  const AU = 149_597_870.7;
+
+  it.each(Object.entries(REF))(
+    "%s position < 0.01°, magnitude ± 0.1, distance ± 0.1 %%",
+    (name, ref) => {
+      const p = bodyPosition(name as keyof typeof REF, DATE, PARIS);
+      expect(Math.abs(p.ra - ref.ra)).toBeLessThan(0.01);
+      expect(Math.abs(p.dec - ref.dec)).toBeLessThan(0.01);
+      expect(Math.abs(p.magnitude - ref.mag)).toBeLessThan(0.1);
+      expect(Math.abs(p.distanceKm / AU - ref.au) / ref.au).toBeLessThan(0.001);
+    },
+  );
+});
+
+describe("bodyPath", () => {
+  it("samples the requested period and shows Mars' retrograde motion in early 2027", () => {
+    const path = bodyPath("Mars", new Date("2026-12-01"), new Date("2027-05-01"), 5, PARIS);
+    expect(path.length).toBe(31);
+    // Mars opposition: 2027-02-19 — RA decreases for some weeks around it (retrograde)
+    const ras = path.map((p) => p.ra);
+    const retro = ras.some((ra, i) => i > 0 && ra < ras[i - 1]!);
+    expect(retro).toBe(true);
   });
 });
