@@ -1,7 +1,28 @@
+/**
+ * SkyMap — the stereographic sky map (alt-az, GPU projection).
+ *
+ * Layers API (#54): everything optional on the map is a layer, switched with
+ *
+ *   map.setLayers(partial: Partial<SkyLayers>): void   // only the given keys change
+ *   map.getLayers(): Readonly<SkyLayers>                // current state (do not mutate)
+ *
+ * with SkyLayers = {
+ *   constellationLines, constellationNames, starNames, planets,
+ *   allPaths,        // every planet's ±6-month path, undated (data from setPaths)
+ *   equatorialGrid,  // RA/Dec of date, 1 h / 10°, labelled in hours and degrees
+ *   azimuthalGrid,   // azimuth/altitude, 15° / 10°, labelled in degrees
+ *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
+ * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
+ * on allPaths (it follows setSelectedPath, and hides with `planets`).
+ * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
+ * partial objects keep working. setLinesVisible / setPlanetsVisible / setPathsVisible remain as
+ * aliases. Graduation labels can be localised with the `formatGraduation` option.
+ */
 import * as THREE from "three";
 import {
   PLANETS,
   applyMat3,
+  equatorialToHorizontalMatrix,
   j2000ToHorizontalMatrix,
   multiplyMat3,
   unitVector,
@@ -15,6 +36,8 @@ import {
   bodyVert,
   groundFrag,
   groundVert,
+  guideFrag,
+  guideVert,
   lineFrag,
   lineVert,
   pathFrag,
@@ -26,6 +49,7 @@ import {
 } from "./shaders";
 import { LabelLayout } from "./labels";
 import { fillPathBuffers } from "./paths";
+import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
 export interface CatalogStar {
@@ -114,6 +138,49 @@ export function planetLimitingMagnitude(starLimit: number, sunAltitude: number):
   return Math.min(starLimit + PLANET_DAYLIGHT_MARGIN, cap);
 }
 
+/** Switchable layers of the sky map (see the file header). */
+export interface SkyLayers {
+  constellationLines: boolean;
+  constellationNames: boolean;
+  starNames: boolean;
+  planets: boolean;
+  /** Every planet's path at once, undated. */
+  allPaths: boolean;
+  /** Right ascension / declination grid (equator of date). */
+  equatorialGrid: boolean;
+  /** Azimuth / altitude grid. */
+  azimuthalGrid: boolean;
+  ecliptic: boolean;
+}
+
+export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
+  constellationLines: true,
+  constellationNames: true,
+  starNames: true,
+  planets: true,
+  allPaths: false,
+  equatorialGrid: false,
+  azimuthalGrid: false,
+  ecliptic: false,
+});
+
+/** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
+export type GraduationKind = "ra" | "dec" | "az" | "alt" | "ecliptic";
+
+/** Default graduation text: "2h", "+30°", "−20°", "120°". */
+export function formatGraduation(kind: GraduationKind, value: number): string {
+  if (kind === "ra") return `${Math.round(value / 15)}h`;
+  if (kind === "dec" || kind === "alt") {
+    const sign = value > 0 && kind === "dec" ? "+" : value < 0 ? "−" : "";
+    return `${sign}${Math.abs(value)}°`;
+  }
+  return `${value}°`;
+}
+
+/** Grid spacing (degrees) and label spacing for a field of view. */
+const GRID = { lon: 15, lat: 10 };
+const labelSteps = (fov: number) => (fov > 60 ? { lon: 30, lat: 20 } : { lon: 15, lat: 10 });
+
 export interface SkyMapOptions {
   canvas: HTMLCanvasElement;
   /** 2D canvas stacked on top, used for labels. */
@@ -137,6 +204,10 @@ export interface SkyMapOptions {
   onViewChange?: (view: Readonly<ViewState>) => void;
   /** Label for what the central reticle points at, when sensor pointing is on. */
   describeTarget?: (selection: SkySelection) => string;
+  /** Text of the grid and ecliptic graduations (default: formatGraduation). */
+  formatGraduation?: (kind: GraduationKind, value: number) => string;
+  /** Initial layers (default: DEFAULT_SKY_LAYERS). */
+  layers?: Partial<SkyLayers>;
 }
 
 const FOV_MIN = 2;
@@ -161,7 +232,7 @@ export class SkyMap {
   readonly view: ViewState = { azimuth: 180, altitude: 35, fov: 100, roll: 0 };
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
-  private showLines = true;
+  private readonly layers: SkyLayers = { ...DEFAULT_SKY_LAYERS };
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
@@ -174,10 +245,18 @@ export class SkyMap {
   private readonly planetPoints: THREE.Points;
   /** Current planets, in PLANETS order (direction and magnitude), null when unset. */
   private planets: { name: Planet; dir: Vec3; magnitude: number }[] | null = null;
-  private showPlanets = true;
   /** All planets' paths (the "all paths" layer, undated, off by default). */
   private readonly pathPoints: THREE.Points;
-  private showPaths = false;
+  /** Reference lines; aDir in their own frame, uFrame → horizontal. */
+  private readonly equatorialGrid: THREE.LineSegments;
+  private readonly azimuthalGrid: THREE.LineSegments;
+  private readonly eclipticLine: THREE.LineSegments;
+  /** Equator of date → horizontal (frame of the RA/Dec grid). */
+  private date2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  /** Graduation texts, by kind and value (built once). */
+  private readonly graduationTexts = new Map<string, string>();
+  /** View matrix of the frame being labelled. */
+  private labelView: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   /** The selected planet's path, with dated monthly marks. */
   private readonly selectedPathPoints: THREE.Points;
   private pathMarks: { dir: Vec3; text: string; width: number }[] = [];
@@ -306,7 +385,30 @@ export class SkyMap {
     this.pathPoints = pathLayer();
     this.selectedPathPoints = pathLayer();
 
+    // Reference lines: stippled (1-bit) wires; the azimuthal grid is dashed to tell it apart.
+    const grid = sphericalGrid({ lonStep: GRID.lon, latStep: GRID.lat, latMax: 80 });
+    this.equatorialGrid = this.guide(grid.positions, grid.dash, {
+      opacity: 0.55,
+      density: 0.5,
+      dash: 0,
+    });
+    const altAz = sphericalGrid({ lonStep: GRID.lon, latStep: GRID.lat, latMax: 80, latMin: 0 });
+    this.azimuthalGrid = this.guide(altAz.positions, altAz.dash, {
+      opacity: 0.5,
+      density: 0.5,
+      dash: 1.5,
+    });
+    const ecl = eclipticCircle(1);
+    this.eclipticLine = this.guide(ecl.positions, ecl.longitudes, {
+      opacity: 0.8,
+      density: 0.85,
+      dash: 3,
+    });
+
     this.scene.add(
+      this.azimuthalGrid,
+      this.equatorialGrid,
+      this.eclipticLine,
       this.lineMesh,
       this.pathPoints,
       this.selectedPathPoints,
@@ -330,6 +432,7 @@ export class SkyMap {
       };
     });
 
+    this.setLayers(options.layers ?? {});
     this.setTheme(options.theme);
     // Widths measured before the web font finished loading are wrong: measure again.
     document.fonts?.addEventListener("loadingdone", () => {
@@ -344,6 +447,31 @@ export class SkyMap {
     this.resize();
     this.updateSky();
     this.loop();
+  }
+
+  /** A reference-line layer; its uFrame is updated with the date (see updateSky). */
+  private guide(
+    positions: Float32Array,
+    dash: Float32Array,
+    style: { opacity: number; density: number; dash: number },
+  ): THREE.LineSegments {
+    const geo = new THREE.BufferGeometry();
+    const attr = new THREE.BufferAttribute(positions, 3);
+    geo.setAttribute("position", attr);
+    geo.setAttribute("aDir", attr);
+    geo.setAttribute("aDash", new THREE.BufferAttribute(dash, 1));
+    const material = this.material(guideVert, guideFrag, false);
+    material.uniforms = {
+      ...this.uniforms,
+      uFrame: { value: new THREE.Matrix3() },
+      uOpacity: { value: style.opacity },
+      uDensity: { value: style.density },
+      uDash: { value: style.dash },
+    };
+    const lines = new THREE.LineSegments(geo, material);
+    lines.frustumCulled = false;
+    lines.visible = false;
+    return lines;
   }
 
   private material(vertexShader: string, fragmentShader: string, additive: boolean) {
@@ -446,7 +574,7 @@ export class SkyMap {
       dirs.needsUpdate = true;
       mags.needsUpdate = true;
     }
-    this.planetPoints.visible = this.showPlanets && !!this.planets;
+    this.planetPoints.visible = this.layers.planets && !!this.planets;
     this.dirty = true;
   }
 
@@ -457,7 +585,7 @@ export class SkyMap {
    */
   setPaths(paths: SkyPath[] | null): void {
     const total = fillPathBuffers(this.pathPoints, paths ?? []);
-    this.pathPoints.visible = this.showPaths && total > 0;
+    this.pathPoints.visible = this.layers.allPaths && total > 0;
     this.dirty = true;
   }
 
@@ -471,29 +599,45 @@ export class SkyMap {
         if (pt.mark)
           this.pathMarks.push({ dir: unitVector(pt.ra, pt.dec), text: format(pt.date), width: -1 });
     }
-    this.selectedPathPoints.visible = this.showPlanets && total > 0;
+    this.selectedPathPoints.visible = this.layers.planets && total > 0;
     this.dirty = true;
   }
 
-  setPlanetsVisible(visible: boolean): void {
-    this.showPlanets = visible;
-    this.planetPoints.visible = visible && !!this.planets;
+  /** Switches layers on or off; keys left out keep their state. */
+  setLayers(partial: Partial<SkyLayers>): void {
+    for (const key of Object.keys(partial) as (keyof SkyLayers)[]) {
+      const value = partial[key];
+      if (typeof value === "boolean" && key in this.layers) this.layers[key] = value;
+    }
+    const l = this.layers;
+    this.lineMesh.visible = l.constellationLines;
+    this.planetPoints.visible = l.planets && !!this.planets;
     this.selectedPathPoints.visible =
-      visible && this.selectedPathPoints.geometry.drawRange.count > 0;
+      l.planets && this.selectedPathPoints.geometry.drawRange.count > 0;
+    this.pathPoints.visible = l.allPaths && this.pathPoints.geometry.drawRange.count > 0;
+    this.equatorialGrid.visible = l.equatorialGrid;
+    this.azimuthalGrid.visible = l.azimuthalGrid;
+    this.eclipticLine.visible = l.ecliptic;
     this.dirty = true;
   }
 
-  /** The "all paths" layer (every planet's path, undated); the selected path is independent. */
+  getLayers(): Readonly<SkyLayers> {
+    return this.layers;
+  }
+
+  /** Alias of setLayers({ planets }). */
+  setPlanetsVisible(visible: boolean): void {
+    this.setLayers({ planets: visible });
+  }
+
+  /** Alias of setLayers({ allPaths }): every planet's path, undated. */
   setPathsVisible(visible: boolean): void {
-    this.showPaths = visible;
-    this.pathPoints.visible = visible && this.pathPoints.geometry.drawRange.count > 0;
-    this.dirty = true;
+    this.setLayers({ allPaths: visible });
   }
 
+  /** Alias of setLayers({ constellationLines, constellationNames }). */
   setLinesVisible(visible: boolean): void {
-    this.showLines = visible;
-    this.lineMesh.visible = visible;
-    this.dirty = true;
+    this.setLayers({ constellationLines: visible, constellationNames: visible });
   }
 
   dispose(): void {
@@ -507,8 +651,15 @@ export class SkyMap {
   private updateSky(): void {
     this.eq2hor = j2000ToHorizontalMatrix(this.date, this.observer);
     this.uniforms.uEq2Hor.value = toThreeMat3(this.eq2hor);
+    this.date2hor = equatorialToHorizontalMatrix(this.date, this.observer);
+    this.frameOf(this.equatorialGrid).set(...this.date2hor);
+    this.frameOf(this.eclipticLine).set(...this.eq2hor);
     this.updateDaylight();
     this.dirty = true;
+  }
+
+  private frameOf(lines: THREE.LineSegments): THREE.Matrix3 {
+    return (lines.material as THREE.ShaderMaterial).uniforms.uFrame!.value as THREE.Matrix3;
   }
 
   /** Twilight model: stars fade out between astronomical twilight (−18°) and sunrise. */
@@ -686,7 +837,7 @@ export class SkyMap {
     }
 
     // 3. Planets (those daylight leaves visible)
-    if (this.showPlanets && this.planets && this.options.planetNames) {
+    if (this.layers.planets && this.planets && this.options.planetNames) {
       this.setLabelFont("700 10px", "0.12em", 0.9);
       for (const p of this.planets) {
         if (!this.planetVisible(p.magnitude) || !aboveHorizon(p.dir)) continue;
@@ -716,7 +867,7 @@ export class SkyMap {
     );
     this.setLabelFont("400 10px", "0.08em", 0.8);
     stars.forEach((s, i) => {
-      if (!s.name || s.v > maxMag) return;
+      if (!this.layers.starNames || !s.name || s.v > maxMag) return;
       const d = this.starDirs[i]!;
       if (!aboveHorizon(d)) return;
       const p = this.toScreen(applyMat3(m, d));
@@ -733,7 +884,7 @@ export class SkyMap {
     });
 
     // 5. Constellation names
-    if (this.showLines) {
+    if (this.layers.constellationNames) {
       this.setLabelFont("500 10px", "0.18em", 0.55);
       for (const { text, dir } of this.labels) {
         if (!aboveHorizon(dir)) continue;
@@ -769,8 +920,91 @@ export class SkyMap {
         if (r) ctx.fillText(text, r.x, r.y + h / 2);
       }
     }
+    // 7. Graduations of the grids and of the ecliptic (lightest, last)
+    if (this.layers.equatorialGrid || this.layers.azimuthalGrid || this.layers.ecliptic) {
+      this.setLabelFont("400 9px", "0.06em", 0.55);
+      this.labelView = view;
+      if (this.layers.equatorialGrid)
+        this.drawGridGraduations(layout, multiplyMat3(view, this.date2hor), "ra", "dec");
+      if (this.layers.azimuthalGrid) this.drawGridGraduations(layout, view, "az", "alt");
+      if (this.layers.ecliptic) this.drawEclipticGraduations(layout, m);
+    }
     if (this.pointing) this.drawReticle();
     ctx.globalAlpha = 1;
+  }
+
+  private graduation(kind: GraduationKind, value: number): string {
+    const key = `${kind}${value}`;
+    let text = this.graduationTexts.get(key);
+    if (text === undefined) {
+      text = (this.options.formatGraduation ?? formatGraduation)(kind, value);
+      this.graduationTexts.set(key, text);
+    }
+    return text;
+  }
+
+  /**
+   * Labels of a grid along the meridian and the parallel crossing nearest the view centre.
+   * `toView` takes the grid's frame to view coordinates.
+   */
+  private drawGridGraduations(
+    layout: LabelLayout,
+    toView: Mat3,
+    lonKind: GraduationKind,
+    latKind: GraduationKind,
+  ): void {
+    const steps = labelSteps(this.view.fov);
+    // View axis expressed in the grid's frame: third row of toView.
+    const centre: Vec3 = [toView[6], toView[7], toView[8]];
+    const at = graduationLines(centre, steps.lon, steps.lat);
+    const minLat = lonKind === "az" ? 0 : -80;
+    if (at.lat < minLat) at.lat = minLat;
+    for (let lon = 0; lon < 360; lon += steps.lon)
+      this.placeGraduation(layout, toView, spherical(lon, at.lat), this.graduation(lonKind, lon));
+    for (let lat = minLat; lat <= 80; lat += steps.lat) {
+      if (lat === at.lat) continue; // the crossing already carries a longitude label
+      this.placeGraduation(layout, toView, spherical(at.lon, lat), this.graduation(latKind, lat));
+    }
+  }
+
+  private drawEclipticGraduations(layout: LabelLayout, eqToView: Mat3): void {
+    for (let lambda = 0; lambda < 360; lambda += 30) {
+      const dir = eclipticOfDate(lambda, this.date);
+      if (applyMat3(this.eq2hor, dir)[2] <= 0) continue;
+      this.placeGraduation(layout, eqToView, dir, this.graduation("ecliptic", lambda), true);
+    }
+  }
+
+  /** Writes a graduation next to a grid point (above the horizon only), without overlaps. */
+  private placeGraduation(
+    layout: LabelLayout,
+    toView: Mat3,
+    dir: Vec3,
+    text: string,
+    below = false,
+  ): void {
+    const v = applyMat3(toView, dir);
+    // Above the horizon only: back to horizontal with the transposed view matrix (third column).
+    const view = this.labelView;
+    const up = view[2] * v[0] + view[5] * v[1] + view[8] * v[2];
+    if (up < 0) return;
+    const p = this.toScreen(v);
+    if (!p) return;
+    const w = this.measure(text);
+    const h = 10;
+    const [x, y] = p;
+    const r = layout.place(
+      below
+        ? [
+            { x: x + 4, y: y + 3, w, h },
+            { x: x - 4 - w, y: y + 3, w, h },
+          ]
+        : [
+            { x: x + 3, y: y - h - 1, w, h },
+            { x: x + 3, y: y + 1, w, h },
+          ],
+    );
+    if (r) this.ctx.fillText(text, r.x, r.y + h / 2);
   }
 
   private drawReticle(): void {
@@ -845,7 +1079,7 @@ export class SkyMap {
         if (p && Math.hypot(p[0] - x, p[1] - y) < radius) return { kind: "body", body };
       }
     }
-    if (this.showPlanets && this.planets) {
+    if (this.layers.planets && this.planets) {
       let found: Planet | null = null;
       let bestDist = Infinity;
       for (const pl of this.planets) {
