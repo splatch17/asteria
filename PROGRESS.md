@@ -15,13 +15,14 @@
 - Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Soleil et Lune sur la carte, ciel de jour (#34)
-2. Données Terre (#35) puis vue Terre depuis l'espace (#36)
-3. Fiche constellation avec les histoires (#10 intégré)
-2. Format binaire des étoiles (#16)
-3. Figures suivantes en style A (pipeline artiste + IA)
+1. Transition continue Ciel ↔ Terre au zoom (#37), mini-globe dans la vue Ciel (#38), traînées d'étoiles (#39)
+2. Fiche constellation : histoires et anecdotes (#10) dans l'app, au toucher d'un nom
+3. Vue 3D d'une constellation (#8), icône/PWA (#27)
+4. Retours du porteur après tests sur le Galaxy S23 (visée du ciel, fluidité)
 
 ## ✅ Fait récemment
+- 2026-10-01 — #36 Vue Terre depuis l'espace (globe tramé jour/nuit, lumières des villes, côtes, graticule, axe, équateur céleste, écliptique, « vous êtes ici », Soleil/Lune) ; #35 données Terre (Natural Earth, Blue/Black Marble, 490 Ko).
+- 2026-10-01 — #47 Curseur de temps lisible (bulle de décalage, graduations), boutons « instrument » ; #45 boussole nord + viser le ciel avec les capteurs (roulis, réticule) ; #43 tracés de constellations Stellarium (Scorpion corrigé) ; #34 Soleil, Lune (phase), ciel de jour et crépuscules.
 - 2026-10-01 — #33 Curseur de temps : 48 h / 1 an / 26 000 ans, lecture accélérée, vitesses, indications pédagogiques ; précession long terme (modèle simplifié au-delà de ±5 siècles, Véga polaire vers 14 000).
 - 2026-10-01 — #32 Soleil, Lune (phase), point subsolaire via astronomy-engine, validés contre JPL Horizons (< 0,01° / 0,02°).
 - 2026-10-01 — #10 Histoires et anecdotes (15 constellations) fusionnées après relecture scientifique (8 corrections). #7 mode nuit (luminosité, mémorisation), #26 libellés sans chevauchement + dézoom 200°, #16 catalogue binaire 392 Ko.
