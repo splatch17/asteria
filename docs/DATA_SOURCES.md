@@ -10,7 +10,7 @@
 | Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY** (citer l'IAU) | 333 noms pour V ≤ 6.5 — ✅ intégré (#3) |
 | Constellations : frontières | **Delporte 1930 / IAU** | IAU / CDS `VI/49` | Libre | 88 frontières officielles |
 | Constellations : noms, abréviations | IAU | IAU | Libre | Latin, génitif, abréviation 3 lettres |
-| Lignes de constellations | **d3-celestial** `constellations.lines.json` (O. Frohn), sommets rattachés aux étoiles HIP à ≤ 0.2° | — | **BSD-3-Clause** (attribution) | 88 figures modernes — ✅ intégré (#3) |
+| Lignes de constellations | **Stellarium**, culture du ciel « modern » (`skycultures/modern/index.json`), tracés usuels proches des cartes Sky & Telescope / IAU, numéros HIP directs | Stellarium | **CC BY-SA 4.0** (attribution ; données dérivées sous CC BY-SA) | 88 figures — ✅ intégré (#43), remplace d3-celestial |
 | Appartenance aux constellations | astropy `get_constellation` (Roman 1987, CDS `VI/42`) | — | Libre | Champ `con` — ✅ intégré (#3) |
 | Planètes, Lune, Soleil | **JPL Horizons / DE440** (validation) + lib `astronomy-engine` (MIT) | NASA JPL | Libre | Positions temps réel |
 | Ciel profond | **OpenNGC** (CC BY-SA 4.0) + Messier | — | CC BY-SA | NGC/IC/Messier |
