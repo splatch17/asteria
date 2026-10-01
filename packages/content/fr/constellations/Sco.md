@@ -21,7 +21,7 @@ Orion était un chasseur géant, fort et très sûr de lui. Un jour, il se vanta
 
 Zeus plaça ensuite le Scorpion et Orion dans le ciel, mais aux deux bouts de la voûte céleste. Ainsi, quand le Scorpion se lève à l'est, Orion disparaît à l'ouest, comme s'il fuyait encore son adversaire : on ne les voit jamais briller haut ensemble.
 
-Les versions varient. Ératosthène et Hygin racontent les deux histoires : dans l'une, c'est la Terre qui envoie le scorpion ; dans l'autre, c'est Artémis, parce qu'Orion lui avait manqué de respect, et le poète Aratos suit cette seconde version. Les uns situent la scène en Crète, les autres sur l'île de Chios. La constellation est en tout cas très ancienne : les Sumériens y voyaient déjà un scorpion il y a plus de 5 000 ans.
+Les versions varient. Ératosthène et Hygin racontent les deux histoires : dans l'une, c'est la Terre qui envoie le scorpion ; dans l'autre, c'est Artémis, parce qu'Orion lui avait manqué de respect, et le poète Aratos suit cette seconde version. Les uns situent la scène en Crète, les autres sur l'île de Chios. La constellation est en tout cas très ancienne : en Mésopotamie, on parlait déjà du « Scorpion » il y a plus de 4 000 ans.
 
 ## Anecdotes
 

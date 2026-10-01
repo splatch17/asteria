@@ -13,6 +13,9 @@ sources:
   - title: "Star Tales — Cassiopeia (Ian Ridpath)"
     url: "http://www.ianridpath.com/startales/cassiopeia.html"
     license: "© Ian Ridpath, tous droits réservés (faits cités, texte non repris)"
+  - title: "Cassiopeia A — Wikipedia (en)"
+    url: "https://en.wikipedia.org/wiki/Cassiopeia_A"
+    license: "CC BY-SA 4.0"
 ---
 
 ## Histoire
@@ -25,4 +28,4 @@ Dans le ciel, Cassiopée est assise sur son trône, tout près de son mari Céph
 
 - Ses cinq étoiles principales dessinent un W (ou un M, selon l'heure et la saison). Depuis nos régions, elle est circumpolaire : elle ne se couche jamais, et la pointe centrale du W indique à peu près la direction de l'étoile Polaire.
 - En novembre 1572, une « nouvelle étoile » y apparut, plus brillante que Vénus (magnitude −4), et resta visible à l'œil nu jusqu'en 1574. Tycho Brahe l'étudia et montra qu'elle était bien plus lointaine que la Lune : le ciel n'était donc pas immuable ! C'était une supernova.
-- Cassiopée abrite aussi Cassiopée A, reste d'une autre étoile qui a explosé vers 1667 : c'est la source d'ondes radio la plus puissante du ciel après le Soleil.
+- Cassiopée abrite aussi Cassiopée A, reste d'une autre étoile qui a explosé : la lumière de l'explosion nous est parvenue vers 1660-1680. C'est l'une des sources d'ondes radio les plus intenses du ciel en dehors du Système solaire.
