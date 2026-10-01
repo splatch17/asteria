@@ -341,7 +341,7 @@
         constellationNames: names,
         cardinals: $_("map.cardinals").split(","),
         formatGraduation: graduationFormatter($_),
-        theme: THEMES.day,
+        theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
