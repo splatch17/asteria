@@ -12,6 +12,7 @@
  *   equatorialGrid,  // RA/Dec of date, 1 h / 10°, labelled in hours and degrees
  *   azimuthalGrid,   // azimuth/altitude, 15° / 10°, labelled in degrees
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
+ *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -53,6 +54,8 @@ import {
 import { LabelLayout, type Rect } from "./labels";
 import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
+import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
+import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
@@ -108,42 +111,6 @@ export type SkySelection =
   /** Picked by its name label, or by a tap inside its figure away from any star (#61). */
   | { kind: "constellation"; abbr: string };
 
-/** At night, planets are hidden this many magnitudes later than stars (they are never lost). */
-export const PLANET_DAYLIGHT_MARGIN = 4;
-
-/** Daylight cap on planet magnitudes: (Sun altitude in degrees, faintest magnitude) nodes. */
-const PLANET_DAY_CAP: readonly (readonly [number, number])[] = [
-  [-18, 10],
-  [-6, 1.0],
-  [0, -2.0],
-  [10, -3.4],
-];
-
-/**
- * Faintest planet magnitude shown, from the stars' limiting magnitude and the Sun's altitude.
- *
- * Night: the stars' limit + PLANET_DAYLIGHT_MARGIN. As the Sun rises, a daylight cap takes over,
- * linear between these (Sun altitude → magnitude) nodes:
- *   −18° → 10 (no cap: fainter than Neptune)
- *   −6° → 1.0 (end of civil twilight: Mercury, Saturn, Mars, Jupiter)
- *   0° → −2.0 (sunrise: Jupiter still, Mercury gone) · ≥ +10° → −3.4 (full day: Venus only)
- * −3.4 sits between Jupiter's brightest (−2.9) and Venus's faintest (−3.8), so with the Sun high
- * only Venus remains, and Jupiter only shows in twilight.
- */
-export function planetLimitingMagnitude(starLimit: number, sunAltitude: number): number {
-  const nodes = PLANET_DAY_CAP;
-  let cap = sunAltitude <= nodes[0]![0] ? nodes[0]![1] : nodes.at(-1)![1];
-  for (let i = 1; i < nodes.length; i++) {
-    const [a0, m0] = nodes[i - 1]!;
-    const [a1, m1] = nodes[i]!;
-    if (sunAltitude > a0 && sunAltitude <= a1) {
-      cap = m0 + ((m1 - m0) * (sunAltitude - a0)) / (a1 - a0);
-      break;
-    }
-  }
-  return Math.min(starLimit + PLANET_DAYLIGHT_MARGIN, cap);
-}
-
 /** Switchable layers of the sky map (see the file header). */
 export interface SkyLayers {
   constellationLines: boolean;
@@ -157,6 +124,12 @@ export interface SkyLayers {
   /** Azimuth / altitude grid. */
   azimuthalGrid: boolean;
   ecliptic: boolean;
+  /**
+   * See through the Earth (#65): stars, lines, bodies, grids and labels below the horizon stay
+   * drawn, dimmed (BELOW_HORIZON_ALPHA), over a tinted ground, and can be tapped. Off: opaque
+   * ground.
+   */
+  seeThroughGround: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -168,6 +141,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   equatorialGrid: false,
   azimuthalGrid: false,
   ecliptic: false,
+  seeThroughGround: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -191,6 +165,7 @@ export interface SkyMapOptions {
   canvas: HTMLCanvasElement;
   /** 2D canvas stacked on top, used for labels. */
   overlay: HTMLCanvasElement;
+  /** Sorted by increasing magnitude (brightest first): star names rely on it. */
   stars: CatalogStar[];
   /** Constellation abbreviation → polylines of HIP numbers. */
   lines: Record<string, number[][]>;
@@ -228,11 +203,6 @@ const FRICTION = 0.9;
 const toThreeMat3 = (m: Mat3) => new THREE.Matrix3().set(...m);
 const transpose = (m: Mat3): Mat3 => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 
-/** Faintest magnitude displayed for a given field of view. */
-export function limitingMagnitude(fov: number): number {
-  return Math.min(6.5, Math.max(4.6, 5.0 + 2.2 * Math.log10(90 / fov)));
-}
-
 /** On-screen radius (CSS px) of a planet's disc, mirroring planetVert. */
 function planetRadius(p: { name: Planet; magnitude: number }): number {
   const size = Math.min(20, Math.max(7, 11 - p.magnitude * 1.6));
@@ -251,6 +221,8 @@ export class SkyMap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly uniforms;
   private readonly lineMesh: THREE.LineSegments;
+  /** Full-screen ground: drawn last when opaque, first when seen through. */
+  private readonly ground: THREE.Mesh;
   private readonly bodyPoints: THREE.Points;
   private bodies: { sun: Vec3; moon: Vec3; illumination: number } | null = null;
   private readonly planetPoints: THREE.Points;
@@ -268,6 +240,8 @@ export class SkyMap {
   private readonly graduationTexts = new Map<string, string>();
   /** Screen areas (CSS px) covered by the HUD, where graduations are not written. */
   private hudExclusions: readonly Rect[] = [];
+  /** Horizon side of the graduation pass being drawn (see horizonPasses). */
+  private graduationBelow = false;
   /** View matrix of the frame being labelled. */
   private labelView: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   /** The selected planet's path, with dated monthly marks. */
@@ -300,6 +274,8 @@ export class SkyMap {
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private moved = 0;
   private readonly resizeObserver: ResizeObserver;
+  /** Canvas size in CSS px, kept by resize(): read for every projected label, it avoids layout reads. */
+  private size = { w: 1, h: 1 };
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -316,6 +292,9 @@ export class SkyMap {
       uDpr: { value: this.renderer.getPixelRatio() },
       uLimitMag: { value: 5 },
       uPlanetLimit: { value: 9 },
+      uLimitMagBelow: { value: 5 },
+      uPlanetLimitBelow: { value: 9 },
+      uBelowAlpha: { value: 0 },
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
@@ -363,12 +342,14 @@ export class SkyMap {
     this.lineMesh = new THREE.LineSegments(lineGeo, this.material(lineVert, lineFrag, false));
     this.lineMesh.frustumCulled = false;
 
-    // Ground (full-screen, drawn last so it hides what is below the horizon)
+    // Ground (full-screen; drawn last to hide what is below the horizon, or first when the
+    // seeThroughGround layer is on: see setLayers)
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(2, 2),
       this.material(groundVert, groundFrag, false),
     );
     ground.frustumCulled = false;
+    this.ground = ground;
 
     // Sun and Moon (positions set by setBodies)
     const bodyGeo = new THREE.BufferGeometry();
@@ -669,6 +650,8 @@ export class SkyMap {
     this.equatorialGrid.visible = l.equatorialGrid;
     this.azimuthalGrid.visible = l.azimuthalGrid;
     this.eclipticLine.visible = l.ecliptic;
+    this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
+    this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
     this.dirty = true;
   }
 
@@ -751,6 +734,7 @@ export class SkyMap {
     const { canvas, overlay } = this.options;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
+    this.size = { w, h };
     this.renderer.setSize(w, h, false);
     const dpr = this.renderer.getPixelRatio();
     overlay.width = w * dpr;
@@ -808,6 +792,9 @@ export class SkyMap {
       this.uniforms.uLimitMag.value,
       this.sunAltitude,
     );
+    const below = belowHorizonLimits(this.view.fov);
+    this.uniforms.uLimitMagBelow.value = below.stars;
+    this.uniforms.uPlanetLimitBelow.value = below.planets;
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
@@ -831,7 +818,7 @@ export class SkyMap {
 
   private toScreen(v: Vec3): [number, number] | null {
     if (v[2] < -0.5) return null; // wide fields of view reach ~120° from the centre
-    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const { w, h } = this.size;
     const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
     if (Math.abs(nx) > 1.1 || Math.abs(ny) > 1.1) return null;
     return [((nx + 1) / 2) * w, ((1 - ny) / 2) * h];
@@ -846,7 +833,9 @@ export class SkyMap {
     ctx.textBaseline = "middle";
     const m = this.eqToView();
     const view = viewMatrix(this.view);
-    const aboveHorizon = (d: Vec3) => applyMat3(this.eq2hor, d)[2] > 0;
+    const isBelow = (d: Vec3) => applyMat3(this.eq2hor, d)[2] <= 0;
+    // Labels below the horizon (seeThroughGround) come in a second, dimmed pass (#65).
+    const passes = horizonPasses(this.layers.seeThroughGround);
     // Labels are placed by priority; a label that collides with every fallback is dropped.
     // None goes under the HUD, nor is cut by the top or bottom edge (a fallback above the
     // header would otherwise show only half its letters).
@@ -874,128 +863,140 @@ export class SkyMap {
       });
     }
 
-    // 2. Sun and Moon
-    if (this.bodies && this.options.bodyNames) {
-      this.setLabelFont("700 11px", "0.12em", 0.95);
-      const offset = this.uniforms.uBodySize.value / 2 + 6;
-      for (const [body, dir] of [
-        ["Sun", this.bodies.sun],
-        ["Moon", this.bodies.moon],
-      ] as const) {
-        if (!aboveHorizon(dir)) continue;
-        const p = this.toScreen(applyMat3(m, dir));
-        if (!p) continue;
-        // The disc itself is occupied: later labels (path dates…) must not cover it.
-        const half = offset - 6;
-        layout.occupy({ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half });
-        const label = this.options.bodyNames[body].toUpperCase();
-        const w = this.measure(label);
-        const r = layout.place([
-          { x: p[0] + offset, y: p[1] - H / 2, w, h: H },
-          { x: p[0] - offset - w, y: p[1] - H / 2, w, h: H },
-          { x: p[0] - w / 2, y: p[1] - offset - H, w, h: H },
-          { x: p[0] - w / 2, y: p[1] + offset, w, h: H },
-        ]);
-        if (r) ctx.fillText(label, r.x, r.y + H / 2);
-      }
-    }
-
-    // 3. Planets (those daylight leaves visible)
-    if (this.layers.planets && this.planets && this.options.planetNames) {
-      this.setLabelFont("700 10px", "0.12em", 0.9);
-      for (const p of this.planets) {
-        if (!this.planetVisible(p.magnitude) || !aboveHorizon(p.dir)) continue;
-        const pos = this.toScreen(applyMat3(m, p.dir));
-        if (!pos) continue;
-        const label = this.options.planetNames[p.name].toUpperCase();
-        const w = this.measure(label);
-        const off = planetRadius(p) + 5;
-        const [x, y] = pos;
-        layout.occupy({ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 });
-        const r = layout.place([
-          { x: x + off, y: y - H / 2, w, h: H },
-          { x: x - off - w, y: y - H / 2, w, h: H },
-          { x: x - w / 2, y: y - off - H, w, h: H },
-          { x: x - w / 2, y: y + off, w, h: H },
-        ]);
-        if (r) ctx.fillText(label, r.x, r.y + H / 2);
-      }
-    }
-
-    // 4. Star names, brightest first (the catalogue is sorted by magnitude)
-    // Never name a star that daylight hides.
-    const visibleLimit = limitingMagnitude(this.view.fov) - this.daylight * 7 - 1;
-    const maxMag = Math.min(
-      visibleLimit,
-      this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5,
-    );
-    this.setLabelFont("400 10px", "0.08em", 0.8);
-    stars.forEach((s, i) => {
-      if (!this.layers.starNames || !s.name || s.v > maxMag) return;
-      const d = this.starDirs[i]!;
-      if (!aboveHorizon(d)) return;
-      const p = this.toScreen(applyMat3(m, d));
-      if (!p) return;
-      const w = this.measure(s.name);
-      const [x, y] = p;
-      const r = layout.place([
-        { x: x + 9, y: y - H / 2, w, h: H }, // right
-        { x: x - 9 - w, y: y - H / 2, w, h: H }, // left
-        { x: x - w / 2, y: y - 8 - H, w, h: H }, // above
-        { x: x - w / 2, y: y + 8, w, h: H }, // below
-      ]);
-      if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
-    });
-
-    // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
     this.constellationLabelRects = [];
-    if (this.layers.constellationNames) {
-      this.setLabelFont("500 10px", "0.18em", 0.55);
-      for (const { abbr, text, dir } of this.labels) {
-        if (!aboveHorizon(dir)) continue;
-        const p = this.toScreen(applyMat3(m, dir));
-        if (!p) continue;
-        const label = text.toUpperCase();
-        const w = this.measure(label);
-        const [x, y] = p;
-        const r = layout.place(
-          [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
-        );
-        if (!r) continue;
-        this.constellationLabelRects.push({ abbr, rect: r });
-        ctx.globalAlpha = abbr === this.selectedConstellation ? 1 : 0.55;
-        ctx.fillText(label, r.x, r.y + H / 2);
+    for (const below of passes) {
+      // 2. Sun and Moon
+      if (this.bodies && this.options.bodyNames) {
+        this.setLabelFont("700 11px", "0.12em", labelAlpha(0.95, below));
+        const offset = this.uniforms.uBodySize.value / 2 + 6;
+        for (const [body, dir] of [
+          ["Sun", this.bodies.sun],
+          ["Moon", this.bodies.moon],
+        ] as const) {
+          if (isBelow(dir) !== below) continue;
+          const p = this.toScreen(applyMat3(m, dir));
+          if (!p) continue;
+          // The disc itself is occupied: later labels (path dates…) must not cover it.
+          const half = offset - 6;
+          layout.occupy({ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half });
+          const label = this.options.bodyNames[body].toUpperCase();
+          const w = this.measure(label);
+          const r = layout.place([
+            { x: p[0] + offset, y: p[1] - H / 2, w, h: H },
+            { x: p[0] - offset - w, y: p[1] - H / 2, w, h: H },
+            { x: p[0] - w / 2, y: p[1] - offset - H, w, h: H },
+            { x: p[0] - w / 2, y: p[1] + offset, w, h: H },
+          ]);
+          if (r) ctx.fillText(label, r.x, r.y + H / 2);
+        }
       }
-    }
-    // 6. Dates of the monthly marks on the selected planet's path (lowest priority)
-    if (this.selectedPathPoints.visible && this.pathMarks.length) {
-      this.setLabelFont("400 9px", "0.06em", 0.6);
-      const h = 10;
-      for (const mark of this.pathMarks) {
-        const { dir, text } = mark;
-        if (!aboveHorizon(dir)) continue;
-        const p = this.toScreen(applyMat3(m, dir));
+
+      // 3. Planets (those daylight leaves visible)
+      if (this.layers.planets && this.planets && this.options.planetNames) {
+        this.setLabelFont("700 10px", "0.12em", labelAlpha(0.9, below));
+        for (const p of this.planets) {
+          if (isBelow(p.dir) !== below || !this.planetVisible(p.magnitude, below)) continue;
+          const pos = this.toScreen(applyMat3(m, p.dir));
+          if (!pos) continue;
+          const label = this.options.planetNames[p.name].toUpperCase();
+          const w = this.measure(label);
+          const off = planetRadius(p) + 5;
+          const [x, y] = pos;
+          layout.occupy({ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 });
+          const r = layout.place([
+            { x: x + off, y: y - H / 2, w, h: H },
+            { x: x - off - w, y: y - H / 2, w, h: H },
+            { x: x - w / 2, y: y - off - H, w, h: H },
+            { x: x - w / 2, y: y + off, w, h: H },
+          ]);
+          if (r) ctx.fillText(label, r.x, r.y + H / 2);
+        }
+      }
+
+      // 4. Star names, brightest first (the catalogue is sorted by magnitude)
+      // Never name a star that daylight hides.
+      const visibleLimit =
+        (below ? this.uniforms.uLimitMagBelow.value : this.uniforms.uLimitMag.value) - 1;
+      const maxMag = Math.min(
+        visibleLimit,
+        this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5,
+      );
+      this.setLabelFont("400 10px", "0.08em", labelAlpha(0.8, below));
+      // Sorted catalogue: stop at the first star too faint to be named (a few dozen visited
+      // instead of the whole catalogue, twice with seeThroughGround).
+      for (let i = 0; this.layers.starNames && i < stars.length; i++) {
+        const s = stars[i]!;
+        if (s.v > maxMag) break;
+        if (!s.name) continue;
+        const d = this.starDirs[i]!;
+        if (isBelow(d) !== below) continue;
+        const p = this.toScreen(applyMat3(m, d));
         if (!p) continue;
-        if (mark.width < 0) mark.width = ctx.measureText(text).width; // measured once
-        const w = mark.width;
+        const w = this.measure(s.name);
         const [x, y] = p;
         const r = layout.place([
-          { x: x + 6, y: y - h, w, h },
-          { x: x - 6 - w, y: y - h, w, h },
-          { x: x + 6, y, w, h },
-          { x: x - 6 - w, y, w, h },
+          { x: x + 9, y: y - H / 2, w, h: H }, // right
+          { x: x - 9 - w, y: y - H / 2, w, h: H }, // left
+          { x: x - w / 2, y: y - 8 - H, w, h: H }, // above
+          { x: x - w / 2, y: y + 8, w, h: H }, // below
         ]);
-        if (r) ctx.fillText(text, r.x, r.y + h / 2);
+        if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
+      }
+
+      // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
+      if (this.layers.constellationNames) {
+        this.setLabelFont("500 10px", "0.18em", labelAlpha(0.55, below));
+        for (const { abbr, text, dir } of this.labels) {
+          if (isBelow(dir) !== below) continue;
+          const p = this.toScreen(applyMat3(m, dir));
+          if (!p) continue;
+          const label = text.toUpperCase();
+          const w = this.measure(label);
+          const [x, y] = p;
+          const r = layout.place(
+            [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
+          );
+          if (!r) continue;
+          this.constellationLabelRects.push({ abbr, rect: r });
+          ctx.globalAlpha = labelAlpha(abbr === this.selectedConstellation ? 1 : 0.55, below);
+          ctx.fillText(label, r.x, r.y + H / 2);
+        }
+      }
+      // 6. Dates of the monthly marks on the selected planet's path (lowest priority)
+      if (this.selectedPathPoints.visible && this.pathMarks.length) {
+        this.setLabelFont("400 9px", "0.06em", labelAlpha(0.6, below));
+        const h = 10;
+        for (const mark of this.pathMarks) {
+          const { dir, text } = mark;
+          if (isBelow(dir) !== below) continue;
+          const p = this.toScreen(applyMat3(m, dir));
+          if (!p) continue;
+          if (mark.width < 0) mark.width = ctx.measureText(text).width; // measured once
+          const w = mark.width;
+          const [x, y] = p;
+          const r = layout.place([
+            { x: x + 6, y: y - h, w, h },
+            { x: x - 6 - w, y: y - h, w, h },
+            { x: x + 6, y, w, h },
+            { x: x - 6 - w, y, w, h },
+          ]);
+          if (r) ctx.fillText(text, r.x, r.y + h / 2);
+        }
       }
     }
     // 7. Graduations of the grids and of the ecliptic (lightest, last)
     if (this.layers.equatorialGrid || this.layers.azimuthalGrid || this.layers.ecliptic) {
       this.setLabelFont("400 9px", "0.06em", 0.55);
       this.labelView = view;
-      if (this.layers.equatorialGrid)
-        this.drawGridGraduations(layout, multiplyMat3(view, this.date2hor), "ra", "dec");
-      if (this.layers.azimuthalGrid) this.drawGridGraduations(layout, view, "az", "alt");
-      if (this.layers.ecliptic) this.drawEclipticGraduations(layout, m);
+      const eqView = this.layers.equatorialGrid ? multiplyMat3(view, this.date2hor) : null;
+      for (const below of passes) {
+        this.graduationBelow = below;
+        this.ctx.globalAlpha = labelAlpha(0.55, below);
+        if (eqView) this.drawGridGraduations(layout, eqView, "ra", "dec");
+        if (this.layers.azimuthalGrid && !below)
+          this.drawGridGraduations(layout, view, "az", "alt");
+        if (this.layers.ecliptic) this.drawEclipticGraduations(layout, m);
+      }
     }
     if (this.pointing) this.drawReticle();
     ctx.globalAlpha = 1;
@@ -1038,12 +1039,15 @@ export class SkyMap {
   private drawEclipticGraduations(layout: LabelLayout, eqToView: Mat3): void {
     for (let lambda = 0; lambda < 360; lambda += 30) {
       const dir = eclipticOfDate(lambda, this.date);
-      if (applyMat3(this.eq2hor, dir)[2] <= 0) continue;
+      if (applyMat3(this.eq2hor, dir)[2] <= 0 !== this.graduationBelow) continue;
       this.placeGraduation(layout, eqToView, dir, this.graduation("ecliptic", lambda), true);
     }
   }
 
-  /** Writes a graduation next to a grid point (above the horizon only), without overlaps. */
+  /**
+   * Writes a graduation next to a grid point, without overlaps: only points on the side of the
+   * horizon of the current pass (graduationBelow).
+   */
   private placeGraduation(
     layout: LabelLayout,
     toView: Mat3,
@@ -1052,16 +1056,16 @@ export class SkyMap {
     below = false,
   ): void {
     const v = applyMat3(toView, dir);
-    // Above the horizon only: back to horizontal with the transposed view matrix (third column).
+    // Side of the horizon: back to horizontal with the transposed view matrix (third column).
     const view = this.labelView;
     const up = view[2] * v[0] + view[5] * v[1] + view[8] * v[2];
-    if (up < 0) return;
+    if (up < 0 !== this.graduationBelow) return;
     const p = this.toScreen(v);
     if (!p) return;
     const w = this.measure(text);
     const h = 10;
     const [x, y] = p;
-    const { clientWidth: width, clientHeight: height } = this.options.canvas;
+    const { w: width, h: height } = this.size;
     const candidates = below
       ? [
           { x: x + 4, y: y + 3, w, h },
@@ -1107,9 +1111,10 @@ export class SkyMap {
     }
   }
 
-  /** Same rule as planetVert (see planetLimitingMagnitude). */
-  private planetVisible(magnitude: number): boolean {
-    return magnitude <= this.uniforms.uPlanetLimit.value;
+  /** Same rule as planetVert (see planetLimitingMagnitude; night limit below the horizon). */
+  private planetVisible(magnitude: number, below = false): boolean {
+    const limit = below ? this.uniforms.uPlanetLimitBelow : this.uniforms.uPlanetLimit;
+    return magnitude <= limit.value;
   }
 
   /**
@@ -1140,36 +1145,45 @@ export class SkyMap {
   /** Projects a view-frame direction without the screen bounds check of toScreen (for lines). */
   private toScreenUnclipped(v: Vec3): Point | null {
     if (v[2] < -0.5) return null;
-    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const { w, h } = this.size;
     const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
     return [((nx + 1) / 2) * w, ((1 - ny) / 2) * h];
   }
 
   /**
-   * Figure segments on screen, cut at the horizon (horizontal z = 0). `only` restricts the work to
-   * one constellation.
+   * Figure segments on screen, cut at the horizon (horizontal z = 0). The parts below it are kept
+   * only with seeThroughGround, after the others (from index `belowFrom`). `only` restricts the
+   * work to one constellation.
    */
-  private projectFigures(only?: string): FigureShape[] {
+  private projectFigures(only?: string): (FigureShape & { belowFrom: number })[] {
     const view = viewMatrix(this.view);
-    const shapes: FigureShape[] = [];
+    const seeThrough = this.layers.seeThroughGround;
+    const shapes: (FigureShape & { belowFrom: number })[] = [];
+    const project = (ha: Vec3, hb: Vec3, out: [Point, Point][]) => {
+      const pa = this.toScreenUnclipped(applyMat3(view, ha));
+      const pb = this.toScreenUnclipped(applyMat3(view, hb));
+      if (pa && pb) out.push([pa, pb]);
+    };
     for (const { abbr, segments } of this.figures) {
       if (only && abbr !== only) continue;
-      const out: [Point, Point][] = [];
+      const above: [Point, Point][] = [];
+      const below: [Point, Point][] = [];
       for (const [a, b] of segments) {
-        let ha = applyMat3(this.eq2hor, a);
-        let hb = applyMat3(this.eq2hor, b);
-        if (ha[2] <= 0 && hb[2] <= 0) continue;
-        if (ha[2] <= 0 || hb[2] <= 0) {
+        const ha = applyMat3(this.eq2hor, a);
+        const hb = applyMat3(this.eq2hor, b);
+        if (ha[2] > 0 && hb[2] > 0) project(ha, hb, above);
+        else if (ha[2] <= 0 && hb[2] <= 0) {
+          if (seeThrough) project(ha, hb, below);
+        } else {
           const t = ha[2] / (ha[2] - hb[2]);
           const cut: Vec3 = [ha[0] + (hb[0] - ha[0]) * t, ha[1] + (hb[1] - ha[1]) * t, 0];
-          if (ha[2] <= 0) ha = cut;
-          else hb = cut;
+          const [up, down] = ha[2] > 0 ? [ha, hb] : [hb, ha];
+          project(up, cut, above);
+          if (seeThrough) project(cut, down, below);
         }
-        const pa = this.toScreenUnclipped(applyMat3(view, ha));
-        const pb = this.toScreenUnclipped(applyMat3(view, hb));
-        if (pa && pb) out.push([pa, pb]);
       }
-      if (out.length) shapes.push({ abbr, segments: out });
+      if (above.length + below.length)
+        shapes.push({ abbr, segments: [...above, ...below], belowFrom: above.length });
     }
     return shapes;
   }
@@ -1193,19 +1207,28 @@ export class SkyMap {
     }
     ctx.save();
     ctx.lineCap = "round";
-    ctx.beginPath();
-    for (const [a, b] of shape.segments) {
-      ctx.moveTo(a[0], a[1]);
-      ctx.lineTo(b[0], b[1]);
+    // Above the horizon, then (seeThroughGround) the dimmed part below it.
+    const parts = [
+      [0, shape.belowFrom, false],
+      [shape.belowFrom, shape.segments.length, true],
+    ] as const;
+    for (const [from, to, below] of parts) {
+      if (from === to) continue;
+      ctx.beginPath();
+      for (let i = from; i < to; i++) {
+        const [a, b] = shape.segments[i]!;
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+      }
+      ctx.globalAlpha = labelAlpha(0.8, below);
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = this.figurePattern.pattern ?? ink;
+      ctx.stroke();
+      ctx.globalAlpha = labelAlpha(1, below);
+      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = ink;
+      ctx.stroke();
     }
-    ctx.globalAlpha = 0.8;
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = this.figurePattern.pattern ?? ink;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1.25;
-    ctx.strokeStyle = ink;
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -1214,13 +1237,15 @@ export class SkyMap {
     const label = pickLabel([x, y], this.constellationLabelRects);
     if (label) return { kind: "constellation", abbr: label };
     const m = this.eqToView();
+    // Below the horizon, only what seeThroughGround shows can be picked (night limits there).
+    const seeThrough = this.layers.seeThroughGround;
     if (this.bodies) {
       const radius = Math.max(22, this.uniforms.uBodySize.value / 2);
       for (const [body, dir] of [
         ["Moon", this.bodies.moon],
         ["Sun", this.bodies.sun],
       ] as const) {
-        if (applyMat3(this.eq2hor, dir)[2] < 0) continue;
+        if (applyMat3(this.eq2hor, dir)[2] < 0 && !seeThrough) continue;
         const p = this.toScreen(applyMat3(m, dir));
         if (p && Math.hypot(p[0] - x, p[1] - y) < radius) return { kind: "body", body };
       }
@@ -1229,7 +1254,8 @@ export class SkyMap {
       let found: Planet | null = null;
       let bestDist = Infinity;
       for (const pl of this.planets) {
-        if (!this.planetVisible(pl.magnitude) || applyMat3(this.eq2hor, pl.dir)[2] < 0) continue;
+        const below = applyMat3(this.eq2hor, pl.dir)[2] < 0;
+        if ((below && !seeThrough) || !this.planetVisible(pl.magnitude, below)) continue;
         const p = this.toScreen(applyMat3(m, pl.dir));
         if (!p) continue;
         const d = Math.hypot(p[0] - x, p[1] - y);
@@ -1243,7 +1269,9 @@ export class SkyMap {
     let bestScore = 26;
     this.options.stars.forEach((s, i) => {
       if (s.v > limit) return;
-      const p = this.toScreen(applyMat3(m, this.starDirs[i]!));
+      const dir = this.starDirs[i]!;
+      if (!seeThrough && applyMat3(this.eq2hor, dir)[2] <= 0) return;
+      const p = this.toScreen(applyMat3(m, dir));
       if (!p) return;
       const score = Math.hypot(p[0] - x, p[1] - y) - (limit - s.v) * 1.5;
       if (score < bestScore) [best, bestScore] = [s, score];

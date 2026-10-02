@@ -58,6 +58,11 @@
     <path d="M1.5 9.5 H14.5" class="thin" />
     <path d="M1.5 12.5 L14.5 5" stroke-dasharray="1.6 1.2" />
     <circle cx="9.9" cy="7.7" r="1.9" class="fill" />
+  {:else if name === "seeThrough"}
+    <path d="M1.5 7.5 H14.5" />
+    <path d="M3 7.5 A5 5 0 0 0 13 7.5" class="thin" stroke-dasharray="1.2 1.1" />
+    <circle cx="8" cy="4" r="1.4" class="fill" />
+    <circle cx="8" cy="10.6" r="1.1" class="thin" />
   {:else if name === "fullscreen"}
     <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
   {:else if name === "fullscreenExit"}

@@ -37,6 +37,7 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
       { key: "constellationLines", icon: "lines", views: BOTH },
       { key: "constellationNames", icon: "conNames", views: SKY },
       { key: "starNames", icon: "starNames", views: SKY },
+      { key: "seeThroughGround", icon: "seeThrough", hint: true, views: SKY },
     ],
   },
   {

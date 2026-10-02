@@ -59,6 +59,7 @@
   import LayersPanel from "./components/LayersPanel.svelte";
   import ConstellationSheet from "./components/ConstellationSheet.svelte";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
+  import { altitudeOf } from "./lib/horizon";
   import {
     LAYERS_STORAGE_KEY,
     graduationFormatter,
@@ -815,6 +816,13 @@
   };
   const hint = $derived(playing ? $_(HINTS[range]) : "");
   const distance = $derived(selected ? parallaxToLightYears(selected.plx) : null);
+  /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
+  const belowHorizon = $derived.by(() => {
+    if (selected) return altitudeOf(selected.ra, selected.dec, date, place) < 0;
+    if (selectedBody) return (selectedBody === "Sun" ? bodies.sun : bodies.moon).altitude < 0;
+    if (selectedPlanet) return (planets.find((q) => q.name === selectedPlanet)?.altitude ?? 0) < 0;
+    return false;
+  });
   const coords = $derived(
     $_("geo.coords", {
       values: {
@@ -932,6 +940,7 @@
   <aside class="hud panel">
     <p class="meta">HIP {selected.hip}{selected.bayer ? ` // ${selected.bayer}` : ""}</p>
     <p class="name">{selected.name ?? selected.bayer ?? `HIP ${selected.hip}`}</p>
+    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
     <button
       class="con"
       onclick={() => (selection = { kind: "constellation", abbr: selected.con })}
@@ -960,6 +969,7 @@ DIST {distance
       {/if}
     </p>
     <p class="name">{bodyInfo.name}</p>
+    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
     <pre class="data">{bodyInfo.lines}</pre>
     {#if selectedBody === "Sun"}<p class="warn">{$_("sun.warning")}</p>{/if}
     <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
@@ -971,6 +981,7 @@ DIST {distance
   <aside class="hud panel">
     <p class="meta">{$_("planet.kind")}</p>
     <p class="name">{planetInfo.name}</p>
+    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
     <button
       class="con"
       onclick={() => (selection = { kind: "constellation", abbr: planetInfo.con.abbr })}
