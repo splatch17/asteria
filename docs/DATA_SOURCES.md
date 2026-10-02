@@ -18,6 +18,10 @@
 | Côtes (globe) | **Natural Earth** 1:50m coastline (`build_earth.py`) | Natural Earth | Domaine public | Vue Terre — ✅ intégré (#35) |
 | Relief (globe) | **NASA Blue Marble: Next Generation**, topographie + bathymétrie, déc. 2004 | NASA Visible Earth | Domaine public (crédit NASA) | Texture du globe — ✅ intégré (#35) |
 | Lumières nocturnes | **NASA Black Marble** 2016 (0,1°) | NASA Earth Observatory | Domaine public (crédit NASA) | Côté nuit du globe — ✅ intégré (#35) |
+| Terre en couleurs (style réaliste) | **NASA Blue Marble: Next Generation**, juin 2004, sans relief ni bathymétrie (`world.200406.3x5400x2700.jpg`, Visible Earth #76487) | NASA Earth Observatory (R. Stöckli) | Domaine public (crédit NASA) | `earth-day.webp` 2048×1024, 123 Ko (`build_space.py`) — ✅ intégré (#55) |
+| Lune (style réaliste) | **NASA SVS CGI Moon Kit** (#4720), mosaïque couleur LRO LROC WAC avec pôles (`lroc_color_poles_1k.jpg`) | NASA Scientific Visualization Studio | Domaine public (crédit NASA SVS) | `moon.webp` 1024×512, 74 Ko — ✅ intégré (#55) |
+| Planètes et anneaux de Saturne (style réaliste) | **Solar System Scope** textures 2k (Mercure, Vénus atmosphère, Mars, Jupiter, Saturne + anneaux, Uranus, Neptune), dérivées d'images NASA | Solar System Scope (INOVE) | **CC BY 4.0** — attribution « Solar System Scope » obligatoire (page Crédits) | Atlas `planets.webp` 256×1024, 19 Ko — ✅ intégré (#55) |
+| Pôles et méridiens des planètes, pôle lunaire | **IAU WGCCRE 2015** (Archinal et al. 2018, *Celest. Mech. Dyn. Astr.* 130:22), termes constants | IAU | Libre (publication scientifique, citation) | Orientation des globes et des anneaux de Saturne (`space-style.ts`), testée contre le passage de la Terre dans le plan des anneaux le 23/03/2025 — ✅ (#55) |
 | Satellites / ISS | **CelesTrak** (TLE) | — | Libre | Passages |
 | Exoplanètes | **NASA Exoplanet Archive** | NASA / IPAC | Libre | Étoiles hôtes |
 | Objets (expert) | **SIMBAD** (API TAP) | CDS Strasbourg | Libre, citation | Liens et données croisées |

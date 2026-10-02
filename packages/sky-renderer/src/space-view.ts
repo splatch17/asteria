@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import {
   PLANETS,
+  bodyPosition,
   greenwichMeanSiderealTime,
   precessionMatrix,
   unitVector,
@@ -33,6 +34,10 @@ import {
   type SkyTheme,
 } from "./sky-map";
 import { sphericalGrid } from "./grids";
+import { RealisticLayer, type SpaceTextureName } from "./space-realistic";
+import { moonAxes, planetAxes, sunwardDirection, type SpaceStyle } from "./space-style";
+
+export type { SpaceTextureName } from "./space-realistic";
 
 /**
  * Layers honoured by the Earth view (setLayers takes the same Partial<SkyLayers> as the map;
@@ -65,7 +70,19 @@ export interface SpaceViewOptions {
   formatPathMark?: (date: Date) => string;
   /** Tap on the Sun, the Moon or a planet (null: tap on nothing). Stars are not pickable here. */
   onSelect?: (selection: SkySelection | null) => void;
+  /** Initial rendering style (default: engraving). */
+  style?: SpaceStyle;
+  /** Red night vision: the realistic style is drawn in shades of the theme's ink. */
+  monochrome?: boolean;
+  /**
+   * Loads a texture of the realistic style, on demand (first switch to that style). Until it
+   * arrives, or if it fails, the realistic style uses procedural colours.
+   */
+  loadTexture?: (name: SpaceTextureName) => Promise<HTMLImageElement | ImageBitmap>;
 }
+
+/** Sunlight on the Moon and planets is recomputed when the date moves by more than this. */
+const LIGHT_REFRESH_MS = 3_600_000;
 
 const DEG = Math.PI / 180;
 const OBLIQUITY = 23.4392911 * DEG;
@@ -124,6 +141,26 @@ export class SpaceView {
   private velocity = { lon: 0, lat: 0 };
   private moved = 0;
   private readonly resizeObserver: ResizeObserver;
+  // --- realistic style (#55), built on first use
+  private style: SpaceStyle = "engraving";
+  private monochrome = false;
+  private real: RealisticLayer | null = null;
+  private readonly globe: THREE.Mesh;
+  private readonly engravedGlobe: THREE.ShaderMaterial;
+  /** Objects drawn only by the engraved style. */
+  private readonly engraved: THREE.Object3D[];
+  private readonly starDirs: Vec3[];
+  /** Sunward directions (J2000) of the Moon and planets, and when/where they were computed. */
+  private sunward: (Vec3 | null)[] = [];
+  private sunwardAt = { time: NaN, lat: NaN, lon: NaN };
+  /** Selected Moon (0) or planet (1 … 7) for the enlarged realistic view; −1: none. */
+  private selectedBody = -1;
+  private readonly tmp = {
+    dir: new THREE.Vector3(),
+    light: new THREE.Vector3(),
+    pole: new THREE.Vector3(),
+    prime: new THREE.Vector3(),
+  };
 
   constructor(private readonly options: SpaceViewOptions) {
     const { canvas, overlay, stars, lines, earth } = options;
@@ -159,6 +196,7 @@ export class SpaceView {
 
     // --- Celestial sphere (at infinity)
     const dirs = stars.map((s) => unitVector(s.ra, s.dec));
+    this.starDirs = dirs;
     const byHip = new Map(stars.map((s, i) => [s.hip, dirs[i]!]));
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute("position", new THREE.Float32BufferAttribute(dirs.flat(), 3));
@@ -265,6 +303,8 @@ export class SpaceView {
       this.sphereGeometry(96, 48),
       this.material(globeVert, globeFrag, false),
     );
+    this.globe = globe;
+    this.engravedGlobe = globe.material as THREE.ShaderMaterial;
     (globe.material as THREE.ShaderMaterial).transparent = false;
     (globe.material as THREE.ShaderMaterial).depthWrite = true;
     (globe.material as THREE.ShaderMaterial).depthTest = true;
@@ -292,6 +332,7 @@ export class SpaceView {
     const graticule = this.surfaceLines(grat, 0.14);
 
     this.earth.add(globe, coast, graticule, this.observerMarker);
+    this.engraved = [starPoints, coast, graticule];
 
     // Earth's axis, through the poles towards the celestial pole (fixed in the world frame)
     const axis = this.surfaceLines([0, 0, -1.5, 0, 0, 1.5], 0.6);
@@ -308,16 +349,52 @@ export class SpaceView {
       this.planetPoints,
       this.bodyPoints,
     );
+    this.monochrome = options.monochrome ?? false;
     this.setTheme(options.theme);
     this.buildObserverMarker();
     this.bindInput(canvas);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
-    this.update();
+    this.setStyle(options.style ?? "engraving");
   }
 
   // --- public API
+
+  /** Switches between the engraved style and the realistic one (textures loaded on demand). */
+  setStyle(style: SpaceStyle): void {
+    this.style = style;
+    const realistic = style === "realistic";
+    if (realistic && !this.real) this.buildRealistic();
+    for (const o of this.engraved) o.visible = !realistic;
+    this.real?.setVisible(realistic);
+    this.globe.material = realistic && this.real ? this.real.globeMaterial : this.engravedGlobe;
+    this.renderer.setClearColor(realistic ? "#000000" : this.options.theme.sky);
+    this.update();
+  }
+
+  getStyle(): SpaceStyle {
+    return this.style;
+  }
+
+  /** Red night vision for the realistic style (the engraving follows the theme's colours). */
+  setMonochrome(on: boolean): void {
+    this.monochrome = on;
+    this.real?.setMonochrome(on, this.options.theme.ink);
+    this.dirty = true;
+  }
+
+  /** Current selection, so the realistic style can show the Moon or a planet enlarged. */
+  setSelection(selection: SkySelection | null): void {
+    this.selectedBody =
+      selection?.kind === "planet"
+        ? 1 + PLANETS.indexOf(selection.planet)
+        : selection?.kind === "body" && selection.body === "Moon"
+          ? 0
+          : -1;
+    this.real?.setSelected(this.selectedBody);
+    this.dirty = true;
+  }
 
   setDate(date: Date): void {
     this.date = date;
@@ -403,7 +480,8 @@ export class SpaceView {
     this.options.theme = theme;
     this.uniforms.uInk.value.set(theme.ink);
     this.uniforms.uBase.value.set(theme.ground);
-    this.renderer.setClearColor(theme.sky);
+    this.renderer.setClearColor(this.style === "realistic" ? "#000000" : theme.sky);
+    this.real?.setMonochrome(this.monochrome, theme.ink);
     // Surface lines (coastlines, graticule, marker) use plain materials: recolour them too.
     this.scene.traverse((o) => {
       const m = (o as THREE.LineSegments).material as THREE.LineBasicMaterial | undefined;
@@ -451,6 +529,96 @@ export class SpaceView {
   }
 
   // --- internals
+
+  private buildRealistic(): void {
+    const u = this.uniforms;
+    const real = new RealisticLayer(
+      {
+        uPrec: u.uPrec,
+        uDpr: u.uDpr,
+        uSunEarth: u.uSunEarth,
+        uLights: u.uLights,
+        uRelief: u.uRelief,
+      },
+      this.options.stars,
+      this.starDirs,
+    );
+    real.setMonochrome(this.monochrome, this.options.theme.ink);
+    real.setSelected(this.selectedBody);
+    this.scene.add(...real.objects);
+    this.real = real;
+    const load = this.options.loadTexture;
+    if (!load) return;
+    for (const name of ["earth-day", "moon", "planets"] as const) {
+      load(name)
+        .then((image) => {
+          real.setTexture(name, image);
+          this.dirty = true;
+        })
+        .catch((e: unknown) => console.warn(`space texture ${name} unavailable`, e));
+    }
+  }
+
+  /**
+   * Realistic style: positions of the Sun, Moon and planets (the same directions as the engraved
+   * style), plus sunlight and axes for shading. `prec`: J2000 → equator of date.
+   */
+  private refreshRealistic(prec: THREE.Matrix3): void {
+    const real = this.real!;
+    const { dir, light, pole, prime } = this.tmp;
+    const t = this.date.getTime();
+    const at = this.sunwardAt;
+    if (
+      !(Math.abs(t - at.time) < LIGHT_REFRESH_MS) ||
+      at.lat !== this.observer.latitude ||
+      at.lon !== this.observer.longitude
+    ) {
+      // Distances for the sunlight geometry only; directions stay those given by the app.
+      const sun = bodyPosition("Sun", this.date, this.observer);
+      const sunDir = unitVector(sun.ra, sun.dec);
+      this.sunward = (["Moon", ...PLANETS] as const).map((body) => {
+        const p = bodyPosition(body, this.date, this.observer);
+        return sunwardDirection(unitVector(p.ra, p.dec), p.distanceKm, sunDir, sun.distanceKm);
+      });
+      this.sunwardAt = { time: t, lat: this.observer.latitude, lon: this.observer.longitude };
+    }
+    const toWorld = (v: Vec3, out: THREE.Vector3) => out.set(...v).applyMatrix3(prec);
+
+    if (this.bodies) {
+      real.setSun(toWorld(this.bodies.sun, dir));
+      const axes = moonAxes(this.bodies.moon);
+      real.setBody(
+        0,
+        toWorld(this.bodies.moon, dir),
+        toWorld(this.sunward[0]!, light),
+        toWorld(axes.pole, pole),
+        toWorld(axes.prime, prime),
+        -12,
+      );
+    } else {
+      real.setSun(null);
+      real.setBody(0, null, light, pole, prime, 99);
+    }
+    const mags = this.planetPoints.geometry.getAttribute("aMag") as THREE.BufferAttribute;
+    PLANETS.forEach((planet, i) => {
+      const d = this.planets?.[i];
+      if (!d) {
+        real.setBody(i + 1, null, light, pole, prime, 99);
+        return;
+      }
+      const axes = planetAxes(planet, this.date);
+      real.setBody(
+        i + 1,
+        toWorld(d, dir),
+        toWorld(this.sunward[i + 1]!, light),
+        toWorld(axes.pole, pole),
+        toWorld(axes.prime, prime),
+        mags.getX(i),
+      );
+    });
+    real.setPlanetsShown(this.layers.planets);
+    real.setVisible(this.style === "realistic");
+  }
 
   private material(vertexShader: string, fragmentShader: string, additive: boolean) {
     return new THREE.ShaderMaterial({
@@ -551,7 +719,6 @@ export class SpaceView {
       v.set(...this.bodies.sun).applyMatrix3(prec);
       dirs.setXYZ(0, v.x, v.y, v.z);
       dirs.needsUpdate = true;
-      this.bodyPoints.visible = true;
       // Sun in the Earth-fixed frame lights the globe (terminator, night lights).
       this.uniforms.uSunEarth.value.copy(v).applyAxisAngle(Z_AXIS, -gst);
     }
@@ -564,8 +731,11 @@ export class SpaceView {
       });
       dirs.needsUpdate = true;
     }
-    this.planetPoints.visible = this.layers.planets && !!this.planets;
+    const engraved = this.style === "engraving";
+    this.bodyPoints.visible = engraved && !!this.bodies;
+    this.planetPoints.visible = engraved && this.layers.planets && !!this.planets;
     this.pathPoints.visible = this.layers.planets && this.pathPoints.geometry.drawRange.count > 0;
+    if (this.real && !engraved) this.refreshRealistic(prec);
   }
 
   private resize(): void {
@@ -609,6 +779,8 @@ export class SpaceView {
     this.camera.updateMatrixWorld();
     // Mix with zoom: engraved from afar, relief shows through when close.
     this.uniforms.uDetail.value = Math.min(1, Math.max(0, (6 - dist) / 3.5));
+    if (this.style === "realistic")
+      this.real?.setCameraEarth(this.camera.position, this.earth.rotation.z);
     if (this.bodies) {
       const sun = this.screenOf(this.dirAt(0));
       const moon = this.screenOf(this.dirAt(1));
@@ -669,7 +841,7 @@ export class SpaceView {
     label(labels.pole, new THREE.Vector3(0, 0, 1), true);
     if (this.bodies) {
       label(labels.sun, this.dirAt(0), true, 20);
-      label(labels.moon, this.dirAt(1), true, 18);
+      label(labels.moon, this.dirAt(1), true, this.labelOffset(0, 18));
     }
     const names = this.options.planetNames;
     if (this.layers.planets && this.planets && names) {
@@ -678,7 +850,12 @@ export class SpaceView {
       const d = new THREE.Vector3();
       this.planets.forEach((p, i) => {
         if (!p) return;
-        label(names[PLANETS[i]!], d.fromBufferAttribute(dirs, i), true, 12);
+        label(
+          names[PLANETS[i]!],
+          d.fromBufferAttribute(dirs, i),
+          true,
+          this.labelOffset(i + 1, 12),
+        );
       });
     }
     // Dated monthly marks of the selected planet's path, without overlaps.
@@ -706,6 +883,14 @@ export class SpaceView {
     }
   }
 
+  /** Label offset (CSS px) beside the Moon (0) or a planet (1 … 7): clears enlarged sprites. */
+  private labelOffset(index: number, min: number): number {
+    if (this.style !== "realistic" || !this.real) return min;
+    // Planet sprites hold 1.6 radii (Saturn: 2.4 for the rings); the Moon's is its disc.
+    const half = this.real.spriteSize(index) / 2;
+    return Math.max(min, (index === 0 ? half : half / 1.6) + 8);
+  }
+
   /** Sun, Moon or planet under a tap (CSS px), unless hidden behind the globe. */
   private pick(x: number, y: number): SkySelection | null {
     let best: SkySelection | null = null;
@@ -717,16 +902,20 @@ export class SpaceView {
       const d = Math.hypot(s[0] - x, s[1] - y);
       if (d < radius && d < bestDist) [best, bestDist] = [selection, d];
     };
+    // Realistic sprites can be larger (selected planet, Moon): pick within their disc.
+    const real = this.style === "realistic" ? this.real : null;
+    const radius = (index: number, min: number) =>
+      Math.max(min, real ? real.spriteSize(index) / (index > 0 ? 3.2 : 2) : 0);
     if (this.bodies) {
       const r = Math.max(22, this.uniforms.uBodySize.value / 2);
       consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
-      consider(this.dirAt(1), r, { kind: "body", body: "Moon" });
+      consider(this.dirAt(1), radius(0, r), { kind: "body", body: "Moon" });
     }
     if (this.layers.planets && this.planets) {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       this.planets.forEach((p, i) => {
         if (p)
-          consider(new THREE.Vector3().fromBufferAttribute(dirs, i), 22, {
+          consider(new THREE.Vector3().fromBufferAttribute(dirs, i), radius(i + 1, 22), {
             kind: "planet",
             planet: PLANETS[i]!,
           });

@@ -67,6 +67,10 @@
     <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
   {:else if name === "fullscreenExit"}
     <path d="M6 2.5 V6 H2.5 M13.5 6 H10 V2.5 M10 13.5 V10 H13.5 M2.5 10 H6 V13.5" />
+  {:else if name === "realistic"}
+    <!-- A globe lit from the right: day side filled, night side outlined. -->
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 2.5 A5.5 5.5 0 0 1 8 13.5 A3 5.5 0 0 0 8 2.5 Z" class="fill" />
   {:else if name === "expand"}
     <path d="M3.5 10 L8 5.5 L12.5 10" />
   {:else if name === "collapse"}

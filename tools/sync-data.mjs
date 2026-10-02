@@ -15,4 +15,6 @@ for (const f of ["stars.bin", "star-strings.json", "constellation-lines.json"])
   cpSync(`${from}/${f}`, `${to}/${f}`);
 // Earth assets for the space view (optional until build_earth.py has run).
 if (existsSync(`${from}/earth`)) cpSync(`${from}/earth`, `${to}/earth`, { recursive: true });
+// Textures of the realistic style (build_space.py), loaded on demand: optional too.
+if (existsSync(`${from}/space`)) cpSync(`${from}/space`, `${to}/space`, { recursive: true });
 console.log(`Synced sky data → ${to}`);

@@ -8,6 +8,12 @@ pip install -r requirements.txt
 python build_stars.py          # → out/ (+ raw/ en cache)
 ```
 
+Vue Terre : `python build_earth.py` (côtes, relief, lumières → `out/earth/`) et
+`python build_space.py` (textures du style réaliste, #55 → `out/space/` : Terre couleur, Lune,
+atlas des planètes ; < 1,5 Mo au total, contrôlé par le script). `pnpm data:sync` copie le tout
+dans `apps/web/public/data/`. Sans `out/space/`, le style réaliste utilise des couleurs
+procédurales.
+
 `raw/` (téléchargements) et `out/` (générés) ne sont pas versionnés. Sources et licences : `docs/DATA_SOURCES.md`.
 
 ## Fichiers produits (`out/`)

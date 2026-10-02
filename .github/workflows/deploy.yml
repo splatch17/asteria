@@ -31,11 +31,16 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: packages/sky-data/raw
-          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py') }}
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py') }}
       - run: python packages/sky-data/build_stars.py
         env:
           PYTHONIOENCODING: utf-8
       - run: python packages/sky-data/build_earth.py
+        env:
+          PYTHONIOENCODING: utf-8
+      # Realistic-style textures: optional, the app falls back to procedural colours without them.
+      - run: python packages/sky-data/build_space.py
+        continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
 
