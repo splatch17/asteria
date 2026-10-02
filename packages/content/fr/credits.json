@@ -3,7 +3,7 @@
     {
       "id": "hipparcos",
       "name": "Catalogue Hipparcos",
-      "role": "Positions, distances, mouvements propres, magnitudes et couleurs des 8 870 étoiles visibles à l'œil nu (V ≤ 6,5).",
+      "role": "Positions, distances, mouvements propres, magnitudes et couleurs des 8 872 étoiles visibles à l'œil nu (V ≤ 6,5).",
       "author": "ESA (1997) ; nouvelle réduction F. van Leeuwen (2007)",
       "notice": "Credit: ESA. ESA SP-1200 (1997) ; van Leeuwen, A&A 474, 653 (2007). Catalogues CDS I/239 et I/311.",
       "license": "CC BY-NC 3.0 IGO",
@@ -13,7 +13,7 @@
     {
       "id": "bsc5",
       "name": "Yale Bright Star Catalogue, 5e édition",
-      "role": "Numéros HR et désignations de Bayer et de Flamsteed (α Ori, 58 Ori…).",
+      "role": "Numéros HR, désignations de Bayer et de Flamsteed (α Ori, 58 Ori…) et vitesses radiales des étoiles que Gaia n'a pas mesurées.",
       "author": "D. Hoffleit, W. H. Warren Jr. (1991)",
       "notice": "Hoffleit & Warren, Yale University Observatory (1991). Catalogue CDS V/50.",
       "license": "Citation des auteurs (règles VizieR)",
@@ -21,9 +21,29 @@
       "sourceUrl": "https://cdsarc.cds.unistra.fr/viz-bin/cat/V/50"
     },
     {
+      "id": "gaia-dr3",
+      "name": "Gaia, Data Release 3",
+      "role": "Distances (parallaxes) des étoiles assez faibles pour Gaia (G > 6) et vitesses radiales.",
+      "author": "ESA, Gaia Data Processing and Analysis Consortium (DPAC) ; Gaia Collaboration, Vallenari et al. (2023)",
+      "notice": "Credit: ESA/Gaia/DPAC. This work has made use of data from the European Space Agency (ESA) mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia Data Processing and Analysis Consortium (DPAC). Gaia Collaboration, A&A 674, A1 (2023).",
+      "license": "CC BY-NC 3.0 IGO",
+      "licenseUrl": "https://www.cosmos.esa.int/web/gaia-users/license",
+      "sourceUrl": "https://gea.esac.esa.int/archive/"
+    },
+    {
+      "id": "literature-distances",
+      "name": "Distances publiées de Deneb et de Bételgeuse",
+      "role": "Distance des deux étoiles brillantes dont la parallaxe est biaisée (Deneb : association Cyg OB7 ; Bételgeuse : modélisation stellaire).",
+      "author": "F. Schiller, N. Przybilla (2008) ; M. Joyce et al. (2020)",
+      "notice": "Schiller & Przybilla, A&A 479, 849 (2008) ; Joyce et al., ApJ 902, 63 (2020).",
+      "license": "Publication scientifique (citation)",
+      "licenseUrl": "https://doi.org/10.3847/1538-4357/abb8db",
+      "sourceUrl": "https://doi.org/10.1051/0004-6361:20078590"
+    },
+    {
       "id": "iau-wgsn",
       "name": "IAU Catalog of Star Names (version du 2022-04-04)",
-      "role": "Noms propres officiels des étoiles (Sirius, Bételgeuse…), 333 noms affichés.",
+      "role": "Noms propres officiels des étoiles (Sirius, Bételgeuse…), 338 noms affichés.",
       "author": "Union astronomique internationale, groupe de travail WGSN (E. Mamajek)",
       "notice": "IAU Working Group on Star Names (WGSN), https://www.iau.org/public/themes/naming_stars/",
       "license": "CC BY 4.0",

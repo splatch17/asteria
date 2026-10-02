@@ -96,6 +96,9 @@ importers:
 
   packages/catalog:
     devDependencies:
+      '@asteria/astro-core':
+        specifier: workspace:*
+        version: link:../astro-core
       '@types/node':
         specifier: ^24.19.0
         version: 24.19.0

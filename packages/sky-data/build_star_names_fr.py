@@ -106,17 +106,8 @@ SELECT ?hip ?kind ?name WHERE {{
     return {hip: sorted(set(c)) for hip, c in out.items()}
 
 
-def fix_mojibake(name: str) -> str:
-    """IAU-CSN.txt is UTF-8 but served without a charset, so `requests` decodes it as Latin-1 and
-    the cached copy reads "BÃ©lÃ©nos"; multi-byte characters then shift the fixed-width columns."""
-    try:
-        return name.encode("latin-1").decode("utf-8")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return name
-
-
 def main() -> int:
-    iau = parse_iau_csn_full(fix_mojibake(cached("IAU-CSN.txt", IAU_CSN_URL)))
+    iau = parse_iau_csn_full(cached("IAU-CSN.txt", IAU_CSN_URL))  # UTF-8 (#75)
     candidates = wikidata_french(sorted(iau))
     names: dict[str, str] = {}
     rejected: list[str] = []
