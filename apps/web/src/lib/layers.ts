@@ -53,6 +53,7 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
       { key: "equatorialGrid", icon: "eqGrid", hint: true, views: BOTH },
       { key: "azimuthalGrid", icon: "azGrid", hint: true, views: SKY },
       { key: "ecliptic", icon: "ecliptic", hint: true, views: BOTH },
+      { key: "miniGlobe", icon: "earth", hint: true, views: SKY },
     ],
   },
 ];

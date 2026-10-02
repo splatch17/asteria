@@ -9,3 +9,5 @@ export * from "./limits";
 export * from "./see-through";
 export * from "./pick";
 export * from "./ephemeris-range";
+export * from "./flight";
+export * from "./mini-globe";

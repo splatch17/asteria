@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { _, locale } from "@asteria/ui";
   import {
     SkyMap,
@@ -14,6 +14,8 @@
     DEFAULT_SKY_LAYERS,
     DEFAULT_SPACE_LAYERS,
     ephemerisReliable,
+    skyOpacity,
+    FLIGHT_MS,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
@@ -45,13 +47,14 @@
     showFullscreenButton,
   } from "./lib/fullscreen";
   import Icon from "./components/Icon.svelte";
-  import TimeScrubber from "./components/TimeScrubber.svelte";
+  import TimeScrubber, { BUBBLE_RISE } from "./components/TimeScrubber.svelte";
   import LayersPanel from "./components/LayersPanel.svelte";
   import ConstellationSheet from "./components/ConstellationSheet.svelte";
   import InfoPanel, { type InfoRow } from "./components/InfoPanel.svelte";
   import Designation from "./components/Designation.svelte";
   import SkyHeader from "./components/SkyHeader.svelte";
   import DialsColumn from "./components/DialsColumn.svelte";
+  import MiniGlobe from "./components/MiniGlobe.svelte";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
   import {
@@ -85,8 +88,11 @@
   let map: SkyMap | undefined;
   let spaceCanvas: HTMLCanvasElement;
   let spaceOverlay: HTMLCanvasElement;
+  let skyView: HTMLDivElement;
   let space = $state<SpaceView | undefined>();
   let mode = $state<"sky" | "space">("sky");
+  /** Sky ↔ Earth flight under way (#37): both views are shown, the sky map fading over. */
+  let flying = $state<"out" | "in" | null>(null);
   let spaceLoading = $state(false);
   let spaceError = $state(false);
   // Earth view style (#55): engraving or realistic, remembered; `?style=` for captures.
@@ -289,75 +295,167 @@
   document.addEventListener("fullscreenchange", onFullscreenChange);
   addEventListener("pointerup", restoreFullscreen, true);
 
-  async function toggleSpace() {
-    if (mode === "space") {
-      mode = "sky";
-      space?.stop();
-      map?.start();
-      return;
-    }
-    if (pointer.state !== "off") pointer.stop();
-    if (!space && catalog) {
-      spaceLoading = true;
-      spaceError = false;
-      try {
-        const base = import.meta.env.BASE_URL;
-        const get = (path: string) =>
-          fetch(`${base}data/${path}`).then((r) =>
-            r.ok ? r : Promise.reject(new Error(`${path}: HTTP ${r.status}`)),
-          );
-        const image = (file: string) =>
-          get(`earth/${file}`)
-            .then((r) => r.blob())
-            .then((b) => createImageBitmap(b));
-        const [relief, lights, coast] = await Promise.all([
-          image("relief.webp"),
-          image("lights.webp"),
-          get("earth/coastlines.bin").then((r) => r.arrayBuffer()),
-        ]);
-        space = new SpaceView({
-          canvas: spaceCanvas,
-          overlay: spaceOverlay,
-          stars: catalog.stars,
-          lines: catalog.lines,
-          earth: { relief, lights, coastlines: decodeCoastlines(coast) },
-          theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
-          labels: {
-            here: $_("space.here"),
-            sun: $_("body.Sun"),
-            moon: $_("body.Moon"),
-            pole: $_("space.pole"),
-          },
-          planetNames: planetNames(),
-          formatPathMark: (d) => pathMarkFormat.format(d),
-          onSelect: (s) => (selection = s),
-          style: spaceStyle,
-          monochrome: night,
-          loadTexture: (name) =>
-            get(`space/${name}.webp`)
-              .then((r) => r.blob())
-              .then((b) => createImageBitmap(b)),
-        });
-      } catch (e) {
-        console.error(e);
-        spaceError = true;
-        return;
-      } finally {
-        spaceLoading = false;
-      }
-    }
-    if (!space) return;
-    space.setObserver(place);
-    space.setDate(date);
-    space.setBodies(skyBodies);
-    space.setPlanets(planets);
-    space.setLayers({ ...viewLayers.space });
-    space.setSelectedPath(selectedPath);
-    space.focusObserver(4);
-    mode = "space";
-    map?.stop(); // hidden: its loop would render a 0×0 canvas
+  // --- Earth view, loaded on demand (#36), and the Sky ↔ Earth flights (#37)
+  const dataUrl = (path: string) => `${import.meta.env.BASE_URL}data/${path}`;
+  const getData = (path: string) =>
+    fetch(dataUrl(path)).then((r) =>
+      r.ok ? r : Promise.reject(new Error(`${path}: HTTP ${r.status}`)),
+    );
+  const getImage = (path: string) =>
+    getData(path)
+      .then((r) => r.blob())
+      .then((b) => createImageBitmap(b));
+  /** Relief and night lights: shared by the mini-globe (#38) and the Earth view. */
+  let earthImages: Promise<{ relief: ImageBitmap; lights: ImageBitmap }> | null = null;
+  function loadEarthImages() {
+    earthImages ??= Promise.all([getImage("earth/relief.webp"), getImage("earth/lights.webp")])
+      .then(([relief, lights]) => ({ relief, lights }))
+      .catch((e: unknown) => {
+        earthImages = null; // a later request tries again
+        throw e;
+      });
+    return earthImages;
+  }
+
+  /** The Earth view, built once (on demand, or preloaded while zooming out towards it). */
+  let spacePromise: Promise<SpaceView> | null = null;
+  function ensureSpace(): Promise<SpaceView> {
+    spacePromise ??= createSpace().catch((e: unknown) => {
+      spacePromise = null;
+      throw e;
+    });
+    return spacePromise;
+  }
+
+  async function createSpace(): Promise<SpaceView> {
+    if (!catalog) throw new Error("star catalogue not loaded");
+    const [{ relief, lights }, coast] = await Promise.all([
+      loadEarthImages(),
+      getData("earth/coastlines.bin").then((r) => r.arrayBuffer()),
+    ]);
+    const view = new SpaceView({
+      canvas: spaceCanvas,
+      overlay: spaceOverlay,
+      stars: catalog.stars,
+      lines: catalog.lines,
+      earth: { relief, lights, coastlines: decodeCoastlines(coast) },
+      theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+      labels: {
+        here: $_("space.here"),
+        sun: $_("body.Sun"),
+        moon: $_("body.Moon"),
+        pole: $_("space.pole"),
+      },
+      planetNames: planetNames(),
+      formatPathMark: (d) => pathMarkFormat.format(d),
+      onSelect: (s) => (selection = s),
+      onEnterSky: () => flyToSky(),
+      style: spaceStyle,
+      monochrome: night,
+      loadTexture: (name) => getImage(`space/${name}.webp`),
+    });
+    syncSpace(view);
+    space = view;
     updateGraduationExclusions();
-    space.start();
+    // Shaders compiled and textures uploaded now, not on the flight's first frame.
+    await view.prepare().catch((e: unknown) => console.warn("Earth view warm-up", e));
+    return view;
+  }
+
+  /** Date, place, bodies and layers into the Earth view (the effects keep them in sync after). */
+  function syncSpace(view: SpaceView) {
+    view.setObserver(place);
+    view.setDate(date);
+    view.setBodies(skyBodies);
+    view.setPlanets(planets);
+    view.setLayers({ ...viewLayers.space });
+    view.setSelectedPath(selectedPath);
+  }
+
+  /** Starts building the Earth view in the background (approaching the widest field). */
+  function preloadSpace() {
+    if (status === "ready") ensureSpace().catch(() => {}); // a user request reports errors
+  }
+
+  // Flight duration: none with reduced motion; `?flightMs=` slows it down for captures.
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const urlFlightMs = Number(new URLSearchParams(location.search).get("flightMs"));
+  const flightDuration = () =>
+    reducedMotion.matches ? 0 : urlFlightMs > 0 ? urlFlightMs : FLIGHT_MS;
+  /** Nothing in the way of leaving the sky (re-read after awaiting the Earth view). */
+  const canLeaveSky = () => !flying && mode === "sky" && map !== undefined;
+
+  /**
+   * Leaves the sky for the Earth view (#37): globe button, mini-globe, or zooming out past the
+   * widest field. The camera climbs from the observer's eye, looking where the map looks.
+   */
+  async function flyToSpace(instant = false): Promise<void> {
+    if (!canLeaveSky()) return;
+    if (pointer.state !== "off") pointer.stop();
+    spaceError = false;
+    let view: SpaceView;
+    try {
+      spaceLoading = !space;
+      view = await ensureSpace();
+    } catch (e) {
+      console.error(e);
+      spaceError = true;
+      return;
+    } finally {
+      spaceLoading = false;
+    }
+    if (!canLeaveSky() || !map) return;
+    syncSpace(view);
+    flying = "out";
+    mode = "space";
+    skyView.style.opacity = "1";
+    await tick(); // the Earth view's canvas is shown (sized) under the fading map
+    map.stop();
+    view.start();
+    await new Promise<void>((done) =>
+      view.flyFromSky(
+        { ...map!.view },
+        {
+          duration: instant ? 0 : flightDuration(),
+          onFrame: (s) => (skyView.style.opacity = String(skyOpacity(s))),
+          onDone: () => {
+            flying = null;
+            skyView.style.opacity = "";
+            updateGraduationExclusions();
+            done();
+          },
+        },
+      ),
+    );
+  }
+
+  /**
+   * Lands back in the sky (#37): sky button, or zooming in on "you are here". The map is set to
+   * the view the flight ends on (heading as the camera's) and fades in near the ground.
+   */
+  function flyToSky() {
+    if (flying || mode !== "space" || !space || !map) return;
+    const view = space;
+    flying = "in";
+    skyView.style.opacity = "0";
+    const target = view.flyToSky({
+      duration: flightDuration(),
+      onFrame: (s) => (skyView.style.opacity = String(skyOpacity(s))),
+      onDone: () => {
+        flying = null;
+        skyView.style.opacity = "";
+        view.stop();
+        updateGraduationExclusions();
+      },
+    });
+    map.setView(target);
+    mode = "sky";
+    map.start();
+  }
+
+  function toggleSpace() {
+    if (mode === "space") flyToSky();
+    else void flyToSpace();
   }
 
   function faceNorth() {
@@ -418,6 +516,8 @@
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: select,
+        onZoomPastMax: () => void flyToSpace(),
+        onNearMaxFov: preloadSpace,
         onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
@@ -478,7 +578,7 @@
     }
     // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
     if (params.get("space") === "1") {
-      await toggleSpace();
+      await flyToSpace(true);
       const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "").split(",").map(Number);
       if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
     }
@@ -532,14 +632,16 @@
   let header = $state<HTMLElement>();
   let compass = $state<HTMLElement>();
   let bottomNav: HTMLElement;
+  let globeButton = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
-  const hudBlocks = () => [header, compass, bottomNav].filter((el) => el !== undefined);
+  const hudBlocks = () =>
+    [header, compass, bottomNav, globeButton].filter((el) => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
-    const rects = hudBlocks().map((el) => {
-      const r = el.getBoundingClientRect();
-      return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
-    });
+    const rects = hudBlocks()
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0) // hidden (mini-globe in the Earth view)
+      .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
     map?.setHudExclusions(rects);
     space?.setHudExclusions(rects);
   }
@@ -548,6 +650,37 @@
     for (const el of hudBlocks()) hudObserver.observe(el);
     addEventListener("resize", updateGraduationExclusions);
   }
+  // The mini-globe (#38) comes and goes (layer, view): its area is kept free of labels too.
+  $effect(() => {
+    const el = globeButton;
+    if (!el || !hudObserver) return;
+    hudObserver.observe(el);
+    return () => hudObserver?.unobserve(el);
+  });
+  // It sits under the dials column: it moves (without resizing) when the column grows.
+  $effect(() => {
+    void dialsHeight;
+    void globeButton;
+    if (status === "ready") tick().then(updateGraduationExclusions);
+  });
+
+  // --- Mini-globe (#38): relief and lights loaded after the map (they also serve the Earth view).
+  // Kept mounted while its layer is on (hidden in the Earth view and during flights), so the
+  // sampled textures and per-pixel geometry survive the trips (no stall on landing).
+  const globeLayer = $derived(status === "ready" && viewLayers.sky.miniGlobe);
+  const showGlobe = $derived(globeLayer && mode === "sky" && !flying);
+  let globeImages = $state<{ relief: ImageBitmap; lights: ImageBitmap } | null>(null);
+  $effect(() => {
+    if (!globeLayer || globeImages) return;
+    loadEarthImages()
+      // Sampling them (~15 ms on a phone) waits for an idle moment.
+      .then((images) =>
+        "requestIdleCallback" in window
+          ? requestIdleCallback(() => (globeImages = images), { timeout: 1000 })
+          : (globeImages = images),
+      )
+      .catch((e: unknown) => console.warn("mini-globe images", e));
+  });
   let controlsHeight = $state(140);
   let dialsHeight = $state(148);
   let headerHeight = $state(90);
@@ -830,11 +963,17 @@
   const toastTop = $derived(`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16}px)`);
 </script>
 
-<div class="view" class:hidden={mode !== "sky"}>
+<!-- During a flight (#37) both views are shown: the map on top, fading, and not touchable. -->
+<div
+  class="view"
+  class:hidden={mode !== "sky" && !flying}
+  class:fading={flying !== null}
+  bind:this={skyView}
+>
   <canvas class="sky" bind:this={canvas}></canvas>
   <canvas class="overlay" bind:this={overlay}></canvas>
 </div>
-<div class="view" class:hidden={mode !== "space"}>
+<div class="view" class:hidden={mode !== "space" && !flying}>
   <canvas class="sky" bind:this={spaceCanvas}></canvas>
   <canvas class="overlay" bind:this={spaceOverlay}></canvas>
 </div>
@@ -869,6 +1008,27 @@
   onpoint={() => pointer.toggle()}
   onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
 />
+
+{#if globeLayer}
+  <MiniGlobe
+    hidden={!showGlobe}
+    bind:element={globeButton}
+    top={`calc(max(16px, env(safe-area-inset-top)) + ${dialsHeight + 12}px)`}
+    images={globeImages}
+    {place}
+    sun={bodies.sun}
+    {date}
+    style={spaceStyle}
+    theme={night
+      ? { ink: nightInk(brightness), base: THEMES.red.ground }
+      : {
+          ink: THEMES.day.ink,
+          base: THEMES.day.ground,
+        }}
+    monochrome={night}
+    onopen={() => void flyToSpace()}
+  />
+{/if}
 
 {#if pointer.state === "waiting"}
   <p class="hud toast" style:top={toastTop} role="status">{$_("pointing.hint")}</p>
@@ -1039,7 +1199,8 @@
     />
   {/if}
   <div class="controls" bind:clientHeight={controlsHeight}>
-    {#if hint}<p class="hint">{hint}</p>{/if}
+    <!-- Shown during playback, when the scrubber's bubble rises above it: kept clear (#80). -->
+    {#if hint}<p class="hint" style:margin-bottom={`${BUBBLE_RISE - 8}px`}>{hint}</p>{/if}
     <TimeScrubber
       {range}
       {offset}
@@ -1117,8 +1278,16 @@
     line-height: 1.5;
     color: var(--ast-fg);
   }
+  /* Hidden but laid out: a view keeps its size and drawing buffer, so the Earth view is ready
+     (sized, compiled) before a flight shows it (#37). Hidden elements take no input. */
   .view.hidden {
-    display: none;
+    visibility: hidden;
+  }
+  /* Above the Earth view while it fades (canvases are fixed: stacked by this context). */
+  .view.fading {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
   }
   /* Left of the dials column (44 px + 12 px gap), below the header. */
   .toast {
