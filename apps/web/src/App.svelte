@@ -143,6 +143,9 @@
   let playCarry = 0;
   let viewAzimuth = $state(180);
   let viewRoll = $state(0);
+  // Declared before loadPlace() runs: read earlier, it was in its temporal dead zone and the
+  // saved place was never restored (the ReferenceError fell into loadPlace's catch).
+  const PLACE_KEY = "asteria.place";
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
@@ -158,8 +161,6 @@
     Object.fromEntries(PLANETS.map((p) => [p, planetName(p)])) as Record<Planet, string>;
   const hipLabel = (hip: number) => $_("star.hip", { values: { hip } });
   const starLabel = (s: CatalogStar) => s.name ?? s.bayer ?? hipLabel(s.hip);
-
-  const PLACE_KEY = "asteria.place";
 
   interface Place {
     name: string | null; // null = default city (translated at render time)
