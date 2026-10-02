@@ -8,6 +8,8 @@
     type CatalogStar,
     type SkyLayers,
     type SkySelection,
+    type SpaceStyle,
+    isSpaceStyle,
     DEFAULT_SKY_LAYERS,
     DEFAULT_SPACE_LAYERS,
   } from "@asteria/sky-renderer";
@@ -92,6 +94,13 @@
   let space = $state<SpaceView | undefined>();
   let mode = $state<"sky" | "space">("sky");
   let spaceLoading = $state(false);
+  // Earth view style (#55): engraving or realistic, remembered; `?style=` for captures.
+  const urlStyle = new URLSearchParams(location.search).get("style");
+  let spaceStyle = $state<SpaceStyle>(
+    isSpaceStyle(urlStyle)
+      ? urlStyle
+      : readSetting("asteria.spaceStyle", "engraving", isSpaceStyle),
+  );
   let catalog: { stars: CatalogStar[]; lines: Record<string, number[][]> } | undefined;
   let status = $state<"loading" | "ready" | "error">("loading");
   const isBool = (v: unknown): v is boolean => typeof v === "boolean";
@@ -453,6 +462,12 @@
           planetNames: planetNames(),
           formatPathMark: (d) => pathMarkFormat.format(d),
           onSelect: (s) => (selection = s),
+          style: spaceStyle,
+          monochrome: night,
+          loadTexture: (name) =>
+            fetch(`${base}data/space/${name}.webp`)
+              .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.statusText))))
+              .then((b) => createImageBitmap(b)),
         });
       } catch (e) {
         console.error(e);
@@ -662,6 +677,7 @@
     else root.style.removeProperty("--ast-parchment");
     map?.setTheme(night ? { ...THEMES.red, ink } : THEMES.day);
     space?.setTheme(night ? { ...THEMES.red, ink } : THEMES.day);
+    space?.setMonochrome(night);
     writeSetting("asteria.night", night);
     writeSetting("asteria.nightBrightness", brightness);
   });
@@ -672,6 +688,13 @@
   });
   $effect(() => {
     space?.setLayers({ ...viewLayers.space });
+  });
+  $effect(() => {
+    space?.setStyle(spaceStyle);
+    if (urlStyle === null) writeSetting("asteria.spaceStyle", spaceStyle);
+  });
+  $effect(() => {
+    space?.setSelection(selection);
   });
   $effect(() => {
     const sky = serializeLayers(viewLayers.sky);
@@ -915,6 +938,16 @@
         <path d="M0 -18 V-12 M0 12 V18 M-18 0 H-12 M12 0 H18" class="ring" />
         <circle r="2" class="north" />
       </svg>
+    </button>
+  {:else}
+    <button
+      class="dial"
+      onclick={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
+      aria-pressed={spaceStyle === "realistic"}
+      aria-label={$_("space.realistic")}
+      title={$_("space.realistic")}
+    >
+      <span class="dial-icon"><Icon name="realistic" /></span>
     </button>
   {/if}
 </div>

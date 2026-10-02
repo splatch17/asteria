@@ -19,5 +19,6 @@ export type IconName =
   | "seeThrough"
   | "fullscreen"
   | "fullscreenExit"
+  | "realistic"
   | "expand"
   | "collapse";
