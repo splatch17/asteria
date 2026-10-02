@@ -4,10 +4,10 @@
 
 | Domaine | Source | Institution | Licence / usage | Usage prévu |
 |---|---|---|---|---|
-| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/311` | Libre usage scientifique, citation | Astrométrie `I/311` + V, B-V, HD depuis `I/239` — ✅ intégré (#3), 8 870 étoiles V ≤ 6.5 |
-| Étoiles (précision) | **Gaia DR3** | ESA | Libre, citation obligatoire | Astrométrie niveau expert, distances, mouvement propre |
+| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/239`, `I/311` | **CC BY-NC 3.0 IGO** (archives scientifiques ESA), mention « Credit: ESA » ; tout usage commercial requiert une autorisation ESA (data.licences@esa.int) | Astrométrie `I/311` + V, B-V, HD depuis `I/239` — ✅ intégré (#3), 8 870 étoiles V ≤ 6.5 |
+| Étoiles (précision) | **Gaia DR3** | ESA | **CC BY-NC 3.0 IGO**, mention « Credit: ESA, Gaia DPAC » ; usage commercial sur autorisation | Astrométrie niveau expert, distances, mouvement propre |
 | Étoiles (noms, photométrie) | **Yale Bright Star Catalogue 5** | NASA HEASARC / CDS `V/50` | Domaine public | Désignations Bayer/Flamsteed, HR |
-| Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY** (citer l'IAU) | 333 noms pour V ≤ 6.5 — ✅ intégré (#3) |
+| Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY 4.0** (citer l'IAU, https://www.iau.org/public/themes/naming_stars/) | 333 noms pour V ≤ 6.5 — ✅ intégré (#3) |
 | Noms d'étoiles en français | **IAU WGSN** (`IAU-CSN.txt`, nom officiel, V, HIP) + **Wikidata** (titre de l'article Wikipédia FR, libellé et alias français de l'élément portant le numéro HIP, propriété P528 / catalogue Hipparcos Q537199) | IAU / Wikimedia | IAU : CC BY ; Wikidata : **CC0** (aucune donnée CC BY-SA reprise) | ✅ intégré (#67) : `packages/content/fr/star-names.json` (144 étoiles : toutes les étoiles nommées V ≤ 3 et toutes celles dont le nom diffère, soit 13 graphies françaises : Bételgeuse, Aldébaran, Véga, Altaïr, Antarès, Régulus, Alphératz, Saïph, Schédar, Aïn, Maïa, Mérope, Pléioné), généré par `packages/sky-data/build_star_names_fr.py`. Règle reproductible : seule une graphie identique au nom IAU aux diacritiques près est retenue, par ordre de priorité titre Wikipédia FR > libellé > alias ; les noms d'usage réellement différents (ex. « l'Épi » pour Spica, « étoile Polaire ») ne sont pas repris tant qu'une référence française n'est pas choisie (liste `FRENCH_USAGE` du script) |
 | Constellations : frontières | **Delporte 1930 / IAU** | IAU / CDS `VI/49` | Libre | 88 frontières officielles |
 | Constellations : noms, abréviations | IAU | IAU | Libre | Latin, génitif, abréviation 3 lettres |
@@ -36,4 +36,29 @@
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.
 - Niveau 1 embarqué (~mag 6.5, < 1 Mo) — ✅ format binaire `ASTS` v1 (#16) : `stars.bin` + `star-strings.json` + `constellation-lines.json` = 393 Ko (262 Ko gzip), décrit dans `packages/sky-data/README.md`, décodé par `@asteria/catalog` ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).
 - Requêtes live (SIMBAD, Horizons) uniquement en mode Expert et en ligne.
-- Page « Crédits & sources » dans l'app, générée depuis ce fichier.
+- Page « Crédits et sources » dans l'app (#66) : panneau `apps/web/src/components/Credits.svelte`, ouvert depuis le bas du panneau Calques. Source unique : `packages/content/fr/credits.json` (nom, rôle, auteur, mention, licence, URL de licence, URL source), testée (`credits.test.ts`). **Toute donnée, image, police ou bibliothèque ajoutée à l'app doit y être ajoutée en même temps qu'à ce fichier.**
+- Textes complets des licences logicielles : `THIRD-PARTY-LICENSES.txt`, généré au build par `apps/web/third-party-licenses.ts` à partir des paquets réellement présents dans le bundle (code conservé après tree-shaking + fichiers de polices). **Le build échoue si un paquet embarqué n'a pas d'entrée dans `credits.json`.**
+
+## Polices embarquées (auto-hébergées via @fontsource, hors ligne)
+
+| Police | Usage | Auteur | Licence | Source |
+|---|---|---|---|---|
+| **JetBrains Mono** 400/500/700 | Données, interface | The JetBrains Mono Project Authors (2020) | SIL OFL 1.1 | https://github.com/JetBrains/JetBrainsMono |
+| **Big Shoulders Display** 700 | Titres | The Big Shoulders Project Authors (2019) | SIL OFL 1.1 | https://github.com/xotypeco/big_shoulders |
+| **Cormorant** 500 italique | Noms latins, récits | The Cormorant Project Authors (2015) | SIL OFL 1.1 | https://github.com/CatharsisFonts/Cormorant |
+
+OFL : la licence doit accompagner les polices redistribuées (fait par `THIRD-PARTY-LICENSES.txt`) ; pas de vente des polices seules.
+
+## Bibliothèques embarquées dans l'app (runtime)
+
+| Paquet | Rôle | Licence | Copyright |
+|---|---|---|---|
+| `astronomy-engine` 2.1 | Soleil, Lune, planètes, constellation d'un point | MIT | © 2019-2023 Don Cross |
+| `three` 0.186 | Rendu WebGL | MIT | © 2010-2026 three.js authors |
+| `svelte` 5 | Interface | MIT | © 2016-2025 Svelte Contributors |
+| `svelte-i18n` 4 | i18n (ADR-0002) | MIT | © 2017 Christian Kaisermann |
+| `intl-messageformat`, `@formatjs/icu-messageformat-parser`, `@formatjs/icu-skeleton-parser`, `@formatjs/fast-memoize` (via svelte-i18n) | Messages ICU | BSD-3-Clause (intl-messageformat), MIT (autres) | © 2023 Oath Inc. ; © 2023 FormatJS |
+| `deepmerge` (via svelte-i18n) | Fusion des catalogues | MIT | © 2012 James Halliday, Josh Duff et contributeurs |
+| `tslib` (via FormatJS) | Helpers TypeScript | 0BSD | © Microsoft Corporation |
+
+Outils de préparation des données (non redistribués) : astropy, astroquery (BSD-3-Clause), numpy, requests, Pillow — aucune obligation d'attribution dans l'app.

@@ -10,6 +10,7 @@
     layers,
     onchange,
     onclose,
+    oncredits,
     toggle,
   }: {
     /** Current view: only the layers it renders are offered. */
@@ -17,6 +18,8 @@
     layers: Readonly<SkyLayers>;
     onchange: (key: LayerKey, value: boolean) => void;
     onclose: () => void;
+    /** Opens the credits and sources page (#66). */
+    oncredits?: (() => void) | undefined;
     /** The button that opens the panel (a tap on it is not an "outside" tap). */
     toggle?: HTMLElement | undefined;
   } = $props();
@@ -77,6 +80,11 @@
         {/each}
       </section>
     {/each}
+    {#if oncredits}
+      <button class="credits" onclick={oncredits}>
+        <span>{$_("credits.open")}</span><span aria-hidden="true">›</span>
+      </button>
+    {/if}
   </div>
 </div>
 
@@ -193,6 +201,20 @@
     transform: translateX(14px);
     background: var(--ast-fg);
     border-color: var(--ast-fg);
+  }
+  /* Discreet footer link to the credits page (#66) */
+  .credits {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: calc(100% - 24px);
+    min-height: 40px;
+    margin: 6px 12px 0;
+    padding: 0;
+    border-top: 1px solid var(--ast-hairline);
+    font-size: 9px;
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
   }
   @media (prefers-reduced-motion: reduce) {
     .track,

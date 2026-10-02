@@ -1,0 +1,275 @@
+{
+  "data": [
+    {
+      "id": "hipparcos",
+      "name": "Catalogue Hipparcos",
+      "role": "Positions, distances, mouvements propres, magnitudes et couleurs des 8 870 étoiles visibles à l'œil nu (V ≤ 6,5).",
+      "author": "ESA (1997) ; nouvelle réduction F. van Leeuwen (2007)",
+      "notice": "Credit: ESA. ESA SP-1200 (1997) ; van Leeuwen, A&A 474, 653 (2007). Catalogues CDS I/239 et I/311.",
+      "license": "CC BY-NC 3.0 IGO",
+      "licenseUrl": "https://www.cosmos.esa.int/web/esdc/terms-and-conditions",
+      "sourceUrl": "https://www.cosmos.esa.int/web/hipparcos"
+    },
+    {
+      "id": "bsc5",
+      "name": "Yale Bright Star Catalogue, 5e édition",
+      "role": "Numéros HR et désignations de Bayer et de Flamsteed (α Ori, 58 Ori…).",
+      "author": "D. Hoffleit, W. H. Warren Jr. (1991)",
+      "notice": "Hoffleit & Warren, Yale University Observatory (1991). Catalogue CDS V/50.",
+      "license": "Citation des auteurs (règles VizieR)",
+      "licenseUrl": "https://cds.unistra.fr/vizier-org/licences_vizier.html",
+      "sourceUrl": "https://cdsarc.cds.unistra.fr/viz-bin/cat/V/50"
+    },
+    {
+      "id": "iau-wgsn",
+      "name": "IAU Catalog of Star Names (version du 2022-04-04)",
+      "role": "Noms propres officiels des étoiles (Sirius, Bételgeuse…), 333 noms affichés.",
+      "author": "Union astronomique internationale, groupe de travail WGSN (E. Mamajek)",
+      "notice": "IAU Working Group on Star Names (WGSN), https://www.iau.org/public/themes/naming_stars/",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourceUrl": "https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt"
+    },
+    {
+      "id": "stellarium-modern",
+      "name": "Stellarium, culture du ciel « modern »",
+      "role": "Tracés des 88 constellations. Les lignes de l'application (constellation-lines.json) en sont dérivées et sont diffusées sous la même licence.",
+      "author": "L'équipe Stellarium",
+      "notice": "Stellarium's team, skycultures/modern (texte et données).",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sourceUrl": "https://github.com/Stellarium/stellarium/tree/master/skycultures/modern"
+    },
+    {
+      "id": "roman-1987",
+      "name": "Frontières des constellations (Delporte 1930, table de Roman 1987)",
+      "role": "Constellation à laquelle appartient chaque étoile ou planète.",
+      "author": "N. G. Roman (1987), d'après E. Delporte (1930) pour l'UAI",
+      "notice": "Roman, PASP 99, 695 (1987). Catalogue CDS VI/42.",
+      "license": "Citation des auteurs (règles VizieR)",
+      "licenseUrl": "https://cds.unistra.fr/vizier-org/licences_vizier.html",
+      "sourceUrl": "https://cdsarc.cds.unistra.fr/viz-bin/cat/VI/42"
+    },
+    {
+      "id": "vizier",
+      "name": "VizieR",
+      "role": "Service d'accès aux catalogues utilisé pour préparer les données d'étoiles.",
+      "author": "CDS, Strasbourg, France",
+      "notice": "This research has made use of the VizieR catalogue access tool, CDS, Strasbourg, France (DOI: 10.26093/cds/vizier).",
+      "license": "Citation demandée (règles VizieR)",
+      "licenseUrl": "https://cds.unistra.fr/vizier-org/licences_vizier.html",
+      "sourceUrl": "https://vizier.cds.unistra.fr/"
+    },
+    {
+      "id": "wikidata-star-names",
+      "name": "Wikidata, noms d'étoiles en français",
+      "role": "Graphies françaises des noms d'étoiles (Bételgeuse, Véga…).",
+      "author": "Contributeurs de Wikidata",
+      "notice": "Données Wikidata, CC0.",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourceUrl": "https://www.wikidata.org/"
+    },
+    {
+      "id": "iau-wgccre",
+      "name": "IAU WGCCRE 2015, pôles et méridiens",
+      "role": "Orientation des planètes, de la Lune et des anneaux de Saturne (style réaliste).",
+      "author": "Archinal et al. 2018, Celest. Mech. Dyn. Astr. 130:22",
+      "notice": "Archinal, B. A. et al. (2018), Report of the IAU Working Group on Cartographic Coordinates and Rotational Elements: 2015.",
+      "license": "Publication scientifique (citation)",
+      "licenseUrl": "https://doi.org/10.1007/s10569-017-9805-5",
+      "sourceUrl": "https://doi.org/10.1007/s10569-017-9805-5"
+    }
+  ],
+  "assets": [
+    {
+      "id": "natural-earth",
+      "name": "Natural Earth, côtes au 1:50 000 000",
+      "role": "Contours des continents du globe (vue Terre).",
+      "author": "Natural Earth",
+      "notice": "Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.",
+      "license": "Domaine public",
+      "licenseUrl": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "sourceUrl": "https://www.naturalearthdata.com/"
+    },
+    {
+      "id": "blue-marble",
+      "name": "Blue Marble: Next Generation (décembre 2004, relief et bathymétrie)",
+      "role": "Relief du globe, converti en trame 1-bit.",
+      "author": "NASA Earth Observatory (R. Stöckli)",
+      "notice": "Credit: NASA Earth Observatory.",
+      "license": "Domaine public (crédit NASA)",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/blue-marble-next-generation/base-topography-bathymetry"
+    },
+    {
+      "id": "black-marble",
+      "name": "Black Marble 2016 (0,1°)",
+      "role": "Lumières des villes sur la face nocturne du globe.",
+      "author": "NASA Earth Observatory, données Suomi NPP VIIRS",
+      "notice": "Credit: NASA Earth Observatory, Earth at Night / Black Marble.",
+      "license": "Domaine public (crédit NASA)",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps"
+    },
+    {
+      "id": "blue-marble-color",
+      "name": "NASA Blue Marble: Next Generation, juin 2004",
+      "role": "Couleurs de la Terre (vue Terre, style réaliste).",
+      "author": "NASA Earth Observatory (R. Stöckli)",
+      "notice": "Credit: NASA Earth Observatory.",
+      "license": "Domaine public",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://visibleearth.nasa.gov/images/76487"
+    },
+    {
+      "id": "nasa-svs-moon",
+      "name": "NASA SVS CGI Moon Kit",
+      "role": "Surface de la Lune (vue Terre, style réaliste).",
+      "author": "NASA Scientific Visualization Studio, LRO LROC",
+      "notice": "Credit: NASA's Scientific Visualization Studio.",
+      "license": "Domaine public",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://svs.gsfc.nasa.gov/4720"
+    },
+    {
+      "id": "solar-system-scope",
+      "name": "Solar System Scope, textures des planètes",
+      "role": "Surfaces des planètes et anneaux de Saturne (vue Terre, style réaliste).",
+      "author": "Solar System Scope (INOVE), d'après des images NASA",
+      "notice": "Textures © Solar System Scope, CC BY 4.0.",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourceUrl": "https://www.solarsystemscope.com/textures/"
+    },
+    {
+      "id": "stories",
+      "name": "Histoires et anecdotes des constellations",
+      "role": "Textes reformulés en partie à partir de Wikipédia ; chaque fiche cite ses propres sources. Ces textes sont diffusés sous la même licence.",
+      "author": "Contributeurs de Wikipédia ; rédaction Asteria",
+      "notice": "Sources détaillées dans chaque fiche de constellation.",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sourceUrl": "https://fr.wikipedia.org/wiki/Constellation"
+    }
+  ],
+  "fonts": [
+    {
+      "id": "jetbrains-mono",
+      "name": "JetBrains Mono",
+      "role": "Police des données et de l'interface.",
+      "author": "The JetBrains Mono Project Authors",
+      "notice": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono). Distribuée via Fontsource.",
+      "license": "SIL OFL 1.1",
+      "licenseUrl": "https://openfontlicense.org/open-font-license-official-text/",
+      "sourceUrl": "https://github.com/JetBrains/JetBrainsMono",
+      "packages": ["@fontsource/jetbrains-mono"]
+    },
+    {
+      "id": "big-shoulders",
+      "name": "Big Shoulders Display",
+      "role": "Police des titres.",
+      "author": "The Big Shoulders Project Authors",
+      "notice": "Copyright 2019 The Big Shoulders Project Authors (https://github.com/xotypeco/big_shoulders). Distribuée via Fontsource.",
+      "license": "SIL OFL 1.1",
+      "licenseUrl": "https://openfontlicense.org/open-font-license-official-text/",
+      "sourceUrl": "https://github.com/xotypeco/big_shoulders",
+      "packages": ["@fontsource/big-shoulders-display"]
+    },
+    {
+      "id": "cormorant",
+      "name": "Cormorant",
+      "role": "Police des noms latins et des récits.",
+      "author": "The Cormorant Project Authors",
+      "notice": "Copyright 2015 The Cormorant Project Authors (https://github.com/CatharsisFonts/Cormorant). Distribuée via Fontsource.",
+      "license": "SIL OFL 1.1",
+      "licenseUrl": "https://openfontlicense.org/open-font-license-official-text/",
+      "sourceUrl": "https://github.com/CatharsisFonts/Cormorant",
+      "packages": ["@fontsource/cormorant"]
+    }
+  ],
+  "libraries": [
+    {
+      "id": "astronomy-engine",
+      "name": "Astronomy Engine",
+      "role": "Positions du Soleil, de la Lune et des planètes ; constellation d'un point du ciel.",
+      "author": "Don Cross",
+      "notice": "Copyright (c) 2019-2023 Don Cross.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/cosinekitty/astronomy/blob/master/LICENSE",
+      "sourceUrl": "https://github.com/cosinekitty/astronomy",
+      "packages": ["astronomy-engine"]
+    },
+    {
+      "id": "three",
+      "name": "three.js",
+      "role": "Rendu WebGL de la carte du ciel et du globe.",
+      "author": "three.js authors",
+      "notice": "Copyright © 2010-2026 three.js authors.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/mrdoob/three.js/blob/dev/LICENSE",
+      "sourceUrl": "https://threejs.org/",
+      "packages": ["three"]
+    },
+    {
+      "id": "svelte",
+      "name": "Svelte",
+      "role": "Interface de l'application.",
+      "author": "Svelte Contributors",
+      "notice": "Copyright (c) 2016-2025 Svelte Contributors.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/sveltejs/svelte/blob/main/LICENSE.md",
+      "sourceUrl": "https://svelte.dev/",
+      "packages": ["svelte"]
+    },
+    {
+      "id": "svelte-i18n",
+      "name": "svelte-i18n",
+      "role": "Traductions et formats (nombres, pluriels).",
+      "author": "Christian Kaisermann",
+      "notice": "Copyright 2017 Christian Kaisermann.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/kaisermann/svelte-i18n/blob/main/LICENSE",
+      "sourceUrl": "https://github.com/kaisermann/svelte-i18n",
+      "packages": ["svelte-i18n"]
+    },
+    {
+      "id": "formatjs",
+      "name": "FormatJS (intl-messageformat, icu-messageformat-parser, icu-skeleton-parser, fast-memoize)",
+      "role": "Messages ICU, utilisés par svelte-i18n.",
+      "author": "FormatJS ; Oath Inc. (intl-messageformat)",
+      "notice": "Copyright (c) 2023 FormatJS (MIT) ; intl-messageformat : Copyright (c) 2023, Oath Inc. (BSD-3-Clause).",
+      "license": "MIT, BSD-3-Clause",
+      "licenseUrl": "https://github.com/formatjs/formatjs/blob/main/LICENSE.md",
+      "sourceUrl": "https://formatjs.github.io/",
+      "packages": [
+        "intl-messageformat",
+        "@formatjs/icu-messageformat-parser",
+        "@formatjs/icu-skeleton-parser",
+        "@formatjs/fast-memoize"
+      ]
+    },
+    {
+      "id": "deepmerge",
+      "name": "deepmerge",
+      "role": "Fusion des catalogues de traduction (via svelte-i18n).",
+      "author": "James Halliday, Josh Duff et contributeurs",
+      "notice": "Copyright (c) 2012 James Halliday, Josh Duff, and other contributors.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/TehShrike/deepmerge/blob/master/license.txt",
+      "sourceUrl": "https://github.com/TehShrike/deepmerge",
+      "packages": ["deepmerge"]
+    },
+    {
+      "id": "tslib",
+      "name": "tslib",
+      "role": "Fonctions d'exécution TypeScript (via FormatJS).",
+      "author": "Microsoft Corporation",
+      "notice": "Copyright (c) Microsoft Corporation.",
+      "license": "0BSD",
+      "licenseUrl": "https://github.com/microsoft/tslib/blob/main/LICENSE.txt",
+      "sourceUrl": "https://github.com/microsoft/tslib",
+      "packages": ["tslib"]
+    }
+  ]
+}

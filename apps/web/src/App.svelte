@@ -128,6 +128,7 @@
   const setLayer = (key: LayerKey, value: boolean) => (viewLayers[mode][key] = value);
   const showPlanets = $derived(viewLayers[mode].planets);
   let layersOpen = $state(false);
+  let creditsOpen = $state(false);
   let layersButton = $state<HTMLButtonElement>();
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
@@ -576,6 +577,7 @@
         ...(Number.isFinite(view[2]) && { fov: view[2] }),
       });
       if (params.get("panel") === "layers") layersOpen = true; // captures
+      if (params.get("panel") === "credits") creditsOpen = true; // captures
       // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
       if (params.get("space") === "1") {
         await toggleSpace();
@@ -1047,6 +1049,18 @@ DIST {distance
   {/key}
 {/if}
 
+{#if creditsOpen}
+  <!-- Loaded on demand: the credits table stays out of the start-up bundle (#66). -->
+  {#await import("./components/Credits.svelte") then { default: Credits }}
+    <Credits
+      onclose={() => {
+        creditsOpen = false;
+        layersButton?.focus();
+      }}
+    />
+  {/await}
+{/if}
+
 <nav
   class="hud bottom"
   bind:this={bottomNav}
@@ -1059,6 +1073,10 @@ DIST {distance
       layers={viewLayers[mode]}
       onchange={setLayer}
       onclose={() => (layersOpen = false)}
+      oncredits={() => {
+        layersOpen = false;
+        creditsOpen = true;
+      }}
       toggle={layersButton}
     />
   {/if}
