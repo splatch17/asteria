@@ -93,6 +93,12 @@
   let mode = $state<"sky" | "space">("sky");
   /** Sky ↔ Earth flight under way (#37): both views are shown, the sky map fading over. */
   let flying = $state<"out" | "in" | null>(null);
+  /**
+   * Pinch/wheel past the zoom limits flies between Sky and Earth (#37) only with a mouse or
+   * trackpad (web, desktop): on a touch screen a pinch left the view by accident, so phones
+   * switch with the button only.
+   */
+  const zoomFlights = !matchMedia("(pointer: coarse)").matches;
   let spaceLoading = $state(false);
   let spaceError = $state(false);
   // Earth view style (#55): engraving or realistic, remembered; `?style=` for captures.
@@ -349,7 +355,7 @@
       planetNames: planetNames(),
       formatPathMark: (d) => pathMarkFormat.format(d),
       onSelect: (s) => (selection = s),
-      onEnterSky: () => flyToSky(),
+      ...(zoomFlights ? { onEnterSky: () => flyToSky() } : {}),
       style: spaceStyle,
       monochrome: night,
       loadTexture: (name) => getImage(`space/${name}.webp`),
@@ -516,8 +522,9 @@
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: select,
-        onZoomPastMax: () => void flyToSpace(),
-        onNearMaxFov: preloadSpace,
+        ...(zoomFlights
+          ? { onZoomPastMax: () => void flyToSpace(), onNearMaxFov: preloadSpace }
+          : {}),
         onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
