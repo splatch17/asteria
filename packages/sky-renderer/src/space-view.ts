@@ -4,9 +4,12 @@ import {
   bodyPosition,
   greenwichMeanSiderealTime,
   precessionMatrix,
+  starMotion,
   unitVector,
+  yearsSinceHipparcos,
   type Observer,
   type Planet,
+  type StarMotion,
   type Vec3,
 } from "@asteria/astro-core";
 import { bodyFrag, pathFrag, planetFrag } from "./shaders";
@@ -15,6 +18,7 @@ import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
 import { fillPathBuffers } from "./paths";
 import {
+  constellationLineVert,
   globeFrag,
   globeVert,
   skyBodyVert,
@@ -159,7 +163,8 @@ export class SpaceView {
   private readonly engravedGlobe: THREE.ShaderMaterial;
   /** Objects drawn only by the engraved style. */
   private readonly engraved: THREE.Object3D[];
-  private readonly starDirs: Vec3[];
+  /** Catalogue (J1991.25) directions and proper motions of the stars (#78). */
+  private readonly motion: StarMotion;
   /** Sunward directions (J2000) of the Moon and planets, and when/where they were computed. */
   private sunward: (Vec3 | null)[] = [];
   private sunwardAt = { time: NaN, lat: NaN, lon: NaN };
@@ -202,15 +207,19 @@ export class SpaceView {
       uBodySize: { value: 26 },
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
+      uYears: { value: 0 },
     };
 
     // --- Celestial sphere (at infinity)
-    const dirs = stars.map((s) => unitVector(s.ra, s.dec));
-    this.starDirs = dirs;
-    const byHip = new Map(stars.map((s, i) => [s.hip, dirs[i]!]));
+    // Stars at the catalogue epoch, moved by their proper motion in the shader (uYears)
+    const motion = starMotion(stars);
+    this.motion = motion;
+    const indexOf = new Map(stars.map((s, i) => [s.hip, i]));
     const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute("position", new THREE.Float32BufferAttribute(dirs.flat(), 3));
-    starGeo.setAttribute("aDir", new THREE.Float32BufferAttribute(dirs.flat(), 3));
+    const epochDirs = new THREE.BufferAttribute(motion.dirs, 3);
+    starGeo.setAttribute("position", epochDirs);
+    starGeo.setAttribute("aDir", epochDirs);
+    starGeo.setAttribute("aPm", new THREE.BufferAttribute(motion.pm, 3));
     starGeo.setAttribute(
       "aMag",
       new THREE.Float32BufferAttribute(
@@ -220,17 +229,23 @@ export class SpaceView {
     );
     const starPoints = new THREE.Points(starGeo, this.material(skyStarVert, skyStarFrag, true));
 
+    // Constellation lines: each end follows its star
     const segs: number[] = [];
+    const segPm: number[] = [];
     for (const polys of Object.values(lines)) {
       for (const poly of polys) {
         for (let i = 0; i < poly.length - 1; i++) {
-          const a = byHip.get(poly[i]!);
-          const b = byHip.get(poly[i + 1]!);
-          if (a && b) segs.push(...a, ...b);
+          const ia = indexOf.get(poly[i]!);
+          const ib = indexOf.get(poly[i + 1]!);
+          if (ia === undefined || ib === undefined) continue;
+          for (const j of [ia, ib]) {
+            segs.push(motion.dirs[3 * j]!, motion.dirs[3 * j + 1]!, motion.dirs[3 * j + 2]!);
+            segPm.push(motion.pm[3 * j]!, motion.pm[3 * j + 1]!, motion.pm[3 * j + 2]!);
+          }
         }
       }
     }
-    this.constellationLines = this.skyLines(segs, 0.28);
+    this.constellationLines = this.skyLines(segs, 0.28, segPm);
     const constellationLines = this.constellationLines;
 
     // Celestial equator and ecliptic (J2000 directions, precessed like the stars)
@@ -568,13 +583,14 @@ export class SpaceView {
     const real = new RealisticLayer(
       {
         uPrec: u.uPrec,
+        uYears: u.uYears,
         uDpr: u.uDpr,
         uSunEarth: u.uSunEarth,
         uLights: u.uLights,
         uRelief: u.uRelief,
       },
       this.options.stars,
-      this.starDirs,
+      this.motion,
     );
     real.setMonochrome(this.monochrome, this.options.theme.ink);
     real.setSelected(this.selectedBody);
@@ -666,11 +682,14 @@ export class SpaceView {
     });
   }
 
-  private skyLines(points: number[], opacity: number): THREE.LineSegments {
+  /** Lines at infinity; with `pm` (proper motions, rad/yr) each vertex follows its star. */
+  private skyLines(points: number[], opacity: number, pm?: number[]): THREE.LineSegments {
     const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
-    g.setAttribute("aDir", new THREE.Float32BufferAttribute(points, 3));
-    const m = this.material(skyLineVert, skyLineFrag, false);
+    const dirs = new THREE.Float32BufferAttribute(points, 3);
+    g.setAttribute("position", dirs);
+    g.setAttribute("aDir", dirs);
+    if (pm) g.setAttribute("aPm", new THREE.Float32BufferAttribute(pm, 3));
+    const m = this.material(pm ? constellationLineVert : skyLineVert, skyLineFrag, false);
     m.uniforms = { ...this.uniforms, uOpacity: { value: opacity } };
     return new THREE.LineSegments(g, m);
   }
@@ -745,6 +764,7 @@ export class SpaceView {
     this.earth.rotation.set(0, 0, gst);
     const prec = this.precession.set(...precessionMatrix(this.date));
     this.uniforms.uPrec.value.copy(prec);
+    this.uniforms.uYears.value = yearsSinceHipparcos(this.date);
     for (const m of this.pathMarks) m.world.copy(m.j2000).applyMatrix3(prec);
     const v = this.scratch;
     if (this.bodies) {

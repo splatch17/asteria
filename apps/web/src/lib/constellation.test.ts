@@ -101,3 +101,19 @@ describe("frameAbove", () => {
     expect(frameAbove(f, view, aspect)).toBeNull();
   });
 });
+
+describe("figureDirections with proper motion (#78)", () => {
+  it("moves each figure star by its proper motion (Arcturus ≈ 8.2° in 13 000 years)", () => {
+    // Arcturus, Hipparcos I/311 (J1991.25): μα* = −1093.39, μδ = −2000.06 mas/yr.
+    const arcturus: CatalogStar = {
+      ...star(69673, 213.91811408, 19.18727046, -0.05, "Boo"),
+      pmRa: -1093.39,
+      pmDec: -2000.06,
+    };
+    const lines = { Boo: [[69673]] };
+    const [a] = figureDirections([arcturus], lines, "Boo");
+    const [b] = figureDirections([arcturus], lines, "Boo", 13_000);
+    const cos = a![0] * b![0] + a![1] * b![1] + a![2] * b![2];
+    expect((Math.acos(cos) * 180) / Math.PI).toBeCloseTo(8.18, 1);
+  });
+});

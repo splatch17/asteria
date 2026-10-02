@@ -85,15 +85,30 @@ export interface Cap {
   cosRadius: number;
 }
 
-export function boundingCap(points: readonly Vec3[]): Cap {
-  let [x, y, z] = [0, 0, 0];
-  for (const p of points) [x, y, z] = [x + p[0], y + p[1], z + p[2]];
+/**
+ * Smallest cap centred on the normalised mean of `points` that holds them all. `out` is filled
+ * and returned when given (no allocation: recomputed when proper motion moves the stars).
+ */
+export function boundingCap(points: readonly Vec3[], out?: Cap): Cap {
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (const p of points) {
+    x += p[0];
+    y += p[1];
+    z += p[2];
+  }
   const n = Math.hypot(x, y, z) || 1;
-  const centre: Vec3 = [x / n, y / n, z / n];
+  const cap = out ?? { centre: [0, 0, 0], cosRadius: -1 };
+  const centre = cap.centre;
+  centre[0] = x / n;
+  centre[1] = y / n;
+  centre[2] = z / n;
   let cosRadius = 1;
   for (const p of points)
     cosRadius = Math.min(cosRadius, p[0] * centre[0] + p[1] * centre[1] + p[2] * centre[2]);
-  return { centre, cosRadius: points.length ? cosRadius : -1 };
+  cap.cosRadius = points.length ? cosRadius : -1;
+  return cap;
 }
 
 /** True when `dir` lies in the cap grown by `margin` radians. */

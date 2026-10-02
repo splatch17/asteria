@@ -12,12 +12,15 @@
     isSpaceStyle,
     DEFAULT_SKY_LAYERS,
     DEFAULT_SPACE_LAYERS,
+    ephemerisReliable,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
     bodyPosition,
     constellationOf,
     moonPhase,
+    propagateStar,
+    yearsSinceHipparcos,
     type Planet,
   } from "@asteria/astro-core";
   import { CONSTELLATION_LATIN, constellationNames, localizeStarStrings } from "@asteria/content";
@@ -140,6 +143,9 @@
   let playCarry = 0;
   let viewAzimuth = $state(180);
   let viewRoll = $state(0);
+  // Declared before loadPlace() runs: read earlier, it was in its temporal dead zone and the
+  // saved place was never restored (the ReferenceError fell into loadPlace's catch).
+  const PLACE_KEY = "asteria.place";
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
@@ -155,8 +161,6 @@
     Object.fromEntries(PLANETS.map((p) => [p, planetName(p)])) as Record<Planet, string>;
   const hipLabel = (hip: number) => $_("star.hip", { values: { hip } });
   const starLabel = (s: CatalogStar) => s.name ?? s.bayer ?? hipLabel(s.hip);
-
-  const PLACE_KEY = "asteria.place";
 
   interface Place {
     name: string | null; // null = default city (translated at render time)
@@ -315,10 +319,7 @@
     if (!space) return;
     space.setObserver(place);
     space.setDate(date);
-    space.setBodies({
-      sun: bodies.sun,
-      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
-    });
+    space.setBodies(skyBodies);
     space.setPlanets(planets);
     space.setLayers({ ...viewLayers.space });
     space.setSelectedPath(selectedPath);
@@ -457,7 +458,7 @@
     selection = s;
     if (s?.kind !== "constellation" || !map || !catalog || pointer.state !== "off") return;
     const placement = placeFigure(
-      figureDirections(catalog.stars, catalog.lines, s.abbr),
+      figureDirections(catalog.stars, catalog.lines, s.abbr, yearsSinceHipparcos(date)),
       date,
       place,
     );
@@ -470,7 +471,7 @@
     const abbr = selectedConstellation;
     const star = brightestStar(catalog.stars, abbr);
     const placement = placeFigure(
-      figureDirections(catalog.stars, catalog.lines, abbr),
+      figureDirections(catalog.stars, catalog.lines, abbr, yearsSinceHipparcos(date)),
       date,
       place,
     );
@@ -567,8 +568,18 @@
     writeSetting(LAYERS_STORAGE_KEY.space, earth);
   });
 
+  // Moon and planets are only computed within ±3000 years of J2000 (ephemeris-range.ts): beyond,
+  // both views hide them, and their sheets close (#78).
+  const ephemerisOk = $derived(ephemerisReliable(date));
+  $effect(() => {
+    if (ephemerisOk) return;
+    const s = selection;
+    if (s?.kind === "planet" || (s?.kind === "body" && s.body === "Moon")) selection = null;
+  });
   // Planets follow the displayed date (≈ 0.3 ms for the seven on a desktop CPU).
-  const planets = $derived(PLANETS.map((name) => ({ name, ...bodyPosition(name, date, place) })));
+  const planets = $derived(
+    ephemerisOk ? PLANETS.map((name) => ({ name, ...bodyPosition(name, date, place) })) : null,
+  );
   $effect(() => {
     if (status !== "ready") return;
     map?.setPlanets(planets);
@@ -583,7 +594,7 @@
   // the same objects otherwise, so these effects do not re-upload). Hidden on the 26 000-year
   // scale. The selected planet's path is shown with dated monthly marks, in both views.
   const pathCache = new PlanetPathCache();
-  const pathsAllowed = $derived(showPlanets && range !== "26ky");
+  const pathsAllowed = $derived(showPlanets && range !== "26ky" && ephemerisOk);
   const selectedPath = $derived(
     selectedPlanet && pathsAllowed ? pathCache.path(selectedPlanet, date, place) : null,
   );
@@ -606,24 +617,27 @@
   // Sun and Moon follow the displayed date and place.
   const bodies = $derived.by(() => {
     const sun = bodyPosition("Sun", date, place);
-    const moon = bodyPosition("Moon", date, place);
-    return { sun, moon, phase: moonPhase(date) };
+    if (!ephemerisOk) return { sun, moon: null, phase: null };
+    return { sun, moon: bodyPosition("Moon", date, place), phase: moonPhase(date) };
+  });
+  // Out of range both renderers hide the Moon themselves (same ephemerisReliable test): its slot
+  // then holds the Sun's direction and is never drawn.
+  const skyBodies = $derived({
+    sun: bodies.sun,
+    moon:
+      bodies.moon && bodies.phase
+        ? { ...bodies.moon, illumination: bodies.phase.illumination }
+        : { ...bodies.sun, illumination: 0 },
   });
   $effect(() => {
     if (!space) return;
     space.setObserver(place);
     space.setDate(date);
-    space.setBodies({
-      sun: bodies.sun,
-      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
-    });
+    space.setBodies(skyBodies);
   });
   $effect(() => {
     if (status !== "ready") return;
-    map?.setBodies({
-      sun: bodies.sun,
-      moon: { ...bodies.moon, illumination: bodies.phase.illumination },
-    });
+    map?.setBodies(skyBodies);
   });
 
   // --- Info panels (star, Sun/Moon, planet): rows of label/value, labels from the catalogue.
@@ -636,13 +650,17 @@
     { label: $_("data.dec"), value: formatDec(b.dec) },
   ];
 
+  /** The selected star's ICRS position at the displayed date (proper motion since J1991.25, #78). */
+  const selectedNow = $derived(
+    selected ? propagateStar(selected, yearsSinceHipparcos(date)) : null,
+  );
   const starRows = $derived.by((): InfoRow[] => {
-    if (!selected) return [];
+    if (!selected || !selectedNow) return [];
     // The map hands back the decoded catalogue records, which carry the parallax error.
     const d = starDistance(selected.plx, (selected as CatalogRecord).ePlx);
     const rows: InfoRow[] = [
-      { label: $_("data.ra"), value: formatRa(selected.ra) },
-      { label: $_("data.dec"), value: formatDec(selected.dec) },
+      { label: $_("data.ra"), value: formatRa(selectedNow.ra) },
+      { label: $_("data.dec"), value: formatDec(selectedNow.dec) },
       { label: $_("data.v"), value: fixed(selected.v, 2) },
     ];
     if (selected.bv !== undefined)
@@ -666,6 +684,7 @@
   const bodyInfo = $derived.by(() => {
     if (!selectedBody) return null;
     const b = selectedBody === "Sun" ? bodies.sun : bodies.moon;
+    if (!b) return null;
     return {
       name: $_(`body.${selectedBody}` as `body.${BodyName}`),
       rows: [
@@ -686,7 +705,8 @@
   const LIGHT_KM_PER_MIN = 299_792.458 * 60;
   const planetInfo = $derived.by(() => {
     if (!selectedPlanet) return null;
-    const p = planets.find((q) => q.name === selectedPlanet)!;
+    const p = planets?.find((q) => q.name === selectedPlanet);
+    if (!p) return null;
     const con = constellationOf(p.ra, p.dec);
     const minutes = Math.round(p.distanceKm / LIGHT_KM_PER_MIN);
     const light =
@@ -741,9 +761,10 @@
   const hint = $derived(playing ? $_(HINTS[range]) : "");
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
-    if (selected) return altitudeOf(selected.ra, selected.dec, date, place) < 0;
-    if (selectedBody) return (selectedBody === "Sun" ? bodies.sun : bodies.moon).altitude < 0;
-    if (selectedPlanet) return (planets.find((q) => q.name === selectedPlanet)?.altitude ?? 0) < 0;
+    if (selectedNow) return altitudeOf(selectedNow.ra, selectedNow.dec, date, place) < 0;
+    if (selectedBody)
+      return ((selectedBody === "Sun" ? bodies.sun : bodies.moon)?.altitude ?? 0) < 0;
+    if (selectedPlanet) return (planets?.find((q) => q.name === selectedPlanet)?.altitude ?? 0) < 0;
     return false;
   });
   const coords = $derived(
@@ -870,7 +891,7 @@
     onclose={() => (selection = null)}
   >
     {#snippet meta()}
-      {#if selectedBody === "Moon"}
+      {#if selectedBody === "Moon" && bodies.phase}
         {$_("moon.illumination", { values: { pct: Math.round(bodies.phase.illumination * 100) } })}
         · {bodies.phase.waxing ? $_("moon.waxing") : $_("moon.waning")}
       {:else}

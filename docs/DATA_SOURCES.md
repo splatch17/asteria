@@ -4,7 +4,7 @@
 
 | Domaine | Source | Institution | Licence / usage | Usage prévu |
 |---|---|---|---|---|
-| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/239`, `I/311` | **CC BY-NC 3.0 IGO** (archives scientifiques ESA), mention « Credit: ESA » ; tout usage commercial requiert une autorisation ESA (data.licences@esa.int) | Astrométrie `I/311` + V, B-V, HD depuis `I/239` — ✅ intégré (#3), 8 870 étoiles V ≤ 6.5 |
+| Étoiles (brillantes) | **Hipparcos** (ESA 1997, nouvelle réduction van Leeuwen 2007) | ESA / CDS VizieR `I/239`, `I/311` | **CC BY-NC 3.0 IGO** (archives scientifiques ESA), mention « Credit: ESA » ; tout usage commercial requiert une autorisation ESA (data.licences@esa.int) | Astrométrie `I/311` + V, B-V, HD depuis `I/239` — ✅ intégré (#3), 8 870 étoiles V ≤ 6.5. Positions à l'époque **J1991.25**, mouvements propres μα* = μα·cos δ et μδ en mas/an, propagés à la date affichée (#78, `astro-core/proper-motion.ts`, validé contre SIMBAD) ; pas de vitesse radiale (#79) |
 | Étoiles (précision) | **Gaia DR3** | ESA | **CC BY-NC 3.0 IGO**, mention « Credit: ESA, Gaia DPAC » ; usage commercial sur autorisation | Astrométrie niveau expert, distances, mouvement propre |
 | Étoiles (noms, photométrie) | **Yale Bright Star Catalogue 5** | NASA HEASARC / CDS `V/50` | Domaine public | Désignations Bayer/Flamsteed, HR |
 | Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY 4.0** (citer l'IAU, https://www.iau.org/public/themes/naming_stars/) | 333 noms pour V ≤ 6.5 — ✅ intégré (#3) |
