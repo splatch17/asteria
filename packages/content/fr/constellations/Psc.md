@@ -26,6 +26,6 @@ Hygin raconte une histoire différente : un œuf tomba dans l'Euphrate, deux poi
 
 ## Anecdotes
 
-- Le point vernal, où se trouve le Soleil à l'équinoxe de printemps, est aujourd'hui dans les Poissons. Il y est entré en 67 av. J.-C. et passera dans le Verseau en 2597, à cause de la précession.
+- Le point vernal, où se trouve le Soleil à l'équinoxe de printemps, est aujourd'hui dans les Poissons. Il y est entré en 68 av. J.-C. (année astronomique −67) et passera dans le Verseau en 2597, à cause de la précession.
 - L'étoile α des Poissons, Alrescha, tire son nom d'un mot arabe désignant la corde, à l'endroit où se nouent les liens des deux poissons. Elle n'est même pas la plus brillante de cette constellation très discrète : c'est η des Poissons, de magnitude 3,6 seulement.
 - L'étoile de van Maanen, une naine blanche à environ 14 années-lumière, fut découverte en 1917. En 2016, des astronomes ont remarqué sur une plaque photographique de son spectre prise en 1917 des traces de matière venue de planètes, tombée sur l'étoile : le plus ancien indice d'un système planétaire autour d'une autre étoile, passé inaperçu pendant près d'un siècle.

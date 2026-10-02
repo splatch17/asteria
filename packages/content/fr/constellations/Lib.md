@@ -13,7 +13,7 @@ sources:
 
 La Balance est une constellation à part : pendant longtemps, elle n'a pas existé ! Pour les Grecs, comme Aratos et Ératosthène, ces étoiles formaient les pinces du Scorpion, qu'ils appelaient les *Chêlai*, « les Pinces ». C'est chez les Romains, au Ier siècle avant notre ère, que l'image d'une balance s'impose. On ne sait plus qui eut cette idée ni quand exactement.
 
-Pourquoi une balance ? Pour le poète romain Manilius, c'est la saison où le jour et la nuit s'équilibrent, car le Soleil passait ici à l'équinoxe d'automne. Détachée du Scorpion, la Balance fut alors associée à sa voisine, la Vierge, déesse de la Justice : elle devint la balance de la justice que tient Astrée, placée à ses pieds dans le ciel. En réalité, l'idée était bien plus ancienne : vers l'an 1000 avant notre ère, les Babyloniens nommaient déjà cette région « la Balance du ciel ». Les deux images ont longtemps cohabité : même le grand astronome Ptolémée, au IIe siècle, parlait encore des « Pinces ».
+Pourquoi une balance ? Pour le poète romain Manilius, c'est le signe où le jour et la nuit s'équilibrent : celui de l'équinoxe d'automne. (À son époque, à cause de la précession, le Soleil se trouvait en fait déjà dans la Vierge à cette date.) Détachée du Scorpion, la Balance fut alors associée à sa voisine, la Vierge, déesse de la Justice : elle devint la balance de la justice que tient Astrée, placée à ses pieds dans le ciel. En réalité, l'idée était bien plus ancienne : vers l'an 1000 avant notre ère, les Babyloniens nommaient déjà cette région « la Balance du ciel ». Les deux images ont longtemps cohabité : même le grand astronome Ptolémée, au IIe siècle, parlait encore des « Pinces ».
 
 ## Anecdotes
 
