@@ -1,6 +1,7 @@
 // GLSL of the realistic style of the space view (#55). World frame: mean equator of date.
 // Colours are computed in linear light and encoded to sRGB at the end; in red night mode the
 // whole output is reduced to its luminance and tinted with the night ink (finish()).
+import { properMotion } from "./shaders";
 
 /** Directions at infinity: rotate with the camera only and sit on the far plane. */
 const atInfinity = /* glsl */ `
@@ -24,6 +25,7 @@ const finish = /* glsl */ `
 /** Stars: colour from B−V (aColor, sRGB), size and halo from the flux. No twinkling: no air. */
 export const realStarVert = /* glsl */ `
   ${atInfinity}
+  ${properMotion}
   uniform mat3 uPrec;
   uniform float uDpr;
   uniform float uLimitMag;
@@ -36,7 +38,7 @@ export const realStarVert = /* glsl */ `
   void main() {
     float rel = pow(10.0, -0.4 * (aMag - uLimitMag)); // flux relative to the faintest shown
     if (rel < 0.45) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
-    gl_Position = projectDirection(uPrec * aDir);
+    gl_Position = projectDirection(uPrec * starDirection(aDir));
     vSize = clamp(3.0 + 1.3 * sqrt(rel), 3.0, 34.0); // CSS px, halo included
     gl_PointSize = vSize * uDpr;
     vFlux = rel;

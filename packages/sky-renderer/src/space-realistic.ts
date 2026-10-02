@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { PLANETS, type Planet, type Vec3 } from "@asteria/astro-core";
+import { PLANETS, type Planet, type StarMotion } from "@asteria/astro-core";
 import { bvToRgb } from "./space-style";
 import {
   atmosphereFrag,
@@ -20,6 +20,8 @@ export type SpaceTextureName = "earth-day" | "moon" | "planets";
 /** Uniforms shared with the engraved view (same objects: updated in one place). */
 export interface SharedUniforms {
   uPrec: { value: THREE.Matrix3 };
+  /** Years since the catalogue epoch J1991.25 (stellar proper motion, #78). */
+  uYears: { value: number };
   uDpr: { value: number };
   uSunEarth: { value: THREE.Vector3 };
   uLights: { value: THREE.Texture };
@@ -59,7 +61,7 @@ export class RealisticLayer {
   private planetsShown = true;
   private hasSun = false;
 
-  constructor(shared: SharedUniforms, stars: CatalogStar[], starDirs: Vec3[]) {
+  constructor(shared: SharedUniforms, stars: CatalogStar[], motion: StarMotion) {
     const placeholder = new THREE.Texture();
     this.uniforms = {
       ...shared,
@@ -79,11 +81,12 @@ export class RealisticLayer {
       uAtmosphere: { value: ATMOSPHERE },
     };
 
-    // Stars, coloured by B−V
+    // Stars, coloured by B−V, moved by their proper motion in the shader
     const g = new THREE.BufferGeometry();
-    const flat = starDirs.flat();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(flat, 3));
-    g.setAttribute("aDir", new THREE.Float32BufferAttribute(flat, 3));
+    const dirs = new THREE.BufferAttribute(motion.dirs, 3);
+    g.setAttribute("position", dirs);
+    g.setAttribute("aDir", dirs);
+    g.setAttribute("aPm", new THREE.BufferAttribute(motion.pm, 3));
     g.setAttribute(
       "aMag",
       new THREE.Float32BufferAttribute(

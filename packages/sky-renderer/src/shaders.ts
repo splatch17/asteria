@@ -18,6 +18,18 @@ const projection = /* glsl */ `
   }
 `;
 
+/**
+ * Stellar proper motion (#78): aDir is the catalogue direction at epoch J1991.25, aPm its
+ * proper-motion vector (rad/yr, tangent to the sphere), uYears the years since that epoch. The
+ * star moves on a straight line without radial velocity: normalize(aDir + uYears · aPm), the GPU
+ * twin of astro-core's propagateDirections. Shared by the sky map and the space view.
+ */
+export const properMotion = /* glsl */ `
+  uniform float uYears;
+  attribute vec3 aPm;
+  vec3 starDirection(vec3 dir) { return normalize(dir + uYears * aPm); }
+`;
+
 export const dither = /* glsl */ `
   float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
   float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
@@ -26,6 +38,7 @@ export const dither = /* glsl */ `
 
 export const starVert = /* glsl */ `
   ${projection}
+  ${properMotion}
   uniform float uDpr;
   uniform float uLimitMag;
   uniform float uLimitMagBelow; // below the horizon: night sky whatever the Sun (#65)
@@ -35,7 +48,7 @@ export const starVert = /* glsl */ `
   varying float vSpike;
 
   void main() {
-    vec3 h = uEq2Hor * aDir;
+    vec3 h = uEq2Hor * starDirection(aDir);
     vec3 v = uView * h;
     float fade = horizonFade(h.z);
     float limit = h.z < 0.0 ? uLimitMagBelow : uLimitMag;
@@ -71,14 +84,16 @@ export const starFrag = /* glsl */ `
   }
 `;
 
+/** Constellation lines: each end follows its star's proper motion. */
 export const lineVert = /* glsl */ `
   ${projection}
+  ${properMotion}
   attribute vec3 aDir;
   varying float vVisible;
   varying float vUp;
 
   void main() {
-    vec3 h = uEq2Hor * aDir;
+    vec3 h = uEq2Hor * starDirection(aDir);
     vec3 v = uView * h;
     vVisible = v.z > -0.6 ? 1.0 : 0.0;
     vUp = h.z;

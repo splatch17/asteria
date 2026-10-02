@@ -29,8 +29,12 @@ import {
   equatorialToHorizontalMatrix,
   j2000ToHorizontalMatrix,
   multiplyMat3,
+  propagateDirections,
+  starMotion,
   unitVector,
+  yearsSinceHipparcos,
   type Mat3,
+  type StarMotion,
   type Observer,
   type Planet,
   type Vec3,
@@ -81,6 +85,9 @@ export interface CatalogStar {
   plx?: number;
   /** Standard error of the parallax (mas), when the catalogue gives it. */
   ePlx?: number;
+  /** Proper motion μα* = μα·cosδ and μδ (mas/yr); positions are at epoch J1991.25. */
+  pmRa?: number;
+  pmDec?: number;
   name?: string;
   bayer?: string;
   con: string;
@@ -269,10 +276,24 @@ export class SkyMap {
   private fontKey = "";
   private readonly textWidths = new Map<string, Map<string, number>>();
   private widths = new Map<string, number>();
+  /**
+   * Star directions (J2000 frame) at the current date: catalogue positions moved by their proper
+   * motion (#78). Updated in place by updateProperMotion, so the figures' segments, the label
+   * anchors and picking (which hold these very arrays) follow the stars.
+   */
   private readonly starDirs: Vec3[];
-  private readonly labels: { abbr: string; text: string; dir: Vec3 }[];
+  /** Epoch (J1991.25) directions and proper-motion vectors, the shaders' aDir / aPm. */
+  private readonly motion: StarMotion;
+  /** Years since J1991.25 the CPU directions and uYears were last computed for. */
+  private motionYears = NaN;
+  private readonly labels: { abbr: string; text: string; dir: Vec3; stars: Vec3[] }[];
   /** Constellation figures as J2000 segments, for highlighting and picking (#61). */
-  private readonly figures: { abbr: string; segments: [Vec3, Vec3][]; cap: Cap }[] = [];
+  private readonly figures: {
+    abbr: string;
+    segments: [Vec3, Vec3][];
+    stars: Vec3[];
+    cap: Cap;
+  }[] = [];
   private selectedConstellation: string | null = null;
   /** Constellation labels drawn in the last frame (CSS px), for picking. */
   private constellationLabelRects: { abbr: string; rect: Rect }[] = [];
@@ -332,16 +353,21 @@ export class SkyMap {
       uBodySize: { value: 32 },
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
+      uYears: { value: 0 },
     };
 
-    this.starDirs = stars.map((s) => unitVector(s.ra, s.dec));
+    this.motion = starMotion(stars);
+    this.starDirs = stars.map((): Vec3 => [0, 0, 0]);
     this.mags = Float32Array.from(stars, (s) => s.v);
+    const indexOf = new Map(stars.map((s, i) => [s.hip, i]));
     const byHip = new Map(stars.map((s, i) => [s.hip, this.starDirs[i]!]));
 
-    // Stars
+    // Stars: epoch direction + proper motion, moved by the shader (aDir + uYears · aPm)
     const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute("position", new THREE.Float32BufferAttribute(this.starDirs.flat(), 3));
-    starGeo.setAttribute("aDir", new THREE.Float32BufferAttribute(this.starDirs.flat(), 3));
+    const epochDirs = new THREE.BufferAttribute(this.motion.dirs, 3);
+    starGeo.setAttribute("position", epochDirs);
+    starGeo.setAttribute("aDir", epochDirs);
+    starGeo.setAttribute("aPm", new THREE.BufferAttribute(this.motion.pm, 3));
     starGeo.setAttribute(
       "aMag",
       new THREE.Float32BufferAttribute(
@@ -352,25 +378,36 @@ export class SkyMap {
     const starPoints = new THREE.Points(starGeo, this.material(starVert, starFrag, true));
     starPoints.frustumCulled = false;
 
-    // Constellation lines
+    // Constellation lines: each end follows its star (same aDir / aPm as the star)
     const segs: number[] = [];
+    const segPm: number[] = [];
+    const { dirs: d0, pm } = this.motion;
     for (const [abbr, polys] of Object.entries(lines)) {
       const figure: [Vec3, Vec3][] = [];
+      const figureStars = new Set<Vec3>();
       for (const poly of polys) {
         for (let i = 0; i < poly.length - 1; i++) {
-          const a = byHip.get(poly[i]!);
-          const b = byHip.get(poly[i + 1]!);
-          if (a && b) {
-            segs.push(...a, ...b);
-            figure.push([a, b]);
+          const ia = indexOf.get(poly[i]!);
+          const ib = indexOf.get(poly[i + 1]!);
+          if (ia === undefined || ib === undefined) continue;
+          for (const j of [ia, ib]) {
+            segs.push(d0[3 * j]!, d0[3 * j + 1]!, d0[3 * j + 2]!);
+            segPm.push(pm[3 * j]!, pm[3 * j + 1]!, pm[3 * j + 2]!);
           }
+          const a = this.starDirs[ia]!;
+          const b = this.starDirs[ib]!;
+          figure.push([a, b]);
+          figureStars.add(a).add(b);
         }
       }
-      this.figures.push({ abbr, segments: figure, cap: boundingCap(figure.flat()) });
+      const cap: Cap = { centre: [0, 0, 0], cosRadius: -1 };
+      this.figures.push({ abbr, segments: figure, stars: [...figureStars], cap });
     }
     const lineGeo = new THREE.BufferGeometry();
-    lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
-    lineGeo.setAttribute("aDir", new THREE.Float32BufferAttribute(segs, 3));
+    const segDirs = new THREE.Float32BufferAttribute(segs, 3);
+    lineGeo.setAttribute("position", segDirs);
+    lineGeo.setAttribute("aDir", segDirs);
+    lineGeo.setAttribute("aPm", new THREE.Float32BufferAttribute(segPm, 3));
     this.lineMesh = new THREE.LineSegments(lineGeo, this.material(lineVert, lineFrag, false));
     this.lineMesh.frustumCulled = false;
 
@@ -456,20 +493,17 @@ export class SkyMap {
       ground,
     );
 
-    // Constellation labels at the normalized centroid of their line stars
-    this.labels = Object.entries(lines).map(([abbr, polys]) => {
-      const dirs = polys
+    // Constellation labels at the normalized centroid of their line stars (each polyline vertex
+    // counts, as before #78; updated with the proper motion by updateProperMotion)
+    this.labels = Object.entries(lines).map(([abbr, polys]) => ({
+      abbr,
+      text: options.constellationNames?.[abbr] ?? abbr,
+      dir: [0, 0, 1],
+      stars: polys
         .flat()
         .map((h) => byHip.get(h))
-        .filter((d): d is Vec3 => !!d);
-      const c = dirs.reduce<Vec3>((s, d) => [s[0] + d[0], s[1] + d[1], s[2] + d[2]], [0, 0, 0]);
-      const n = Math.hypot(...c) || 1;
-      return {
-        abbr,
-        text: options.constellationNames?.[abbr] ?? abbr,
-        dir: [c[0] / n, c[1] / n, c[2] / n],
-      };
-    });
+        .filter((d): d is Vec3 => !!d),
+    }));
 
     this.setLayers(options.layers ?? {});
     this.setTheme(options.theme);
@@ -762,6 +796,7 @@ export class SkyMap {
   // --- internals
 
   private updateSky(): void {
+    this.updateProperMotion();
     this.eq2hor = j2000ToHorizontalMatrix(this.date, this.observer);
     this.uniforms.uEq2Hor.value = toThreeMat3(this.eq2hor);
     this.date2hor = equatorialToHorizontalMatrix(this.date, this.observer);
@@ -774,6 +809,34 @@ export class SkyMap {
       this.updateVisibility();
     }
     this.dirty = true;
+  }
+
+  /**
+   * Moves the CPU copies of the stars (picking, labels, figures, name anchors) to the date, and
+   * sets the shaders' uYears to the same instant. Skipped below 1/1000 year (the fastest
+   * catalogue star then moves < 0.01″); allocation-free.
+   */
+  private updateProperMotion(): void {
+    const years = yearsSinceHipparcos(this.date);
+    if (Math.abs(years - this.motionYears) < 1e-3) return;
+    this.motionYears = years;
+    this.uniforms.uYears.value = years;
+    propagateDirections(this.motion, years, this.starDirs);
+    for (const f of this.figures) boundingCap(f.stars, f.cap);
+    for (const label of this.labels) {
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (const d of label.stars) {
+        x += d[0];
+        y += d[1];
+        z += d[2];
+      }
+      const n = Math.hypot(x, y, z) || 1;
+      label.dir[0] = x / n;
+      label.dir[1] = y / n;
+      label.dir[2] = z / n;
+    }
   }
 
   private frameOf(lines: THREE.LineSegments): THREE.Matrix3 {

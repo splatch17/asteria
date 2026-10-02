@@ -1,5 +1,5 @@
 // GLSL for the space view (globe + celestial sphere at infinity). World frame: equator of date.
-import { dither } from "./shaders";
+import { dither, properMotion } from "./shaders";
 
 /** Directions at infinity: rotate with the camera only and sit on the far plane. */
 const atInfinity = /* glsl */ `
@@ -11,6 +11,7 @@ const atInfinity = /* glsl */ `
 
 export const skyStarVert = /* glsl */ `
   ${atInfinity}
+  ${properMotion}
   uniform mat3 uPrec;
   uniform float uDpr;
   uniform float uLimitMag;
@@ -21,7 +22,7 @@ export const skyStarVert = /* glsl */ `
     float rel = pow(10.0, -0.4 * (aMag - uLimitMag));
     vAlpha = clamp(0.3 + rel * 0.8, 0.0, 1.0);
     if (rel < 0.4) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
-    gl_Position = projectDirection(uPrec * aDir);
+    gl_Position = projectDirection(uPrec * starDirection(aDir));
     gl_PointSize = clamp(1.6 * sqrt(rel), 1.4, 9.0) * uDpr;
   }
 `;
@@ -38,7 +39,18 @@ export const skyStarFrag = /* glsl */ `
   }
 `;
 
-/** Lines at infinity (constellations, celestial equator, ecliptic). */
+/** Constellation lines at infinity: each end follows its star's proper motion (#78). */
+export const constellationLineVert = /* glsl */ `
+  ${atInfinity}
+  ${properMotion}
+  uniform mat3 uPrec;
+  attribute vec3 aDir;
+  void main() {
+    gl_Position = projectDirection(uPrec * starDirection(aDir));
+  }
+`;
+
+/** Fixed lines at infinity (celestial equator, ecliptic, grid). */
 export const skyLineVert = /* glsl */ `
   ${atInfinity}
   uniform mat3 uPrec;
