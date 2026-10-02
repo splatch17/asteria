@@ -202,14 +202,16 @@
   "c3d.distanceSigmaOpen": "{ly, number} al (−{minus, number} / +∞)",
   "c3d.distanceBeyond": "au-delà de {ly, number} al ?",
   "c3d.distanceUnknown": "distance inconnue",
-  "c3d.legend.approx": "≈ et cercle pointillé : distance approximative (parallaxe connue à plus de 10 % près).",
-  "c3d.legend.uncertain": "Étoile creuse et tirets : distance très incertaine (parallaxe connue à plus de 50 % près).",
+  "c3d.legend.approx": "≈ et cercle pointillé : distance approximative (connue à plus de 10 % près).",
+  "c3d.legend.uncertain": "Étoile creuse et tirets : distance très incertaine (connue à plus de 50 % près).",
   "c3d.legend.sigma": "Barres : ±1 σ sur la distance, le long de la ligne de visée.",
   "c3d.star.parallax": "Parallaxe {plx, number} ± {ePlx, number} mas ({pct, number, percent})",
   "c3d.star.sourceHipparcos": "Source : Hipparcos, nouvelle réduction (van Leeuwen 2007)",
-  "c3d.star.sourceReference": "Source : {source}",
-  "c3d.star.approx": "Parallaxe peu précise : distance approximative.",
-  "c3d.star.uncertain": "Parallaxe trop imprécise : la distance est très incertaine.",
+  "c3d.star.approx": "Distance approximative (incertitude de plus de 10 %).",
+  "c3d.star.uncertain": "Distance très incertaine (incertitude de plus de 50 %).",
   "c3d.star.clamped": "Trop lointaine ou inconnue : dessinée à la limite de la scène.",
-  "c3d.list": "Étoiles de la figure et leurs distances"
+  "c3d.list": "Étoiles de la figure et leurs distances",
+  "c3d.star.sourceLiterature": "Source : {source} (distance publiée, la parallaxe de cette étoile est biaisée)",
+  "c3d.star.sourceGaia": "Source : Gaia DR3, parallaxe corrigée du point zéro (Lindegren et al. 2021)",
+  "c3d.star.error": "Incertitude : ± {err, number} al ({pct, number, percent})"
 }

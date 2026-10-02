@@ -128,7 +128,8 @@
   let view3d = $state.raw<{
     abbr: string;
     view: ViewState;
-    stars: CatalogStar[];
+    // The map holds the decoded catalogue records, which carry the reference distances (#75).
+    stars: CatalogRecord[];
     lines: Record<string, number[][]>;
   } | null>(null);
   // Loaded on demand with its renderer: not in the start-up bundle.
@@ -144,7 +145,8 @@
     }
     if (!map || !catalog) return;
     stopPlaying();
-    view3d = { abbr, view: { ...map.view }, stars: catalog.stars, lines: catalog.lines };
+    const stars = catalog.stars as CatalogRecord[];
+    view3d = { abbr, view: { ...map.view }, stars, lines: catalog.lines };
     map.stop(); // hidden under the 3D view, which starts from its last frame
   }
   function close3d() {

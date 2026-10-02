@@ -5,7 +5,8 @@
   import { onMount, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import { j2000ToHorizontalMatrix, yearsSinceHipparcos, type Observer } from "@asteria/astro-core";
-  import type { CatalogStar, ViewState } from "@asteria/sky-renderer";
+  import type { CatalogStar } from "@asteria/catalog";
+  import type { ViewState } from "@asteria/sky-renderer";
   import {
     Constellation3DView,
     buildConstellation3D,
@@ -31,6 +32,7 @@
     abbr: string;
     /** Constellation name, localised. */
     name: string;
+    /** Catalogue records: their reference distance (#75) places the stars. */
     stars: readonly CatalogStar[];
     lines: Readonly<Record<string, number[][]>>;
     /** Displayed date and place: the 3D view starts exactly as the sky map shows the figure. */
@@ -106,7 +108,7 @@
       : $_("c3d.distance", { values: { ly: number(d.ly) } });
   }
 
-  function label(s: Star3D, lvl: Level3D) {
+  function label(s: Star3D<CatalogStar>, lvl: Level3D) {
     // An uncertain star is always named (but in Découverte): its label carries the warning.
     const name =
       designation(s.star, lvl) ||
@@ -118,7 +120,7 @@
     const near = model.stars[model.nearest];
     const far = model.stars[model.farthest];
     if (!near || !far || near === far) return $_("c3d.lessonFlat");
-    const named = (s: Star3D) => designation(s.star, "expert");
+    const named = (s: Star3D<CatalogStar>) => designation(s.star, "expert");
     return $_("c3d.lesson", {
       values: {
         near: named(near),
@@ -283,12 +285,21 @@
         <span class="star-name"><Designation text={designation(s.star, "expert")} /></span>
         <span>{distanceText(d, level === "discovery" ? "amateur" : level)}</span>
       </p>
-      {#if d?.source === "reference"}
+      {#if d && level !== "discovery" && Number.isFinite(d.relError) && d.farLy > d.nearLy}
         <p class="note">
-          {$_("c3d.star.sourceReference", { values: { source: d.distanceSource ?? "" } })}
+          {$_("c3d.star.error", {
+            values: { err: sig2((d.farLy - d.nearLy) / 2), pct: d.relError },
+          })}
         </p>
-      {:else if s.star.plx !== undefined}
-        {#if level !== "discovery" && s.star.ePlx !== undefined}
+      {/if}
+      {#if d?.source === "literature"}
+        <p class="note">
+          {$_("c3d.star.sourceLiterature", { values: { source: d.reference ?? "" } })}
+        </p>
+      {:else if d?.source === "gaia-dr3"}
+        <p class="note">{$_("c3d.star.sourceGaia")}</p>
+      {:else if d}
+        {#if level === "expert" && s.star.plx !== undefined && s.star.ePlx !== undefined}
           <p class="note">
             {$_("c3d.star.parallax", {
               values: {

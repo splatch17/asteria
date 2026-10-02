@@ -8,6 +8,7 @@ import {
 } from "@asteria/astro-core";
 import {
   FIT_X,
+  LY_PER_PARSEC,
   PARALLAX_LY,
   PHASES,
   buildConstellation3D,
@@ -66,6 +67,35 @@ const BELLATRIX: CatalogStar = {
   pmDec: -12.88,
   name: "Bellatrix",
   con: "Ori",
+};
+/**
+ * The same stars in the catalogue format v2 (#82): reference distance and 1σ in light-years,
+ * three and two significant figures, with its source.
+ */
+const BETELGEUSE_V2 = {
+  ...BETELGEUSE,
+  distanceLy: 548,
+  distanceErrorLy: 68,
+  distanceSource: "literature" as const,
+  distanceReference: "Joyce et al. 2020, ApJ 902, 63",
+};
+const RIGEL_V2 = {
+  ...RIGEL,
+  distanceLy: 863,
+  distanceErrorLy: 78,
+  distanceSource: "hipparcos" as const,
+};
+const BELLATRIX_V2 = {
+  ...BELLATRIX,
+  distanceLy: 252,
+  distanceErrorLy: 10,
+  distanceSource: "hipparcos" as const,
+};
+const DENEB_V2 = {
+  distanceLy: 2620,
+  distanceErrorLy: 220,
+  distanceSource: "literature" as const,
+  distanceReference: "Schiller & Przybilla 2008, A&A 479, 849",
 };
 /** π³ Ori (Tabit), I/311: ϖ = 123.94 ± 0.17 mas. */
 const TABIT = { plx: 123.94, ePlx: 0.17 };
@@ -155,23 +185,47 @@ describe("stellarDistance", () => {
     expect(stellarDistance({})).toBeNull();
   });
 
-  it("prefers a reference distance (#75)", () => {
-    const deneb = stellarDistance({
-      plx: 2.31,
-      ePlx: 0.32,
-      distanceLy: 2615,
-      distanceErrorLy: 215,
-      distanceSource: "Schiller & Przybilla 2008",
-    })!;
+  it("prefers the catalogue's reference distance (#75): Deneb, published", () => {
+    // Catalogue v2 record (stars.bin, #82): Schiller & Przybilla 2008, 802 ± 66 pc.
+    const deneb = stellarDistance({ ...DENEB_V2, plx: 2.31, ePlx: 0.32 })!;
     expect(deneb).toMatchObject({
-      ly: 2615,
+      ly: 2620,
       nearLy: 2400,
-      farLy: 2830,
-      quality: "reference",
-      source: "reference",
-      distanceSource: "Schiller & Przybilla 2008",
+      farLy: 2840,
+      quality: "precise",
+      source: "literature",
+      reference: "Schiller & Przybilla 2008, A&A 479, 849",
     });
-    expect(stellarDistance({ distanceLy: 100, distanceSource: "x" })!.relError).toBeNaN();
+    // The publication, in light-years: 802 pc.
+    expect(Math.abs(deneb.ly - 802 * LY_PER_PARSEC)).toBeLessThan(0.1 * 66 * LY_PER_PARSEC);
+    // Its Hipparcos parallax alone would put it at 1 400 ly.
+    expect(stellarDistance({ plx: 2.31, ePlx: 0.32 })!.ly).toBeCloseTo(1412, 0);
+  });
+
+  it("matches SIMBAD's parallaxes through the catalogue's reference distances", () => {
+    for (const star of [RIGEL_V2, BELLATRIX_V2]) {
+      const ref = SIMBAD[star.hip]!;
+      const d = stellarDistance(star)!;
+      const simbadLy = PARALLAX_LY / ref.plx;
+      const sigmaLy = (simbadLy * ref.ePlx) / ref.plx;
+      // Three significant figures in the catalogue: within a tenth of σ.
+      expect(Math.abs(d.ly - simbadLy)).toBeLessThan(0.1 * sigmaLy);
+      expect(Math.abs(d.farLy - d.ly - sigmaLy)).toBeLessThan(0.1 * sigmaLy);
+      expect(d.source).toBe("hipparcos");
+    }
+    // Betelgeuse: a published distance (Joyce et al. 2020: 168 pc), not its parallax (498 ly).
+    const betelgeuse = stellarDistance(BETELGEUSE_V2)!;
+    expect(Math.abs(betelgeuse.ly - 168 * LY_PER_PARSEC)).toBeLessThan(1);
+    expect(betelgeuse.quality).toBe("approx"); // ± 12 %
+    expect(betelgeuse.source).toBe("literature");
+  });
+
+  it("grades a reference distance by its relative error", () => {
+    expect(stellarDistance({ distanceLy: 3930, distanceErrorLy: 2200 })!.quality).toBe("uncertain");
+    expect(stellarDistance({ distanceLy: 1980, distanceErrorLy: 540 })!.quality).toBe("approx");
+    const bare = stellarDistance({ distanceLy: 100, distanceSource: "literature" })!;
+    expect(bare.relError).toBeNaN();
+    expect(bare.quality).toBe("precise");
   });
 });
 
@@ -225,12 +279,12 @@ describe("buildConstellation3D", () => {
     expect(norm(u!.position)).toBeCloseTo(model.limitLy, 6);
   });
 
-  it("uses reference distances given on the side", () => {
-    const refs = new Map([[RIGEL.hip, { distanceLy: 860, distanceSource: "test" }]]);
-    const model = buildConstellation3D(ORION, LINES, "Ori", { references: refs });
-    const rigel = model.stars.find((s) => s.star.hip === RIGEL.hip)!;
-    expect(rigel.distance!.quality).toBe("reference");
-    expect(norm(rigel.position)).toBeCloseTo(860, 9);
+  it("places the stars at the catalogue's reference distances when it has them", () => {
+    const model = buildConstellation3D([BETELGEUSE_V2, RIGEL_V2, BELLATRIX_V2], LINES, "Ori");
+    const at = (hip: number) => norm(model.stars.find((s) => s.star.hip === hip)!.position);
+    expect(at(BETELGEUSE.hip)).toBeCloseTo(548, 9);
+    expect(at(RIGEL.hip)).toBeCloseTo(863, 9);
+    expect(at(BELLATRIX.hip)).toBeCloseTo(252, 9);
   });
 
   it("rotates the directions into the requested frame", () => {

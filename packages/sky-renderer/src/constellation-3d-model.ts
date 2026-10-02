@@ -3,16 +3,17 @@
  * its tests and the UI. No WebGL, no DOM.
  *
  * Distances
- * - From the Hipparcos parallax (van Leeuwen 2007, VizieR I/311): d = 1000 / ϖ pc, ϖ in mas,
- *   1 pc = 3.261 563 777 ly (IAU 2015 B2 parsec, Julian-year light-year).
- * - ±1σ in distance: the parallax interval [ϖ − σ, ϖ + σ] mapped through 1/ϖ, so the interval is
- *   asymmetric: [1000/(ϖ+σ), 1000/(ϖ−σ)] pc, unbounded beyond when σ ≥ ϖ.
- * - Quality from σϖ/ϖ, with the thresholds of the star panel (apps/web/src/lib/format.ts):
- *   ≤ 0.1 precise; ≤ 0.5 approximate (flagged); beyond, or ϖ ≤ 0, the parallax says little about
- *   the distance: the star is placed with an explicit uncertainty segment.
- * - A reference distance (`distanceLy`, `distanceSource`, optional `distanceErrorLy`) on the
- *   record, or in `references`, takes precedence over the parallax (#75: Deneb and other stars
- *   whose Hipparcos parallax is known to be biased).
+ * - The catalogue's reference distance first (#75, `@asteria/catalog`: `distanceLy` ± 1σ
+ *   `distanceErrorLy`, `distanceSource` "hipparcos" | "gaia-dr3" | "literature"): the more precise
+ *   of the Hipparcos 2007 and Gaia DR3 parallaxes, or a published distance for stars whose parallax
+ *   is biased (Deneb, Betelgeuse). Its ±1σ interval is d ± σ, as published.
+ * - Otherwise (catalogues without reference distance, or a parallax error above the parallax):
+ *   the Hipparcos parallax (van Leeuwen 2007, VizieR I/311), d = 1000 / ϖ pc, ϖ in mas,
+ *   1 pc = 3.261 563 777 ly (IAU 2015 B2 parsec, Julian-year light-year); ±1σ is the parallax
+ *   interval mapped through 1/ϖ, asymmetric: [1000/(ϖ+σ), 1000/(ϖ−σ)] pc, unbounded when σ ≥ ϖ.
+ * - Quality from the relative error σd/d (= σϖ/ϖ to first order): ≤ 0.1 precise; ≤ 0.5
+ *   approximate (flagged); beyond, or ϖ ≤ 0, the distance is barely an order of magnitude: the
+ *   star is placed with an explicit uncertainty segment.
  *
  * Frames
  * - Positions are cartesian in light-years, in the frame given by `frame` (a rotation applied to
@@ -30,21 +31,30 @@ import { stereoScale, viewMatrix, type ViewState } from "./view";
 export const LY_PER_PARSEC = 3.261_563_777;
 /** Distance in ly of a 1 mas parallax: d(ly) = PARALLAX_LY / ϖ(mas). */
 export const PARALLAX_LY = 1000 * LY_PER_PARSEC;
-/** σϖ/ϖ above which a distance is only approximate (flagged). */
+/** σd/d (σϖ/ϖ) above which a distance is only approximate (flagged). */
 export const PARALLAX_APPROX = 0.1;
-/** σϖ/ϖ above which the distance is placed with an explicit uncertainty segment. */
+/** σd/d (σϖ/ϖ) above which the distance is placed with an explicit uncertainty segment. */
 export const PARALLAX_UNRELIABLE = 0.5;
 
-export type DistanceQuality = "precise" | "approx" | "uncertain" | "reference";
+export type DistanceQuality = "precise" | "approx" | "uncertain";
 
-/** A distance measured otherwise than by the catalogue parallax (#75). */
-export interface ReferenceDistance {
-  /** Distance, light-years. */
-  distanceLy: number;
-  /** Short citation of the source, e.g. "Schiller & Przybilla 2008". */
-  distanceSource: string;
-  /** ±1σ, light-years, when the source gives one. */
-  distanceErrorLy?: number;
+/** Origin of a distance: the catalogue's reference distance source, or the parallax itself. */
+export type DistanceOrigin = "hipparcos" | "gaia-dr3" | "literature" | "parallax";
+
+/**
+ * Distance fields of a catalogue record (`CatalogStar` of `@asteria/catalog`, #75), all optional:
+ * catalogues of format v1 only have the parallax.
+ */
+export interface DistanceInput {
+  /** Hipparcos parallax and its standard error, mas. */
+  plx?: number | undefined;
+  ePlx?: number | undefined;
+  /** Reference distance and its 1σ uncertainty, light-years. */
+  distanceLy?: number | undefined;
+  distanceErrorLy?: number | undefined;
+  distanceSource?: "hipparcos" | "gaia-dr3" | "literature" | undefined;
+  /** Citation of a "literature" distance. */
+  distanceReference?: string | undefined;
 }
 
 export interface StellarDistance {
@@ -52,34 +62,41 @@ export interface StellarDistance {
   ly: number;
   /** −1σ bound (ly). */
   nearLy: number;
-  /** +1σ bound (ly); Infinity when σϖ ≥ ϖ. */
+  /** +1σ bound (ly); Infinity when unbounded (σϖ ≥ ϖ). */
   farLy: number;
   quality: DistanceQuality;
-  /** σϖ/ϖ (or σd/d for a reference distance); NaN when unknown. */
+  /** σd/d (σϖ/ϖ for a parallax); NaN when unknown. */
   relError: number;
-  source: "parallax" | "reference";
-  /** Citation of a reference distance. */
-  distanceSource?: string;
+  source: DistanceOrigin;
+  /** Citation of a "literature" distance. */
+  reference?: string;
 }
-
-/** Input of `stellarDistance`: a catalogue record, optionally with a reference distance. */
-export type DistanceInput = { plx?: number; ePlx?: number } & Partial<ReferenceDistance>;
 
 const finitePositive = (x: number | undefined): x is number =>
   x !== undefined && Number.isFinite(x) && x > 0;
 
+const grade = (relError: number): DistanceQuality =>
+  relError <= PARALLAX_APPROX
+    ? "precise"
+    : relError <= PARALLAX_UNRELIABLE
+      ? "approx"
+      : "uncertain";
+
 /** Distance of a star and its ±1σ interval; null when nothing is known. */
 export function stellarDistance(s: DistanceInput): StellarDistance | null {
   if (finitePositive(s.distanceLy)) {
-    const e = finitePositive(s.distanceErrorLy) ? s.distanceErrorLy : 0;
+    const ly = s.distanceLy;
+    const e = finitePositive(s.distanceErrorLy) ? s.distanceErrorLy : NaN;
+    const relError = e / ly;
     return {
-      ly: s.distanceLy,
-      nearLy: Math.max(0, s.distanceLy - e),
-      farLy: s.distanceLy + e,
-      quality: "reference",
-      relError: e ? e / s.distanceLy : NaN,
-      source: "reference",
-      ...(s.distanceSource !== undefined && { distanceSource: s.distanceSource }),
+      ly,
+      nearLy: Number.isNaN(e) ? ly : Math.max(0, ly - e),
+      farLy: Number.isNaN(e) ? ly : ly + e,
+      // Without a stated error a published distance is taken as precise.
+      quality: Number.isNaN(e) ? "precise" : grade(relError),
+      relError,
+      source: s.distanceSource ?? "parallax",
+      ...(s.distanceReference !== undefined && { reference: s.distanceReference }),
     };
   }
   const plx = s.plx;
@@ -105,12 +122,7 @@ export function stellarDistance(s: DistanceInput): StellarDistance | null {
     ly,
     nearLy: PARALLAX_LY / (plx + e),
     farLy: plx > e ? PARALLAX_LY / (plx - e) : Infinity,
-    quality:
-      relError <= PARALLAX_APPROX
-        ? "precise"
-        : relError <= PARALLAX_UNRELIABLE
-          ? "approx"
-          : "uncertain",
+    quality: grade(relError),
     relError,
     source: "parallax",
   };
@@ -156,8 +168,6 @@ export interface BuildOptions {
   years?: number;
   /** Rotation applied to the ICRS directions (default: identity, ICRS frame). */
   frame?: Mat3;
-  /** Reference distances by HIP number (override the records' own fields and the parallax). */
-  references?: ReadonlyMap<number, ReferenceDistance>;
 }
 
 /** Scene limit for uncertain stars: 25 % beyond the farthest reliable one. */
@@ -169,11 +179,11 @@ const DEFAULT_LIMIT_LY = 1000;
  * The stars of a constellation's figure (`lines`: polylines of HIP numbers) at their distances,
  * moved to the date by their proper motion.
  */
-export function buildConstellation3D<S extends CatalogStar & Partial<ReferenceDistance>>(
+export function buildConstellation3D<S extends CatalogStar & DistanceInput>(
   stars: readonly S[],
   lines: Readonly<Record<string, number[][]>>,
   abbr: string,
-  { years = 0, frame, references }: BuildOptions = {},
+  { years = 0, frame }: BuildOptions = {},
 ): Constellation3DModel<S> {
   const polylines = lines[abbr] ?? [];
   const order: number[] = [];
@@ -191,8 +201,7 @@ export function buildConstellation3D<S extends CatalogStar & Partial<ReferenceDi
     const p = years ? propagateStar(s, years) : s;
     const u = unitVector(p.ra, p.dec);
     const dir = frame ? applyMat3(frame, u) : u;
-    const ref = references?.get(hip);
-    const distance = stellarDistance(ref ? { ...s, ...ref } : s);
+    const distance = stellarDistance(s);
     out.push({
       star: s,
       dir,
