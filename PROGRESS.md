@@ -15,14 +15,21 @@
 - Choix final des polices et du style de figure (ticket #4)
 
 ## ⏭️ Prochaines étapes
-1. Transition continue Ciel ↔ Terre au zoom (#37), mini-globe dans la vue Ciel (#38), traînées d'étoiles (#39)
-2. Génitifs latins des 88 constellations (source IAU à documenter) pour la fiche constellation
-3. Vue 3D d'une constellation (#8)
-4. Tester #59/#27 sur S23 (Brave : autoriser « Capteurs de mouvement » ; installer depuis GitHub Pages) ; déclinaison magnétique (WMM)
-5. Noms d'étoiles/constellations hors de l'en-tête (zones réservées comme les graduations)
+1. Valider avec le porteur les nouvelles icônes des boutons ronds (#74, captures dans la PR), puis tutoriel de prise en main (#68)
+2. Transition continue Ciel ↔ Terre au zoom (#37), mini-globe dans la vue Ciel (#38), traînées d'étoiles (#39)
+3. Distances de référence pour les étoiles à parallaxe imprécise, Deneb en tête (#75)
+4. Génitifs latins des 88 constellations (source IAU à documenter) pour la fiche constellation ; vue 3D d'une constellation (#8)
+5. Tester #59/#27 sur S23 (Brave : autoriser « Capteurs de mouvement » ; installer depuis GitHub Pages) ; déclinaison magnétique (WMM)
+6. Locale anglaise (catalogue `en.json`, contenu `packages/content/en/`) : l'interface lit désormais la locale courante
 
 ## ✅ Fait récemment
-- 2026-10-02 — #61 Fiche constellation : sélection au toucher du nom (rectangles d'étiquettes mémorisés) ou dans la figure loin de toute étoile (enveloppe convexe), figure mise en évidence par un trait tramé 1-bit, vue recadrée si la fiche la masque ; fiche (noms FR/latin, abréviation, étoile la plus brillante, position par rapport à l'horizon) avec histoire + 3 anecdotes + sources CC BY-SA pour les 15 constellations rédigées (chargement paresseux des .md, 1 chunk ~3 Ko chacune), fiche courte sans histoire pour les autres ; lien étoile/planète → constellation (PR en revue).
+- 2026-10-02 — #74 Revue interface : fiches étoile/Soleil-Lune/planète réunies dans `InfoPanel` et placées au-dessus des contrôles mesurés (plus de ligne DIST masquée pendant la lecture ou avec le curseur de luminosité) ; échelle « 1 an » lue par jours entiers à heure civile fixe (fin de l'effet stroboscope, 1 s = 1 h reste continu) ; lettres grecques en minuscules (« α CYG ») ; années « 1975 av. J.-C. » ; arrondi sexagésimal corrigé (plus de 60.0s ni 24′00″ pour 25′00″) ; libellés RA/DEC/V/B−V/DIST/HIP, « N » de la boussole et G2V en clés i18n, dates à la locale courante ; distance « ≈ » quand σπ/π > 0,1 et masquée au-delà de 0,5 ; échecs de chargement (ciel, Terre) avec « Réessayer » ; icônes explicites (globe, ciel étoilé, palette « couleurs réelles », téléphone visant une étoile, horloge, lune étoilée) et vrai bouton « ma position » ; dégradé derrière l'en-tête ; App.svelte découpé (`SkyHeader`, `DialsColumn`, `InfoPanel`, `lib/pointing.svelte.ts`) (PR en revue).
+- 2026-10-02 — #66 Page Crédits et sources dans l'application (chargée à la demande depuis le panneau Calques) (PR #72).
+- 2026-10-02 — Corrections des histoires de constellations et noms d'étoiles en français (PR #71).
+- 2026-10-02 — #55 Style réaliste de la vue Terre (textures chargées à la demande, mémorisé) (PR #70).
+- 2026-10-02 — #65 Voir à travers la Terre : ciel sous l'horizon atténué, sélection possible sous l'horizon (PR #69).
+- 2026-10-02 — Fiche constellation avec histoire et anecdotes au toucher (PR #64) ; noms du ciel hors du HUD (PR #63).
+- 2026-10-02 — #61 Fiche constellation : sélection au toucher du nom (rectangles d'étiquettes mémorisés) ou dans la figure loin de toute étoile (enveloppe convexe), figure mise en évidence par un trait tramé 1-bit, vue recadrée si la fiche la masque ; fiche (noms FR/latin, abréviation, étoile la plus brillante, position par rapport à l'horizon) avec histoire + 3 anecdotes + sources CC BY-SA pour les 15 constellations rédigées (chargement paresseux des .md, 1 chunk ~3 Ko chacune), fiche courte sans histoire pour les autres ; lien étoile/planète → constellation (PR #64).
 - 2026-10-02 — #59 Visée capteurs : diagnostic par cause (https, capteurs refusés, événements vides de Brave, pas de boussole, pas de capteur) avec messages dédiés dont Brave (Paramètres des sites → Capteurs de mouvement / Shields), repli Generic Sensor `AbsoluteOrientationSensor` et mode relatif (cap recalé au doigt), ADR-0003 ; bouton plein écran (mémorisé, masqué sans API), safe-areas latérales. #27 Icône tramée (favicon SVG/ICO, PWA 192/512/maskable, script `pnpm icons`), manifeste `display: fullscreen` construit avec la base Vite. (PR #60), à tester sur S23.
 - 2026-10-02 — #54 Calques : panneau (Ciel / Système solaire / Repères), grilles équatoriale et azimutale, écliptique, graduations préfixées hors HUD, état mémorisé par vue ; correctif mode nuit mémorisé (PR #58).
 - 2026-10-02 — #53 Planètes : glyphes tramés, trajectoire datée ±6 mois au toucher (carte + vue Terre), fiche planète, `constellationOf` (frontières IAU), plein jour = Vénus seule, fuite de la vue Terre corrigée ; `pnpm dev:phone` (HTTPS) (PR #57).
