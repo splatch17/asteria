@@ -51,6 +51,7 @@ import {
   starVert,
 } from "./shaders";
 import { LabelLayout, type Rect } from "./labels";
+import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
@@ -103,7 +104,9 @@ export interface SkyPath {
 export type SkySelection =
   | { kind: "star"; star: CatalogStar }
   | { kind: "body"; body: BodyName }
-  | { kind: "planet"; planet: Planet };
+  | { kind: "planet"; planet: Planet }
+  /** Picked by its name label, or by a tap inside its figure away from any star (#61). */
+  | { kind: "constellation"; abbr: string };
 
 /** At night, planets are hidden this many magnitudes later than stars (they are never lost). */
 export const PLANET_DAYLIGHT_MARGIN = 4;
@@ -278,7 +281,14 @@ export class SkyMap {
   private readonly textWidths = new Map<string, Map<string, number>>();
   private widths = new Map<string, number>();
   private readonly starDirs: Vec3[];
-  private readonly labels: { text: string; dir: Vec3 }[];
+  private readonly labels: { abbr: string; text: string; dir: Vec3 }[];
+  /** Constellation figures as J2000 segments, for highlighting and picking (#61). */
+  private readonly figures: { abbr: string; segments: [Vec3, Vec3][] }[] = [];
+  private selectedConstellation: string | null = null;
+  /** Constellation labels drawn in the last frame (CSS px), for picking. */
+  private constellationLabelRects: { abbr: string; rect: Rect }[] = [];
+  /** 1-bit checkerboard of the ink colour, for the selected figure's stroke. */
+  private figurePattern: { ink: string; pattern: CanvasPattern | null } | null = null;
   private eq2hor: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   private dirty = true;
   /** Sensor pointing: finger rotation is disabled (pinch zoom stays), reticle is shown. */
@@ -333,14 +343,19 @@ export class SkyMap {
 
     // Constellation lines
     const segs: number[] = [];
-    for (const polys of Object.values(lines)) {
+    for (const [abbr, polys] of Object.entries(lines)) {
+      const figure: [Vec3, Vec3][] = [];
       for (const poly of polys) {
         for (let i = 0; i < poly.length - 1; i++) {
           const a = byHip.get(poly[i]!);
           const b = byHip.get(poly[i + 1]!);
-          if (a && b) segs.push(...a, ...b);
+          if (a && b) {
+            segs.push(...a, ...b);
+            figure.push([a, b]);
+          }
         }
       }
+      this.figures.push({ abbr, segments: figure });
     }
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
@@ -437,6 +452,7 @@ export class SkyMap {
       const c = dirs.reduce<Vec3>((s, d) => [s[0] + d[0], s[1] + d[1], s[2] + d[2]], [0, 0, 0]);
       const n = Math.hypot(...c) || 1;
       return {
+        abbr,
         text: options.constellationNames?.[abbr] ?? abbr,
         dir: [c[0] / n, c[1] / n, c[2] / n],
       };
@@ -613,7 +629,16 @@ export class SkyMap {
     this.dirty = true;
   }
 
-  /** Switches layers on or off; keys left out keep their state. */
+  /**
+   * Highlights a constellation's figure (stronger 1-bit stroke, other figures dimmed) and its
+   * name; null clears it.
+   */
+  setSelectedConstellation(abbr: string | null): void {
+    this.selectedConstellation = abbr;
+    this.uniforms.uLineOpacity.value = abbr ? 0.3 : 0.45;
+    this.dirty = true;
+  }
+
   /**
    * Screen rectangles (CSS px, overlay coordinates) covered by the interface (header, buttons,
    * time controls): no label is written there. Priority labels (cardinal points, Sun, Moon,
@@ -629,6 +654,7 @@ export class SkyMap {
     this.setHudExclusions(rects);
   }
 
+  /** Switches layers on or off; keys left out keep their state. */
   setLayers(partial: Partial<SkyLayers>): void {
     for (const key of Object.keys(partial) as (keyof SkyLayers)[]) {
       const value = partial[key];
@@ -815,6 +841,7 @@ export class SkyMap {
     const { ctx } = this;
     const { canvas, stars, cardinals, theme } = this.options;
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    this.drawSelectedFigure();
     ctx.fillStyle = theme.ink;
     ctx.textBaseline = "middle";
     const m = this.eqToView();
@@ -920,10 +947,11 @@ export class SkyMap {
       if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
     });
 
-    // 5. Constellation names
+    // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
+    this.constellationLabelRects = [];
     if (this.layers.constellationNames) {
       this.setLabelFont("500 10px", "0.18em", 0.55);
-      for (const { text, dir } of this.labels) {
+      for (const { abbr, text, dir } of this.labels) {
         if (!aboveHorizon(dir)) continue;
         const p = this.toScreen(applyMat3(m, dir));
         if (!p) continue;
@@ -933,7 +961,10 @@ export class SkyMap {
         const r = layout.place(
           [0, -16, 16, -32, 32].map((dy) => ({ x: x - w / 2, y: y + dy - H / 2, w, h: H })),
         );
-        if (r) ctx.fillText(label, r.x, r.y + H / 2);
+        if (!r) continue;
+        this.constellationLabelRects.push({ abbr, rect: r });
+        ctx.globalAlpha = abbr === this.selectedConstellation ? 1 : 0.55;
+        ctx.fillText(label, r.x, r.y + H / 2);
       }
     }
     // 6. Dates of the monthly marks on the selected planet's path (lowest priority)
@@ -1106,7 +1137,82 @@ export class SkyMap {
     return w;
   }
 
+  /** Projects a view-frame direction without the screen bounds check of toScreen (for lines). */
+  private toScreenUnclipped(v: Vec3): Point | null {
+    if (v[2] < -0.5) return null;
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
+    return [((nx + 1) / 2) * w, ((1 - ny) / 2) * h];
+  }
+
+  /**
+   * Figure segments on screen, cut at the horizon (horizontal z = 0). `only` restricts the work to
+   * one constellation.
+   */
+  private projectFigures(only?: string): FigureShape[] {
+    const view = viewMatrix(this.view);
+    const shapes: FigureShape[] = [];
+    for (const { abbr, segments } of this.figures) {
+      if (only && abbr !== only) continue;
+      const out: [Point, Point][] = [];
+      for (const [a, b] of segments) {
+        let ha = applyMat3(this.eq2hor, a);
+        let hb = applyMat3(this.eq2hor, b);
+        if (ha[2] <= 0 && hb[2] <= 0) continue;
+        if (ha[2] <= 0 || hb[2] <= 0) {
+          const t = ha[2] / (ha[2] - hb[2]);
+          const cut: Vec3 = [ha[0] + (hb[0] - ha[0]) * t, ha[1] + (hb[1] - ha[1]) * t, 0];
+          if (ha[2] <= 0) ha = cut;
+          else hb = cut;
+        }
+        const pa = this.toScreenUnclipped(applyMat3(view, ha));
+        const pb = this.toScreenUnclipped(applyMat3(view, hb));
+        if (pa && pb) out.push([pa, pb]);
+      }
+      if (out.length) shapes.push({ abbr, segments: out });
+    }
+    return shapes;
+  }
+
+  /** The selected figure as an engraved stroke: a 1-bit checkerboard band around a solid core. */
+  private drawSelectedFigure(): void {
+    const abbr = this.selectedConstellation;
+    if (!abbr || !this.layers.constellationLines) return;
+    const [shape] = this.projectFigures(abbr);
+    if (!shape) return;
+    const { ctx } = this;
+    const ink = this.options.theme.ink;
+    if (this.figurePattern?.ink !== ink) {
+      const tile = document.createElement("canvas");
+      tile.width = tile.height = 2;
+      const t = tile.getContext("2d")!;
+      t.fillStyle = ink;
+      t.fillRect(0, 0, 1, 1);
+      t.fillRect(1, 1, 1, 1);
+      this.figurePattern = { ink, pattern: ctx.createPattern(tile, "repeat") };
+    }
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const [a, b] of shape.segments) {
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+    }
+    ctx.globalAlpha = 0.8;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = this.figurePattern.pattern ?? ink;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = ink;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private pick(x: number, y: number): SkySelection | null {
+    // A constellation name is an explicit target: it wins over the stars around it.
+    const label = pickLabel([x, y], this.constellationLabelRects);
+    if (label) return { kind: "constellation", abbr: label };
     const m = this.eqToView();
     if (this.bodies) {
       const radius = Math.max(22, this.uniforms.uBodySize.value / 2);
@@ -1142,7 +1248,11 @@ export class SkyMap {
       const score = Math.hypot(p[0] - x, p[1] - y) - (limit - s.v) * 1.5;
       if (score < bestScore) [best, bestScore] = [s, score];
     });
-    return best ? { kind: "star", star: best } : null;
+    if (best) return { kind: "star", star: best };
+    // No star or body nearby: the figure the tap falls in, if any.
+    if (!this.layers.constellationLines) return null;
+    const abbr = pickFigure([x, y], this.projectFigures());
+    return abbr ? { kind: "constellation", abbr } : null;
   }
 
   private bindInput(canvas: HTMLCanvasElement): void {

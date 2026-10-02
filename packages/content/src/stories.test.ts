@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  hasConstellationStory,
+  inlineSegments,
+  loadConstellationStory,
+  parseConstellationStory,
+  storyIds,
+} from "./stories";
+import { CONSTELLATION_LATIN } from "./index";
 
 // Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia.
 const IDS = [
@@ -22,49 +30,10 @@ const IDS = [
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
-
-interface Source {
-  title?: string;
-  url?: string;
-  license?: string;
-}
-
-interface Story {
-  id?: string;
-  sources: Source[];
-  sections: Map<string, string>;
-}
-
-const unquote = (v: string) => v.trim().replace(/^"(.*)"$/, "$1");
-
-/** Minimal parser for the frontmatter subset we use (id + list of flat source objects). */
-function parse(markdown: string): Story {
-  const text = markdown.replace(/\r\n/g, "\n");
-  const fm = /^---\n([\s\S]*?)\n---\n/.exec(text);
-  if (!fm) throw new Error("missing frontmatter");
-  const story: Story = { sources: [], sections: new Map() };
-  let current: Source | undefined;
-  for (const line of fm[1]!.split("\n")) {
-    const id = /^id:\s*(.+)$/.exec(line);
-    if (id) story.id = unquote(id[1]!);
-    const field = /^\s{2}(?:- )?\s*(title|url|license):\s*(.+)$/.exec(line);
-    if (!field) continue;
-    if (/^\s{2}- /.test(line)) {
-      current = {};
-      story.sources.push(current);
-    }
-    if (current) current[field[1] as keyof Source] = unquote(field[2]!);
-  }
-  const body = text.slice(fm[0].length);
-  for (const part of body.split(/^## /m).slice(1)) {
-    const nl = part.indexOf("\n");
-    story.sections.set(part.slice(0, nl).trim(), part.slice(nl + 1).trim());
-  }
-  return story;
-}
+const read = (id: string) => readFileSync(fileURLToPath(new URL(`${id}.md`, DIR)), "utf8");
 
 describe.each(IDS)("constellation story %s", (id) => {
-  const story = parse(readFileSync(fileURLToPath(new URL(`${id}.md`, DIR)), "utf8"));
+  const story = parseConstellationStory(read(id));
 
   it("has a frontmatter with the matching id", () => {
     expect(story.id).toBe(id);
@@ -77,15 +46,90 @@ describe.each(IDS)("constellation story %s", (id) => {
       expect(source.url).toMatch(/^https?:\/\//);
       expect(source.license).toBeTruthy();
     }
-    expect(story.sources.some((s) => s.url?.startsWith("https://fr.wikipedia.org/"))).toBe(true);
+    expect(story.sources.some((s) => s.url.startsWith("https://fr.wikipedia.org/"))).toBe(true);
   });
 
-  it("has a non-empty ## Histoire section", () => {
-    expect(story.sections.get("Histoire")?.length ?? 0).toBeGreaterThan(0);
+  it("has a non-empty story, in paragraphs without line breaks", () => {
+    expect(story.story.length).toBeGreaterThan(0);
+    for (const p of story.story) expect(p).not.toMatch(/\n|^- /);
   });
 
-  it("has exactly 3 bullets under ## Anecdotes", () => {
-    const anecdotes = story.sections.get("Anecdotes") ?? "";
-    expect(anecdotes.split("\n").filter((l) => /^- \S/.test(l))).toHaveLength(3);
+  it("has exactly 3 anecdotes", () => {
+    expect(story.anecdotes).toHaveLength(3);
+    for (const a of story.anecdotes) expect(a).not.toMatch(/^- |\n/);
+  });
+});
+
+describe("parseConstellationStory", () => {
+  const md = [
+    "---",
+    "id: Xyz",
+    "sources:",
+    '  - title: "A — Wikipédia"',
+    '    url: "https://fr.wikipedia.org/wiki/A"',
+    '    license: "CC BY-SA 4.0"',
+    "  - title: Incomplete",
+    "---",
+    "",
+    "## Histoire",
+    "",
+    "First line",
+    "continued.",
+    "",
+    "Second paragraph.",
+    "",
+    "## Anecdotes",
+    "",
+    "- One,",
+    "  wrapped.",
+    "- Two.",
+    "",
+  ].join("\r\n");
+
+  it("joins wrapped lines, splits paragraphs and bullets, drops incomplete sources", () => {
+    expect(parseConstellationStory(md)).toEqual({
+      id: "Xyz",
+      sources: [
+        { title: "A — Wikipédia", url: "https://fr.wikipedia.org/wiki/A", license: "CC BY-SA 4.0" },
+      ],
+      story: ["First line continued.", "Second paragraph."],
+      anecdotes: ["One, wrapped.", "Two."],
+    });
+  });
+
+  it("rejects a file without frontmatter or id", () => {
+    expect(() => parseConstellationStory("## Histoire\n\nx")).toThrow();
+    expect(() => parseConstellationStory("---\nsources:\n---\n")).toThrow();
+  });
+});
+
+describe("inlineSegments", () => {
+  it("turns *…* into italic runs", () => {
+    expect(inlineSegments("nom *al-ḥamal*, « l'agneau »")).toEqual([
+      { text: "nom ", italic: false },
+      { text: "al-ḥamal", italic: true },
+      { text: ", « l'agneau »", italic: false },
+    ]);
+  });
+
+  it("keeps a lone asterisk literal (Sagittarius A*)", () => {
+    const text = "Là se cache Sagittarius A*, un trou noir.";
+    expect(inlineSegments(text)).toEqual([{ text, italic: false }]);
+  });
+});
+
+describe("story loading", () => {
+  it("knows the 15 stories without loading them, all valid IAU abbreviations", () => {
+    expect(storyIds("fr")).toEqual([...IDS].sort());
+    for (const id of storyIds("fr")) expect(CONSTELLATION_LATIN[id]).toBeTruthy();
+    expect(hasConstellationStory("fr", "Ori")).toBe(true);
+    expect(hasConstellationStory("fr", "And")).toBe(false);
+  });
+
+  it("loads and parses a story on demand, null when there is none", async () => {
+    const ori = await loadConstellationStory("fr", "Ori");
+    expect(ori?.id).toBe("Ori");
+    expect(ori?.anecdotes).toHaveLength(3);
+    expect(await loadConstellationStory("fr", "And")).toBeNull();
   });
 });

@@ -16,12 +16,13 @@
 
 ## ⏭️ Prochaines étapes
 1. Transition continue Ciel ↔ Terre au zoom (#37), mini-globe dans la vue Ciel (#38), traînées d'étoiles (#39)
-2. Fiche constellation : histoires et anecdotes (#10) dans l'app, au toucher d'un nom
+2. Génitifs latins des 88 constellations (source IAU à documenter) pour la fiche constellation
 3. Vue 3D d'une constellation (#8)
 4. Tester #59/#27 sur S23 (Brave : autoriser « Capteurs de mouvement » ; installer depuis GitHub Pages) ; déclinaison magnétique (WMM)
 5. Noms d'étoiles/constellations hors de l'en-tête (zones réservées comme les graduations)
 
 ## ✅ Fait récemment
+- 2026-10-02 — #61 Fiche constellation : sélection au toucher du nom (rectangles d'étiquettes mémorisés) ou dans la figure loin de toute étoile (enveloppe convexe), figure mise en évidence par un trait tramé 1-bit, vue recadrée si la fiche la masque ; fiche (noms FR/latin, abréviation, étoile la plus brillante, position par rapport à l'horizon) avec histoire + 3 anecdotes + sources CC BY-SA pour les 15 constellations rédigées (chargement paresseux des .md, 1 chunk ~3 Ko chacune), fiche courte sans histoire pour les autres ; lien étoile/planète → constellation (PR en revue).
 - 2026-10-02 — #59 Visée capteurs : diagnostic par cause (https, capteurs refusés, événements vides de Brave, pas de boussole, pas de capteur) avec messages dédiés dont Brave (Paramètres des sites → Capteurs de mouvement / Shields), repli Generic Sensor `AbsoluteOrientationSensor` et mode relatif (cap recalé au doigt), ADR-0003 ; bouton plein écran (mémorisé, masqué sans API), safe-areas latérales. #27 Icône tramée (favicon SVG/ICO, PWA 192/512/maskable, script `pnpm icons`), manifeste `display: fullscreen` construit avec la base Vite. (PR #60), à tester sur S23.
 - 2026-10-02 — #54 Calques : panneau (Ciel / Système solaire / Repères), grilles équatoriale et azimutale, écliptique, graduations préfixées hors HUD, état mémorisé par vue ; correctif mode nuit mémorisé (PR #58).
 - 2026-10-02 — #53 Planètes : glyphes tramés, trajectoire datée ±6 mois au toucher (carte + vue Terre), fiche planète, `constellationOf` (frontières IAU), plein jour = Vénus seule, fuite de la vue Terre corrigée ; `pnpm dev:phone` (HTTPS) (PR #57).

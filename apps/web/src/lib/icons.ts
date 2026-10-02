@@ -17,4 +17,6 @@ export type IconName =
   | "azGrid"
   | "ecliptic"
   | "fullscreen"
-  | "fullscreenExit";
+  | "fullscreenExit"
+  | "expand"
+  | "collapse";
