@@ -15,3 +15,4 @@ export function constellationNames(locale: ContentLocale): Readonly<Record<strin
 }
 
 export * from "./stories";
+export * from "./star-names";
