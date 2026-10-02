@@ -2,6 +2,11 @@
  * Time scrubber model. Offsets are in milliseconds, except for the precession range
  * where they are whole years (stepping by calendar years keeps the same date and time of
  * day, so only the slow precession of the sky remains visible).
+ *
+ * On the one-year range, whole days are calendar days at the same civil (wall-clock) time,
+ * and the day-per-second speeds play by whole days: the sky is shown every evening at the
+ * same hour, so only the seasonal drift of the constellations remains (#74). Playing by
+ * 24 h steps of continuous time would strobe: 1 s = 1 d moved 24 min (~6°) per frame.
  */
 
 const MINUTE = 60_000;
@@ -14,8 +19,11 @@ export interface RangeSpec {
   /** Half-width of the slider, in offset units. */
   half: number;
   step: number;
-  /** Playback speeds, in offset units per second of real time. */
-  speeds: { value: number; key: string }[];
+  /**
+   * Playback speeds, in offset units per second of real time. With `quantum`, playback moves
+   * by whole multiples of it (the remainder is carried to the next frame).
+   */
+  speeds: { value: number; key: string; quantum?: number }[];
   unit: "ms" | "years";
 }
 
@@ -36,8 +44,8 @@ export const RANGES: Record<TimeRange, RangeSpec> = {
     unit: "ms",
     speeds: [
       { value: HOUR, key: "time.speed.1h" },
-      { value: DAY, key: "time.speed.1d" },
-      { value: 10 * DAY, key: "time.speed.10d" },
+      { value: DAY, key: "time.speed.1d", quantum: DAY },
+      { value: 10 * DAY, key: "time.speed.10d", quantum: DAY },
     ],
   },
   "26ky": {
@@ -60,7 +68,46 @@ export function dateAt(anchor: Date, offset: number, range: TimeRange): Date {
     d.setUTCFullYear(anchor.getUTCFullYear() + Math.round(offset));
     return d;
   }
+  if (range === "1y") {
+    // Whole days as calendar days (same wall-clock time across daylight saving changes),
+    // then the rest of the offset as elapsed time.
+    const days = Math.trunc(offset / DAY);
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + days);
+    return new Date(d.getTime() + (offset - days * DAY));
+  }
   return new Date(anchor.getTime() + offset);
+}
+
+/** Where playback starts over once it reached the end: the start of the range, in whole days. */
+export function restartOffset(range: TimeRange): number {
+  const { half, unit } = RANGES[range];
+  return unit === "ms" ? -Math.floor(half / DAY) * DAY : -half;
+}
+
+/**
+ * One playback frame: adds `speed × dt` to the offset, by whole quanta when the speed has one
+ * (the rest is carried). `done` when the next step would leave the range.
+ */
+export function advance(
+  offset: number,
+  carry: number,
+  dt: number,
+  range: TimeRange,
+  speedIndex: number,
+): { offset: number; carry: number; done: boolean } {
+  const { half, speeds } = RANGES[range];
+  const speed = speeds[speedIndex] ?? speeds[0]!;
+  let delta = carry + speed.value * dt;
+  let rest = 0;
+  if (speed.quantum) {
+    const steps = Math.floor(delta / speed.quantum);
+    rest = delta - steps * speed.quantum;
+    delta = steps * speed.quantum;
+  }
+  const next = offset + delta;
+  if (next > half) return { offset: speed.quantum ? offset : half, carry: 0, done: true };
+  return { offset: next, carry: rest, done: next >= half };
 }
 
 export function clampOffset(offset: number, range: TimeRange): number {

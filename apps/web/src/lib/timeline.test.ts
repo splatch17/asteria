@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampOffset, dateAt, offsetParts, RANGES } from "./timeline";
+import { advance, clampOffset, dateAt, offsetParts, RANGES, restartOffset } from "./timeline";
 
 describe("timeline", () => {
   const anchor = new Date("2026-10-01T22:00:00Z");
@@ -25,5 +25,50 @@ describe("timeline", () => {
       minutes: 5,
     });
     expect(offsetParts(2500.4, "26ky")).toEqual({ sign: "+", years: 2500 });
+  });
+
+  const DAY = 86_400_000;
+  const HOUR = 3_600_000;
+
+  it("keeps the wall-clock time over whole days of the one-year range", () => {
+    // 22:00 local time on 1 Oct, 60 days later: still 22:00 local, whatever the DST change.
+    const local = new Date(2026, 9, 1, 22, 0);
+    const later = dateAt(local, 60 * DAY, "1y");
+    expect([later.getMonth(), later.getDate(), later.getHours(), later.getMinutes()]).toEqual([
+      10, 30, 22, 0,
+    ]);
+    const earlier = dateAt(local, -100 * DAY - 3 * HOUR, "1y");
+    expect([earlier.getMonth(), earlier.getDate(), earlier.getHours()]).toEqual([5, 23, 19]);
+    // Hours in between are elapsed time.
+    expect(dateAt(local, 2 * HOUR, "1y").getTime() - local.getTime()).toBe(2 * HOUR);
+  });
+
+  it("plays the one-year range by whole days at day speeds", () => {
+    // 1 s = 1 d at 60 fps: nothing moves until a whole day has accumulated…
+    let state = { offset: 0, carry: 0, done: false };
+    const frames: number[] = [];
+    for (let i = 0; i < 150; i++) {
+      state = advance(state.offset, state.carry, 1 / 60, "1y", 1);
+      frames.push(state.offset);
+    }
+    // …then it moves by exactly one day: never a fraction of a day (no strobing).
+    expect(new Set(frames.map((o) => o % DAY))).toEqual(new Set([0]));
+    expect(frames.at(-1)).toBe(2 * DAY);
+    // 1 s = 10 d: 10 one-day steps per second, at most one day per frame at 60 fps.
+    const fast = advance(0, 0, 0.1, "1y", 2);
+    expect(fast.offset).toBe(DAY);
+  });
+
+  it("keeps continuous playback at 1 s = 1 h", () => {
+    const step = advance(0, 0, 0.5, "1y", 0);
+    expect(step).toEqual({ offset: HOUR / 2, carry: 0, done: false });
+  });
+
+  it("stops at the end of the range without leaving whole days", () => {
+    const end = advance(182 * DAY, 0, 1, "1y", 1);
+    expect(end).toEqual({ offset: 182 * DAY, carry: 0, done: true });
+    expect(restartOffset("1y")).toBe(-182 * DAY);
+    expect(restartOffset("48h")).toBe(-DAY);
+    expect(restartOffset("26ky")).toBe(-13_000);
   });
 });
