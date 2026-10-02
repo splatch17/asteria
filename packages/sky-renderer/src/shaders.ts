@@ -6,6 +6,11 @@ const projection = /* glsl */ `
   uniform mat3 uView;
   uniform float uScale;
   uniform float uAspect;
+  // Below the horizon (#65): 0 = hidden (opaque ground), > 0 = opacity seen through the Earth.
+  uniform float uBelowAlpha;
+
+  // Opacity factor of a horizontal direction's altitude z (0: not drawn).
+  float horizonFade(float z) { return z < 0.0 ? uBelowAlpha : 1.0; }
 
   vec4 projectView(vec3 v) {
     float k = 2.0 / (1.0 + max(v.z, -0.999)) * uScale;
@@ -23,6 +28,7 @@ export const starVert = /* glsl */ `
   ${projection}
   uniform float uDpr;
   uniform float uLimitMag;
+  uniform float uLimitMagBelow; // below the horizon: night sky whatever the Sun (#65)
   attribute vec3 aDir;
   attribute float aMag;
   varying float vAlpha;
@@ -31,11 +37,13 @@ export const starVert = /* glsl */ `
   void main() {
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
-    float rel = pow(10.0, -0.4 * (aMag - uLimitMag)); // flux relative to the faintest shown star
+    float fade = horizonFade(h.z);
+    float limit = h.z < 0.0 ? uLimitMagBelow : uLimitMag;
+    float rel = pow(10.0, -0.4 * (aMag - limit)); // flux relative to the faintest shown star
     float size = clamp(2.3 * sqrt(rel), 0.0, 26.0);
-    vAlpha = clamp(0.35 + rel * 0.9, 0.0, 1.0);
+    vAlpha = clamp(0.35 + rel * 0.9, 0.0, 1.0) * fade;
     vSpike = aMag < 1.6 ? 1.0 : 0.0;
-    if (v.z < -0.6 || h.z < -0.02 || rel < 0.35) {
+    if (v.z < -0.6 || fade <= 0.0 || rel < 0.35) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -67,10 +75,13 @@ export const lineVert = /* glsl */ `
   ${projection}
   attribute vec3 aDir;
   varying float vVisible;
+  varying float vUp;
 
   void main() {
-    vec3 v = uView * (uEq2Hor * aDir);
+    vec3 h = uEq2Hor * aDir;
+    vec3 v = uView * h;
     vVisible = v.z > -0.6 ? 1.0 : 0.0;
+    vUp = h.z;
     gl_Position = projectView(v);
   }
 `;
@@ -79,15 +90,23 @@ export const lineFrag = /* glsl */ `
   precision highp float;
   uniform vec3 uInk;
   uniform float uLineOpacity;
+  uniform float uBelowAlpha;
   varying float vVisible;
+  varying float vUp;
 
   void main() {
     if (vVisible < 0.999) discard; // segment touches the back hemisphere
-    gl_FragColor = vec4(uInk, uLineOpacity);
+    float fade = vUp < 0.0 ? uBelowAlpha : 1.0;
+    if (fade <= 0.0) discard;
+    gl_FragColor = vec4(uInk, uLineOpacity * fade);
   }
 `;
 
-/** Full-screen pass: ground below the horizon, horizon line, engraved glow above it. */
+/**
+ * Full-screen pass: ground below the horizon, horizon line, engraved glow above it.
+ * Opaque ground (uBelowAlpha = 0): drawn last, it hides what is below. Seen through (#65): drawn
+ * first, as the night background of everything below, with a sparser stipple.
+ */
 export const groundVert = /* glsl */ `
   varying vec2 vNdc;
   void main() {
@@ -104,6 +123,7 @@ export const groundFrag = /* glsl */ `
   uniform float uDpr;
   uniform vec3 uInk;
   uniform vec3 uGround;
+  uniform float uBelowAlpha;
   varying vec2 vNdc;
   ${dither}
 
@@ -123,7 +143,7 @@ export const groundFrag = /* glsl */ `
       return;
     }
     // Ground: dark, with engraved stippling fading with depth below the horizon.
-    float density = 0.16 * (1.0 - smoothstep(0.0, 0.25, -up));
+    float density = (uBelowAlpha > 0.0 ? 0.09 : 0.16) * (1.0 - smoothstep(0.0, 0.25, -up));
     vec3 col = mix(uGround, uInk, step(threshold + 0.001, density) * 0.35);
     gl_FragColor = vec4(mix(col, uInk, line * 0.85), 1.0);
   }
@@ -137,12 +157,14 @@ export const bodyVert = /* glsl */ `
   attribute vec3 aDir;
   attribute float aKind;
   varying float vKind;
+  varying float vFade;
 
   void main() {
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
     vKind = aKind;
-    if (v.z < -0.6 || h.z < -0.01) {
+    vFade = horizonFade(h.z + 0.01);
+    if (v.z < -0.6 || vFade <= 0.0) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -159,6 +181,7 @@ export const bodyFrag = /* glsl */ `
   uniform float uMoonT;      // terminator position: 1 − 2 × illuminated fraction
   uniform float uSunAngle;   // screen angle of the Sun as seen from the Moon (radians)
   varying float vKind;
+  varying float vFade;
   ${dither}
 
   void main() {
@@ -174,7 +197,7 @@ export const bodyFrag = /* glsl */ `
       float rays = pow(abs(cos(atan(p.y, p.x) * 8.0)), 48.0) * step(0.46, r) * (1.0 - smoothstep(0.85, 1.0, r));
       float on = max(disc, max(ring, step(0.5, rays)));
       if (on < 0.5) discard;
-      gl_FragColor = vec4(uInk, 1.0);
+      gl_FragColor = vec4(uInk, vFade);
       return;
     }
 
@@ -190,7 +213,7 @@ export const bodyFrag = /* glsl */ `
     float rim = smoothstep(0.9, 0.95, r) * (1.0 - smoothstep(0.97, 1.0, r));
     float a = max(on, rim * 0.7);
     if (a < 0.1) discard;
-    gl_FragColor = vec4(uInk, a);
+    gl_FragColor = vec4(uInk, a * vFade);
   }
 `;
 
@@ -202,15 +225,19 @@ export const planetVert = /* glsl */ `
   ${projection}
   uniform float uDpr;
   uniform float uPlanetLimit;
+  uniform float uPlanetLimitBelow;
   attribute vec3 aDir;
   attribute float aMag;
   attribute float aKind;
   varying float vKind;
+  varying float vFade;
   void main() {
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
     vKind = aKind;
-    if (v.z < -0.6 || h.z < -0.01 || aMag > uPlanetLimit) {
+    vFade = horizonFade(h.z + 0.01);
+    float limit = h.z < -0.01 ? uPlanetLimitBelow : uPlanetLimit;
+    if (v.z < -0.6 || vFade <= 0.0 || aMag > limit) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -226,6 +253,7 @@ export const planetFrag = /* glsl */ `
   uniform vec3 uInk;
   uniform float uDpr;
   varying float vKind;
+  varying float vFade;
   ${dither}
   void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
@@ -241,7 +269,7 @@ export const planetFrag = /* glsl */ `
     float ring = saturn * smoothstep(0.95, 1.0, rr) * (1.0 - smoothstep(1.06, 1.12, rr)) * step(0.0, abs(p.y) * 6.0 - (1.0 - step(0.62, r)) * 6.0);
     float a = max(max(disc, outline), ring);
     if (a < 0.5) discard;
-    gl_FragColor = vec4(uInk, 1.0);
+    gl_FragColor = vec4(uInk, vFade);
   }
 `;
 
@@ -252,11 +280,13 @@ export const pathVert = /* glsl */ `
   attribute vec3 aDir;
   attribute float aMark;
   varying float vMark;
+  varying float vFade;
   void main() {
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
     vMark = aMark;
-    if (v.z < -0.6) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    vFade = horizonFade(h.z);
+    if (v.z < -0.6 || vFade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectView(v);
     gl_PointSize = (aMark > 0.5 ? 5.0 : 2.4) * uDpr;
   }
@@ -266,11 +296,12 @@ export const pathFrag = /* glsl */ `
   precision highp float;
   uniform vec3 uInk;
   varying float vMark;
+  varying float vFade;
   void main() {
     float r = length(gl_PointCoord * 2.0 - 1.0);
     float a = vMark > 0.5 ? (1.0 - smoothstep(0.8, 1.0, r)) * (smoothstep(0.35, 0.5, r) + step(r, 0.2)) : 1.0 - smoothstep(0.6, 1.0, r);
     if (a < 0.1) discard;
-    gl_FragColor = vec4(uInk, a * 0.75);
+    gl_FragColor = vec4(uInk, a * 0.75 * vFade);
   }
 `;
 
@@ -286,9 +317,12 @@ export const guideVert = /* glsl */ `
   attribute float aDash;
   varying float vVisible;
   varying float vDash;
+  varying float vUp;
   void main() {
-    vec3 v = uView * (uFrame * aDir);
+    vec3 h = uFrame * aDir;
+    vec3 v = uView * h;
     vVisible = v.z > -0.6 ? 1.0 : 0.0;
+    vUp = h.z;
     vDash = aDash;
     gl_Position = projectView(v);
   }
@@ -301,13 +335,17 @@ export const guideFrag = /* glsl */ `
   uniform float uOpacity;
   uniform float uDensity; // share of the line's pixels kept by the ordered dither
   uniform float uDash;    // dash period in degrees (0: continuous)
+  uniform float uBelowAlpha;
   varying float vVisible;
   varying float vDash;
+  varying float vUp;
   ${dither}
   void main() {
     if (vVisible < 0.999) discard;
+    float fade = vUp < 0.0 ? uBelowAlpha : 1.0;
+    if (fade <= 0.0) discard;
     if (uDash > 0.0 && fract(vDash / uDash) > 0.6) discard;
     if (bayer4(gl_FragCoord.xy / uDpr) + 0.001 > uDensity) discard;
-    gl_FragColor = vec4(uInk, uOpacity);
+    gl_FragColor = vec4(uInk, uOpacity * fade);
   }
 `;

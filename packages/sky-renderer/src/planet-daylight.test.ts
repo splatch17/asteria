@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PLANET_DAYLIGHT_MARGIN, planetLimitingMagnitude } from "./sky-map";
+import { PLANET_DAYLIGHT_MARGIN, planetLimitingMagnitude } from "./limits";
 
 // Typical magnitude ranges (JPL Horizons / Mallama & Hilton 2018): Venus −4.9…−3.8,
 // Jupiter −2.9…−1.6, Mercury −2.5…+5 (≈ −1…+1 when observable), Mars −2.9…+1.9.
