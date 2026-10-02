@@ -161,5 +161,21 @@
   "credits.code": "Code",
   "credits.appLicense": "Tous droits réservés (bêta gratuite)",
   "credits.repo": "Dépôt du projet sur GitHub",
-  "credits.licensesFile": "Textes complets des licences"
+  "credits.licensesFile": "Textes complets des licences",
+  "app.retry": "Réessayer",
+  "time.yearBce": "{year} av. J.-C.",
+  "compass.letter": "N",
+  "sun.kind": "Notre étoile · type G2V",
+  "data.ra": "RA",
+  "data.dec": "DEC",
+  "data.v": "V",
+  "data.bv": "B−V",
+  "data.dist": "DIST",
+  "star.hip": "HIP {hip}",
+  "star.distanceApprox": "≈ {ly, number} al",
+  "star.distanceApprox.hint": "Distance approximative : parallaxe Hipparcos peu précise",
+  "star.unknownDistance.hint": "Distance inconnue : parallaxe Hipparcos trop imprécise",
+  "space.loadError": "Impossible de charger la Terre.",
+  "time.rangeChange": "Changer d'échelle de temps (48 h, 1 an, 26 000 ans)",
+  "time.backToNow": "Revenir à maintenant (en direct)"
 }

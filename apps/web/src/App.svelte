@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import {
     SkyMap,
     SpaceView,
@@ -21,33 +21,17 @@
     type Planet,
   } from "@asteria/astro-core";
   import { CONSTELLATION_LATIN, constellationNames, localizeStarStrings } from "@asteria/content";
-  import { decodeCoastlines, decodeStarCatalog } from "@asteria/catalog";
-  import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
+  import {
+    decodeCoastlines,
+    decodeStarCatalog,
+    type CatalogStar as CatalogRecord,
+  } from "@asteria/catalog";
+  import { formatDec, formatRa, starDistance, yearLabel } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
   import { PlanetPathCache } from "./lib/planet-paths";
-  import {
-    devicePointing,
-    pointingToView,
-    quaternionPointing,
-    smooth,
-    type SkyPointing,
-  } from "./lib/orientation";
-  import {
-    absoluteAlpha,
-    classifyOrientationEvent,
-    decide,
-    failureMessageKey,
-    newProbe,
-    querySensorPermissions,
-    preflight,
-    recordReading,
-    wrap360,
-    type OrientationLike,
-    type PointingFailure,
-    type PointingMode,
-    type ProbeState,
-  } from "./lib/sensors";
+  import { SensorPointing } from "./lib/pointing.svelte";
+  import { failureMessageKey } from "./lib/sensors";
   import {
     FULLSCREEN_STORAGE_KEY,
     enterFullscreen,
@@ -60,6 +44,10 @@
   import TimeScrubber from "./components/TimeScrubber.svelte";
   import LayersPanel from "./components/LayersPanel.svelte";
   import ConstellationSheet from "./components/ConstellationSheet.svelte";
+  import InfoPanel, { type InfoRow } from "./components/InfoPanel.svelte";
+  import Designation from "./components/Designation.svelte";
+  import SkyHeader from "./components/SkyHeader.svelte";
+  import DialsColumn from "./components/DialsColumn.svelte";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
   import {
@@ -75,9 +63,11 @@
   import {
     RANGES,
     RANGE_ORDER,
+    advance,
     clampOffset,
     dateAt,
     offsetParts,
+    restartOffset,
     type TimeRange,
   } from "./lib/timeline";
 
@@ -94,6 +84,7 @@
   let space = $state<SpaceView | undefined>();
   let mode = $state<"sky" | "space">("sky");
   let spaceLoading = $state(false);
+  let spaceError = $state(false);
   // Earth view style (#55): engraving or realistic, remembered; `?style=` for captures.
   const urlStyle = new URLSearchParams(location.search).get("style");
   let spaceStyle = $state<SpaceStyle>(
@@ -145,18 +136,25 @@
   let playing = $state(false);
   let speedIndex = $state(1);
   let playFrame = 0;
+  /** Playback time not yet applied (whole-day speeds of the one-year range, #74). */
+  let playCarry = 0;
   let viewAzimuth = $state(180);
   let viewRoll = $state(0);
-  let pointing = $state<"off" | "waiting" | "on" | "failed">("off");
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
   const names = constellationNames("fr");
+  /** Current UI locale, for dates and numbers formatted outside ICU messages. */
+  const lang = $derived($locale ?? "fr");
   // One formatter for the ~80 path marks (toLocaleDateString builds a new one on each call).
-  const pathMarkFormat = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+  const pathMarkFormat = $derived(
+    new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" }),
+  );
   const planetName = (p: Planet) => $_(`planet.${p}`);
   const planetNames = () =>
     Object.fromEntries(PLANETS.map((p) => [p, planetName(p)])) as Record<Planet, string>;
+  const hipLabel = (hip: number) => $_("star.hip", { values: { hip } });
+  const starLabel = (s: CatalogStar) => s.name ?? s.bayer ?? hipLabel(s.hip);
 
   const PLACE_KEY = "asteria.place";
 
@@ -203,18 +201,22 @@
 
   function cycleSpeed() {
     speedIndex = (speedIndex + 1) % RANGES[range].speeds.length;
+    playCarry = 0;
   }
 
   function togglePlay() {
     if (playing) return stopPlaying();
-    if (offset >= RANGES[range].half) setOffset(-RANGES[range].half); // restart from the beginning
+    if (offset >= RANGES[range].half) setOffset(restartOffset(range)); // restart from the beginning
     playing = true;
+    playCarry = 0;
     let last = performance.now();
     const tick = (now: number) => {
       const dt = Math.min(0.1, (now - last) / 1000); // cap: a background tab must not jump
       last = now;
-      setOffset(offset + RANGES[range].speeds[speedIndex]!.value * dt);
-      if (offset >= RANGES[range].half) return stopPlaying();
+      const step = advance(offset, playCarry, dt, range, speedIndex);
+      playCarry = step.carry;
+      if (step.offset !== offset) setOffset(step.offset);
+      if (step.done) return stopPlaying();
       playFrame = requestAnimationFrame(tick);
     };
     playFrame = requestAnimationFrame(tick);
@@ -225,186 +227,12 @@
     playing = false;
   }
 
-  // --- Sensor pointing (#45, #59): sources and failure causes in lib/sensors.ts and ADR-0003
-  // (docs/adr/0003-visee-capteurs-web.md).
-  type Vec = [number, number, number];
-  let smoothed: { forward: Vec; up: Vec } | null = null;
-  let pointingMode = $state<PointingMode>("absolute");
-  let pointingError = $state<PointingFailure | null>(null);
-  let relativeNotice = $state(false);
-  /** Relative mode: degrees added to the sensor azimuth (NaN until the first reading). */
-  let headingOffset = NaN;
-  let probe: ProbeState | null = null;
-  let probeTimer: ReturnType<typeof setInterval> | undefined;
-  /** Which source drives the view once an absolute reading came in. */
-  let lockedSource: "event" | "sensor" | null = null;
-  let orientationSensor: GenericOrientationSensor | null = null;
-  const isBrave = "brave" in navigator;
-  const screenAngle = () => screen.orientation?.angle ?? 0;
-
-  /** Generic Sensor API (Chromium), not in lib.dom. */
-  interface GenericOrientationSensor extends EventTarget {
-    quaternion: number[] | null;
-    start(): void;
-    stop(): void;
-  }
-  type SensorConstructor = new (options: {
-    frequency: number;
-    referenceFrame: "device" | "screen";
-  }) => GenericOrientationSensor;
-
-  function applyPointing(raw: { forward: Vec; up: Vec }) {
-    smoothed = {
-      forward: smooth(smoothed?.forward ?? null, raw.forward, 0.25),
-      up: smooth(smoothed?.up ?? null, raw.up, 0.25),
-    };
-    const view: SkyPointing = pointingToView(smoothed.forward, smoothed.up);
-    if (pointingMode === "relative") {
-      // Keep the map's current heading when the relative mode starts; the finger shifts it.
-      if (Number.isNaN(headingOffset)) headingOffset = viewAzimuth - view.azimuth;
-      view.azimuth = wrap360(view.azimuth + headingOffset);
-    }
-    map?.setView(view);
-  }
-
-  function onOrientation(e: DeviceOrientationEvent) {
-    const reading = e as unknown as OrientationLike;
-    const kind = classifyOrientationEvent(reading);
-    if (kind === "absolute") lockedSource ??= "event";
-    if (pointing === "waiting" && probe) {
-      recordReading(probe, kind, performance.now());
-      evaluateProbe();
-    }
-    if (pointing !== "on" || lockedSource === "sensor" || kind === "empty") return;
-    if (kind === "absolute" && pointingMode === "relative") {
-      // A compass woke up late: switch to the true heading.
-      pointingMode = "absolute";
-      relativeNotice = false;
-      smoothed = null;
-    }
-    if (pointingMode === "absolute" && kind !== "absolute") return;
-    const alpha = kind === "absolute" ? absoluteAlpha(reading) : kind === "tilt" ? 0 : e.alpha!;
-    applyPointing(devicePointing(alpha, e.beta!, e.gamma!, screenAngle()));
-  }
-
-  // "deviceorientationabsolute" is not in lib.dom's event map: listen through a generic handler.
-  const onOrientationEvent = (e: Event) => onOrientation(e as DeviceOrientationEvent);
-
-  /** AbsoluteOrientationSensor, when the browser has it: a second chance if events are empty. */
-  function startOrientationSensor(): boolean {
-    const Sensor = (window as unknown as { AbsoluteOrientationSensor?: SensorConstructor })
-      .AbsoluteOrientationSensor;
-    if (!Sensor || !probe) return false;
-    try {
-      const sensor = new Sensor({ frequency: 60, referenceFrame: "device" });
-      sensor.addEventListener("reading", () => {
-        if (!sensor.quaternion) return;
-        lockedSource ??= "sensor";
-        if (pointing === "waiting" && probe) {
-          probe.sensor = "active";
-          recordReading(probe, "absolute", performance.now());
-          evaluateProbe();
-        }
-        if (pointing === "on" && lockedSource === "sensor")
-          applyPointing(quaternionPointing(sensor.quaternion, screenAngle()));
-      });
-      sensor.addEventListener("error", (e) => {
-        const name = (e as Event & { error?: DOMException }).error?.name ?? "Error";
-        stopOrientationSensor();
-        if (probe) {
-          probe.sensor = "error";
-          probe.sensorError = name;
-          evaluateProbe();
-        }
-        if (pointing === "on" && lockedSource === "sensor")
-          failPointing(name === "NotAllowedError" ? "denied" : "silent");
-      });
-      sensor.start();
-      orientationSensor = sensor;
-      return true;
-    } catch (e) {
-      // SecurityError (permissions policy) or ReferenceError: the events remain.
-      probe.sensorError = e instanceof DOMException ? e.name : "Error";
-      return false;
-    }
-  }
-
-  function stopOrientationSensor() {
-    orientationSensor?.stop();
-    orientationSensor = null;
-  }
-
-  function evaluateProbe() {
-    if (pointing !== "waiting" || !probe) return;
-    const decision = decide(probe, performance.now());
-    if (decision.kind === "wait") return;
-    clearInterval(probeTimer);
-    if (decision.kind === "fail") return failPointing(decision.reason);
-    pointingMode = decision.mode;
-    relativeNotice = decision.mode === "relative";
-    if (decision.mode === "relative") lockedSource = "event";
-    if (lockedSource === "event") stopOrientationSensor();
-    probe = null;
-    pointing = "on";
-  }
-
-  async function togglePointing() {
-    if (pointing === "on" || pointing === "waiting") return stopPointing();
-    pointingError = null;
-    const early = preflight({
-      secure: isSecureContext,
-      orientationEvents: "DeviceOrientationEvent" in window,
-      absoluteSensor: "AbsoluteOrientationSensor" in window,
-    });
-    if (early) return failPointing(early);
-    // iOS Safari asks for permission; Android browsers do not.
-    const request = (
-      DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }
-    ).requestPermission;
-    if (request && (await request().catch(() => "denied")) !== "granted")
-      return failPointing("denied");
-    smoothed = null;
-    headingOffset = NaN;
-    lockedSource = null;
-    pointingMode = "absolute";
-    relativeNotice = false;
-    const current = newProbe(performance.now());
-    probe = current;
-    pointing = "waiting";
-    map?.setPointing(true);
-    addEventListener("deviceorientationabsolute", onOrientationEvent);
-    addEventListener("deviceorientation", onOrientationEvent);
-    if (startOrientationSensor()) current.sensor = "starting";
-    probeTimer = setInterval(evaluateProbe, 250);
-    const verdict = await querySensorPermissions();
-    if (probe === current && pointing === "waiting") {
-      current.permission = verdict;
-      evaluateProbe();
-    }
-  }
-
-  function failPointing(reason: PointingFailure) {
-    stopPointing();
-    pointingError = reason;
-    pointing = "failed";
-  }
-
-  function stopPointing() {
-    clearInterval(probeTimer);
-    removeEventListener("deviceorientationabsolute", onOrientationEvent);
-    removeEventListener("deviceorientation", onOrientationEvent);
-    stopOrientationSensor();
-    probe = null;
-    relativeNotice = false;
-    map?.setPointing(false);
-    pointing = "off";
-  }
-
-  /** Relative mode: a one-finger horizontal drag shifts the heading. */
-  function onPointingDrag(deltaAzimuth: number) {
-    if (pointing !== "on" || pointingMode !== "relative" || Number.isNaN(headingOffset)) return;
-    headingOffset = wrap360(headingOffset + deltaAzimuth);
-  }
+  // --- Sensor pointing (#45, #59), in lib/pointing.svelte.ts
+  const pointer = new SensorPointing({
+    setView: (view) => map?.setView(view),
+    setPointing: (on) => map?.setPointing(on),
+    azimuth: () => viewAzimuth,
+  });
 
   // --- Fullscreen (#59)
   let fullscreenEnv = $state(readFullscreenEnvironment());
@@ -433,19 +261,24 @@
       space?.stop();
       return;
     }
-    if (pointing !== "off") stopPointing();
+    if (pointer.state !== "off") pointer.stop();
     if (!space && catalog) {
       spaceLoading = true;
+      spaceError = false;
       try {
         const base = import.meta.env.BASE_URL;
+        const get = (path: string) =>
+          fetch(`${base}data/${path}`).then((r) =>
+            r.ok ? r : Promise.reject(new Error(`${path}: HTTP ${r.status}`)),
+          );
         const image = (file: string) =>
-          fetch(`${base}data/earth/${file}`)
+          get(`earth/${file}`)
             .then((r) => r.blob())
             .then((b) => createImageBitmap(b));
         const [relief, lights, coast] = await Promise.all([
           image("relief.webp"),
           image("lights.webp"),
-          fetch(`${base}data/earth/coastlines.bin`).then((r) => r.arrayBuffer()),
+          get("earth/coastlines.bin").then((r) => r.arrayBuffer()),
         ]);
         space = new SpaceView({
           canvas: spaceCanvas,
@@ -466,12 +299,13 @@
           style: spaceStyle,
           monochrome: night,
           loadTexture: (name) =>
-            fetch(`${base}data/space/${name}.webp`)
-              .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(r.statusText))))
+            get(`space/${name}.webp`)
+              .then((r) => r.blob())
               .then((b) => createImageBitmap(b)),
         });
       } catch (e) {
         console.error(e);
+        spaceError = true;
         return;
       } finally {
         spaceLoading = false;
@@ -493,11 +327,12 @@
   }
 
   function faceNorth() {
-    if (pointing === "on") return;
+    if (pointer.state === "on") return;
     map?.animateTo({ azimuth: 0 });
   }
 
   function locate() {
+    if (locating === "busy") return;
     if (!("geolocation" in navigator)) {
       locating = "error";
       return;
@@ -519,7 +354,9 @@
     );
   }
 
-  onMount(async () => {
+  /** Loads the catalogue and starts the map; on failure, the error screen offers a retry. */
+  async function loadSky() {
+    status = "loading";
     try {
       const base = import.meta.env.BASE_URL;
       const load = (file: string) =>
@@ -547,7 +384,7 @@
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: select,
-        onPointingDrag,
+        onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
           viewRoll = v.roll ?? 0;
@@ -559,47 +396,63 @@
               ? planetName(t.planet)
               : t.kind === "constellation"
                 ? (names[t.abbr] ?? t.abbr)
-                : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
+                : starLabel(t.star),
       });
-      map.setObserver(place);
-      status = "ready";
-      observeHud();
-      const params = new URLSearchParams(location.search);
-      if (params.get("night") === "1") night = true;
-      const r = params.get("range");
-      if (r === "48h" || r === "1y" || r === "26ky") range = r;
-      const off = Number(params.get("offset"));
-      if (Number.isFinite(off) && off !== 0) setOffset(off);
-      const view = ["az", "alt", "fov"].map((k) => Number(params.get(k) ?? NaN));
-      map.setView({
-        ...(Number.isFinite(view[0]) && { azimuth: view[0] }),
-        ...(Number.isFinite(view[1]) && { altitude: view[1] }),
-        ...(Number.isFinite(view[2]) && { fov: view[2] }),
-      });
-      if (params.get("panel") === "layers") layersOpen = true; // captures
-      if (params.get("panel") === "credits") creditsOpen = true; // captures
-      // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
-      if (params.get("space") === "1") {
-        await toggleSpace();
-        const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "")
-          .split(",")
-          .map(Number);
-        if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
-      }
-      clock = setInterval(() => {
-        if (live) goLive();
-      }, 30_000);
     } catch (e) {
       console.error(e);
+      map?.dispose();
+      map = undefined;
       status = "error";
+      return false;
     }
+    map.setObserver(place);
+    status = "ready";
+    return true;
+  }
+
+  onMount(async () => {
+    if (!(await loadSky())) return;
+    startSession();
   });
+
+  /** After the first successful load: URL state (captures), HUD exclusions, live clock. */
+  async function startSession() {
+    if (!map) return;
+    observeHud();
+    const params = new URLSearchParams(location.search);
+    if (params.get("night") === "1") night = true;
+    const r = params.get("range");
+    if (r === "48h" || r === "1y" || r === "26ky") range = r;
+    const off = Number(params.get("offset"));
+    if (Number.isFinite(off) && off !== 0) setOffset(off);
+    const view = ["az", "alt", "fov"].map((k) => Number(params.get(k) ?? NaN));
+    map.setView({
+      ...(Number.isFinite(view[0]) && { azimuth: view[0] }),
+      ...(Number.isFinite(view[1]) && { altitude: view[1] }),
+      ...(Number.isFinite(view[2]) && { fov: view[2] }),
+    });
+    if (params.get("panel") === "layers") layersOpen = true; // captures
+    if (params.get("panel") === "credits") creditsOpen = true; // captures
+    // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
+    if (params.get("space") === "1") {
+      await toggleSpace();
+      const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "").split(",").map(Number);
+      if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
+    }
+    clock = setInterval(() => {
+      if (live) goLive();
+    }, 30_000);
+  }
+
+  async function retrySky() {
+    if (await loadSky()) startSession();
+  }
 
   // --- Constellation sheet (#61)
   /** Selects from the map; a constellation hidden under the sheet is brought above it. */
   function select(s: SkySelection | null) {
     selection = s;
-    if (s?.kind !== "constellation" || !map || !catalog || pointing !== "off") return;
+    if (s?.kind !== "constellation" || !map || !catalog || pointer.state !== "off") return;
     const placement = placeFigure(
       figureDirections(catalog.stars, catalog.lines, s.abbr),
       date,
@@ -623,7 +476,7 @@
       name: names[abbr] ?? abbr,
       latin: CONSTELLATION_LATIN[abbr] ?? abbr,
       star,
-      brightest: star ? { label: star.name ?? star.bayer ?? `HIP ${star.hip}`, v: star.v } : null,
+      brightest: star ? { label: starLabel(star), v: star.v } : null,
       visibility: placement?.visibility ?? null,
     };
   });
@@ -633,14 +486,15 @@
   });
 
   // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).
-  let header: HTMLElement;
-  let compass: HTMLElement;
+  let header = $state<HTMLElement>();
+  let compass = $state<HTMLElement>();
   let bottomNav: HTMLElement;
   let hudObserver: ResizeObserver | undefined;
+  const hudBlocks = () => [header, compass, bottomNav].filter((el) => el !== undefined);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
     map?.setHudExclusions(
-      [header, compass, bottomNav].map((el) => {
+      hudBlocks().map((el) => {
         const r = el.getBoundingClientRect();
         return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
       }),
@@ -648,18 +502,22 @@
   }
   function observeHud() {
     hudObserver = new ResizeObserver(updateGraduationExclusions);
-    for (const el of [header, compass, bottomNav]) hudObserver.observe(el);
+    for (const el of hudBlocks()) hudObserver.observe(el);
     addEventListener("resize", updateGraduationExclusions);
   }
   let controlsHeight = $state(140);
   let dialsHeight = $state(148);
   let headerHeight = $state(90);
+  /** Sheets and panels stay above the time controls, whatever their measured height. */
+  const aboveControls = $derived(
+    `calc(max(16px, env(safe-area-inset-bottom)) + ${controlsHeight + 8}px)`,
+  );
 
   onDestroy(() => {
     hudObserver?.disconnect();
     removeEventListener("resize", updateGraduationExclusions);
     space?.dispose();
-    stopPointing();
+    pointer.stop();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
     removeEventListener("pointerup", restoreFullscreen, true);
     stopPlaying();
@@ -764,25 +622,61 @@
       moon: { ...bodies.moon, illumination: bodies.phase.illumination },
     });
   });
+
+  // --- Info panels (star, Sun/Moon, planet): rows of label/value, labels from the catalogue.
   const KM_PER_AU = 149_597_870.7;
+  const fixed = (x: number, digits: number) => x.toFixed(digits);
+  const positionRows = (b: { altitude: number; azimuth: number; ra: number; dec: number }) => [
+    { label: $_("body.altitude"), value: `${fixed(b.altitude, 1)}°` },
+    { label: $_("body.azimuth"), value: `${fixed(b.azimuth, 1)}°` },
+    { label: $_("data.ra"), value: formatRa(b.ra) },
+    { label: $_("data.dec"), value: formatDec(b.dec) },
+  ];
+
+  const starRows = $derived.by((): InfoRow[] => {
+    if (!selected) return [];
+    // The map hands back the decoded catalogue records, which carry the parallax error.
+    const d = starDistance(selected.plx, (selected as CatalogRecord).ePlx);
+    const rows: InfoRow[] = [
+      { label: $_("data.ra"), value: formatRa(selected.ra) },
+      { label: $_("data.dec"), value: formatDec(selected.dec) },
+      { label: $_("data.v"), value: fixed(selected.v, 2) },
+    ];
+    if (selected.bv !== undefined)
+      rows.push({ label: $_("data.bv"), value: fixed(selected.bv, 2) });
+    rows.push({
+      label: $_("data.dist"),
+      value: !d
+        ? $_("star.unknownDistance")
+        : d.approx
+          ? $_("star.distanceApprox", { values: { ly: d.ly } })
+          : $_("star.distance", { values: { ly: d.ly } }),
+      title: d?.approx
+        ? $_("star.distanceApprox.hint")
+        : !d && (selected.plx ?? 0) > 0
+          ? $_("star.unknownDistance.hint")
+          : undefined,
+    });
+    return rows;
+  });
+
   const bodyInfo = $derived.by(() => {
     if (!selectedBody) return null;
     const b = selectedBody === "Sun" ? bodies.sun : bodies.moon;
     return {
       name: $_(`body.${selectedBody}` as `body.${BodyName}`),
-      lines: [
-        `${$_("body.altitude").padEnd(8)} ${b.altitude.toFixed(1)}°`,
-        `${$_("body.azimuth").padEnd(8)} ${b.azimuth.toFixed(1)}°`,
-        `RA       ${formatRa(b.ra)}`,
-        `DEC      ${formatDec(b.dec)}`,
-        `DIST     ${
-          selectedBody === "Sun"
-            ? $_("body.distanceAu", {
-                values: { au: Math.round((b.distanceKm / KM_PER_AU) * 1000) / 1000 },
-              })
-            : $_("body.distance", { values: { km: Math.round(b.distanceKm) } })
-        }`,
-      ].join("\n"),
+      rows: [
+        ...positionRows(b),
+        {
+          label: $_("data.dist"),
+          value:
+            selectedBody === "Sun"
+              ? $_("body.distanceAu", {
+                  values: { au: Math.round((b.distanceKm / KM_PER_AU) * 1000) / 1000 },
+                })
+              : $_("body.distance", { values: { km: Math.round(b.distanceKm) } }),
+        },
+      ],
     };
   });
 
@@ -800,32 +694,34 @@
           });
     return {
       name: planetName(p.name),
-      con: { abbr: con, name: names[con], latin: CONSTELLATION_LATIN[con] },
-      lines: [
-        `${$_("planet.magnitude").padEnd(9)} ${p.magnitude.toFixed(1)}`,
-        `${$_("body.altitude").padEnd(9)} ${p.altitude.toFixed(1)}°`,
-        `${$_("body.azimuth").padEnd(9)} ${p.azimuth.toFixed(1)}°`,
-        `RA        ${formatRa(p.ra)}`,
-        `DEC       ${formatDec(p.dec)}`,
-        `DIST      ${$_("planet.distance", {
-          values: { au: Math.round((p.distanceKm / KM_PER_AU) * 100) / 100 },
-        })}`,
-        `          ${light}`,
-      ].join("\n"),
+      con: { abbr: con, name: names[con] ?? con, latin: CONSTELLATION_LATIN[con] ?? con },
+      rows: [
+        { label: $_("planet.magnitude"), value: fixed(p.magnitude, 1) },
+        ...positionRows(p),
+        {
+          label: $_("data.dist"),
+          value: $_("planet.distance", {
+            values: { au: Math.round((p.distanceKm / KM_PER_AU) * 100) / 100 },
+          }),
+        },
+        { label: "", value: light },
+      ],
     };
   });
 
-  const time = $derived(
-    range === "26ky"
-      ? $_("time.year", { values: { year: date.getUTCFullYear() } })
-      : date.toLocaleString("fr-FR", {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-  );
+  const time = $derived.by(() => {
+    if (range === "26ky") {
+      const y = yearLabel(date.getUTCFullYear());
+      return $_(y.key, { values: { year: y.year } });
+    }
+    return date.toLocaleString(lang, {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  });
   const relative = $derived.by(() => {
     if (live) return "";
     const p = offsetParts(offset, range);
@@ -840,7 +736,6 @@
     "26ky": "time.hint.precession",
   };
   const hint = $derived(playing ? $_(HINTS[range]) : "");
-  const distance = $derived(selected ? parallaxToLightYears(selected.plx) : null);
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
     if (selected) return altitudeOf(selected.ra, selected.dec, date, place) < 0;
@@ -858,6 +753,7 @@
       },
     }),
   );
+  const toastTop = $derived(`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16}px)`);
 </script>
 
 <div class="view" class:hidden={mode !== "sky"}>
@@ -869,164 +765,135 @@
   <canvas class="overlay" bind:this={spaceOverlay}></canvas>
 </div>
 
-<header class="hud top" bind:this={header} bind:clientHeight={headerHeight}>
-  <p class="meta">
-    {mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
-    {#if spaceLoading}· {$_("space.loading")}{/if}
-  </p>
-  <button class="where" onclick={locate} title={$_("place.locate")}>
-    {place.name === "mine" ? $_("place.mine") : $_("place.paris")} ⌖
-  </button>
-  <p class="when">
-    {coords} · {time}
-    {#if live}<span class="live">● {$_("time.live")}</span>{:else}<span class="live"
-        >{relative}</span
-      >{/if}
-  </p>
-  {#if locating !== "idle"}
-    <p class="meta">{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</p>
-  {/if}
-</header>
+<SkyHeader
+  bind:element={header}
+  bind:height={headerHeight}
+  title={mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
+  loading={spaceLoading}
+  place={place.name === "mine" ? $_("place.mine") : $_("place.paris")}
+  {coords}
+  {time}
+  {live}
+  {relative}
+  {locating}
+/>
 
-<div class="hud compass" bind:this={compass} bind:clientHeight={dialsHeight}>
-  {#if fullscreenAvailable}
-    <button
-      class="dial"
-      onclick={toggleFullscreen}
-      aria-pressed={fullscreenEnv.active}
-      aria-label={fullscreenEnv.active ? $_("fullscreen.exit") : $_("fullscreen.enter")}
-      title={fullscreenEnv.active ? $_("fullscreen.exit") : $_("fullscreen.enter")}
-    >
-      <span class="dial-icon"
-        ><Icon name={fullscreenEnv.active ? "fullscreenExit" : "fullscreen"} /></span
-      >
-    </button>
-  {/if}
-  <button
-    class="dial"
-    onclick={toggleSpace}
-    aria-pressed={mode === "space"}
-    aria-label={mode === "space" ? $_("space.toggleToSky") : $_("space.toggleToEarth")}
-    title={mode === "space" ? $_("space.toggleToSky") : $_("space.toggleToEarth")}
-  >
-    <span class="dial-icon"><Icon name={mode === "space" ? "sky" : "earth"} /></span>
-  </button>
-  {#if mode === "sky"}
-    <button
-      class="dial"
-      onclick={faceNorth}
-      aria-label={$_("compass.north")}
-      title={$_("compass.north")}
-      disabled={pointing === "on"}
-    >
-      <svg viewBox="-20 -20 40 40" aria-hidden="true">
-        <circle r="18" class="ring" />
-        <g transform={`rotate(${-viewAzimuth - viewRoll})`}>
-          <path d="M0 -15 L4 0 L0 3 L-4 0 Z" class="north" />
-          <path d="M0 15 L4 0 L0 -3 L-4 0 Z" class="south" />
-          <text y="-7" text-anchor="middle" class="n">N</text>
-        </g>
-      </svg>
-    </button>
-    <button
-      class="dial"
-      onclick={togglePointing}
-      aria-pressed={pointing === "on" || pointing === "waiting"}
-      aria-label={$_("pointing.toggle")}
-      title={$_("pointing.toggle")}
-    >
-      <svg viewBox="-20 -20 40 40" aria-hidden="true">
-        <circle r="9" class="ring" />
-        <path d="M0 -18 V-12 M0 12 V18 M-18 0 H-12 M12 0 H18" class="ring" />
-        <circle r="2" class="north" />
-      </svg>
-    </button>
-  {:else}
-    <button
-      class="dial"
-      onclick={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
-      aria-pressed={spaceStyle === "realistic"}
-      aria-label={$_("space.realistic")}
-      title={$_("space.realistic")}
-    >
-      <span class="dial-icon"><Icon name="realistic" /></span>
-    </button>
-  {/if}
-</div>
-{#if pointing === "waiting"}
-  <p class="hud toast" role="status">{$_("pointing.hint")}</p>
-{:else if pointing === "on" && relativeNotice}
-  <button class="hud toast" onclick={() => (relativeNotice = false)}>
+<DialsColumn
+  bind:element={compass}
+  bind:height={dialsHeight}
+  {mode}
+  fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
+  {locating}
+  pointing={pointer.state === "on" || pointer.state === "waiting"}
+  northDisabled={pointer.state === "on"}
+  rotation={-viewAzimuth - viewRoll}
+  realistic={spaceStyle === "realistic"}
+  onfullscreen={toggleFullscreen}
+  onview={toggleSpace}
+  onlocate={locate}
+  onnorth={faceNorth}
+  onpoint={() => pointer.toggle()}
+  onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
+/>
+
+{#if pointer.state === "waiting"}
+  <p class="hud toast" style:top={toastTop} role="status">{$_("pointing.hint")}</p>
+{:else if pointer.state === "on" && pointer.relativeNotice}
+  <button class="hud toast" style:top={toastTop} onclick={() => (pointer.relativeNotice = false)}>
     {$_("pointing.relative")}<span class="dismiss">{$_("pointing.dismiss")}</span>
   </button>
-{:else if pointing === "failed" && pointingError}
-  <button class="hud toast" aria-live="assertive" onclick={() => (pointing = "off")}>
-    {$_(failureMessageKey(pointingError, isBrave))}<span class="dismiss"
+{:else if pointer.state === "failed" && pointer.error}
+  <button
+    class="hud toast"
+    style:top={toastTop}
+    aria-live="assertive"
+    onclick={() => (pointer.state = "off")}
+  >
+    {$_(failureMessageKey(pointer.error, pointer.isBrave))}<span class="dismiss"
       >{$_("pointing.dismiss")}</span
     >
   </button>
+{:else if spaceError}
+  <div class="hud toast notice" style:top={toastTop} role="alert">
+    <p>{$_("space.loadError")}</p>
+    <div class="actions">
+      <button class="action" onclick={toggleSpace}>{$_("app.retry")}</button>
+      <button
+        class="action"
+        onclick={() => (spaceError = false)}
+        aria-label={$_("star.close")}
+        title={$_("star.close")}>×</button
+      >
+    </div>
+  </div>
 {/if}
 
 {#if status !== "ready"}
-  <p class="status">{status === "error" ? $_("map.error") : $_("map.loading")}</p>
+  <div class="status" role={status === "error" ? "alert" : "status"}>
+    <p>{status === "error" ? $_("map.error") : $_("map.loading")}</p>
+    {#if status === "error"}
+      <button class="action frame" onclick={retrySky}>{$_("app.retry")}</button>
+    {/if}
+  </div>
 {/if}
 
 {#if selected}
-  <aside class="hud panel">
-    <p class="meta">HIP {selected.hip}{selected.bayer ? ` // ${selected.bayer}` : ""}</p>
-    <p class="name">{selected.name ?? selected.bayer ?? `HIP ${selected.hip}`}</p>
-    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
-    <button
-      class="con"
-      onclick={() => (selection = { kind: "constellation", abbr: selected.con })}
-      aria-label={$_("constellation.open", { values: { name: names[selected.con] } })}
-      >{names[selected.con]} · <i>{CONSTELLATION_LATIN[selected.con]}</i> ›</button
-    >
-    <pre class="data">RA   {formatRa(selected.ra)}
-DEC  {formatDec(selected.dec)}
-V    {selected.v.toFixed(2)}{selected.bv !== undefined ? `\nB−V  ${selected.bv.toFixed(2)}` : ""}
-DIST {distance
-        ? $_("star.distance", { values: { ly: Math.round(distance) } })
-        : $_("star.unknownDistance")}</pre>
-    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
-    >
-  </aside>
+  <InfoPanel
+    name={starLabel(selected)}
+    {belowHorizon}
+    constellation={{
+      name: names[selected.con] ?? selected.con,
+      latin: CONSTELLATION_LATIN[selected.con] ?? selected.con,
+      onopen: () => (selection = { kind: "constellation", abbr: selected.con }),
+    }}
+    rows={starRows}
+    bottom={aboveControls}
+    onclose={() => (selection = null)}
+  >
+    {#snippet meta()}
+      {#if selected.bayer}{`${hipLabel(selected.hip)} // `}<Designation
+          text={selected.bayer}
+        />{:else}{hipLabel(selected.hip)}{/if}
+    {/snippet}
+  </InfoPanel>
 {/if}
 
 {#if bodyInfo}
-  <aside class="hud panel">
-    <p class="meta">
+  <InfoPanel
+    name={bodyInfo.name}
+    {belowHorizon}
+    rows={bodyInfo.rows}
+    bottom={aboveControls}
+    onclose={() => (selection = null)}
+  >
+    {#snippet meta()}
       {#if selectedBody === "Moon"}
         {$_("moon.illumination", { values: { pct: Math.round(bodies.phase.illumination * 100) } })}
         · {bodies.phase.waxing ? $_("moon.waxing") : $_("moon.waning")}
       {:else}
-        G2V
+        {$_("sun.kind")}
       {/if}
-    </p>
-    <p class="name">{bodyInfo.name}</p>
-    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
-    <pre class="data">{bodyInfo.lines}</pre>
+    {/snippet}
     {#if selectedBody === "Sun"}<p class="warn">{$_("sun.warning")}</p>{/if}
-    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
-    >
-  </aside>
+  </InfoPanel>
 {/if}
 
 {#if planetInfo}
-  <aside class="hud panel">
-    <p class="meta">{$_("planet.kind")}</p>
-    <p class="name">{planetInfo.name}</p>
-    {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
-    <button
-      class="con"
-      onclick={() => (selection = { kind: "constellation", abbr: planetInfo.con.abbr })}
-      aria-label={$_("constellation.open", { values: { name: planetInfo.con.name } })}
-      >{planetInfo.con.name} · <i>{planetInfo.con.latin}</i> ›</button
-    >
-    <pre class="data">{planetInfo.lines}</pre>
-    <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
-    >
-  </aside>
+  {@const info = planetInfo}
+  <InfoPanel
+    name={info.name}
+    {belowHorizon}
+    constellation={{
+      name: info.con.name,
+      latin: info.con.latin,
+      onopen: () => (selection = { kind: "constellation", abbr: info.con.abbr }),
+    }}
+    rows={info.rows}
+    bottom={aboveControls}
+    onclose={() => (selection = null)}
+  >
+    {#snippet meta()}{$_("planet.kind")}{/snippet}
+  </InfoPanel>
 {/if}
 
 {#if constellationInfo}
@@ -1039,8 +906,8 @@ DIST {distance
       brightest={info.brightest}
       visibility={info.visibility}
       daylight={bodies.sun.altitude > -6}
-      top={`calc(max(16px, env(safe-area-inset-top)) + ${Math.max(headerHeight, mode === "sky" ? dialsHeight : 0) + 8}px)`}
-      bottom={`calc(max(16px, env(safe-area-inset-bottom)) + ${controlsHeight + 8}px)`}
+      top={`calc(max(16px, env(safe-area-inset-top)) + ${Math.max(headerHeight, dialsHeight) + 8}px)`}
+      bottom={aboveControls}
       onclose={() => (selection = null)}
       onstar={info.star
         ? () => info.star && (selection = { kind: "star", star: info.star })
@@ -1095,8 +962,12 @@ DIST {distance
     />
     <div class="row">
       <div class="group frame">
-        <button onclick={cycleRange}><Icon name="range" />{$_(`time.range.${range}`)}</button>
-        <button aria-pressed={live} onclick={goLive}><Icon name="now" />{$_("time.now")}</button>
+        <button onclick={cycleRange} title={$_("time.rangeChange")}
+          ><Icon name="range" />{$_(`time.range.${range}`)}</button
+        >
+        <button aria-pressed={live} onclick={goLive} title={$_("time.backToNow")}
+          ><Icon name="now" />{$_("time.now")}</button
+        >
       </div>
       <div class="group frame">
         <button
@@ -1106,14 +977,15 @@ DIST {distance
           onclick={() => (layersOpen = !layersOpen)}
           class="icon"
           aria-label={$_("layers.open")}
-          title={$_("layers.open")}><Icon name="layers" /></button
+          title={$_("layers.open")}><Icon name="layers" size={18} /></button
         >
 
         <button
           aria-pressed={night}
           onclick={() => (night = !night)}
           class="icon"
-          aria-label={$_("night.toggle")}><Icon name="night" /></button
+          aria-label={$_("night.toggle")}
+          title={$_("night.toggle")}><Icon name="night" size={18} /></button
         >
       </div>
     </div>
@@ -1148,69 +1020,6 @@ DIST {distance
     position: fixed;
     z-index: 2;
   }
-  /* Stops short of the dials column (44 px + 12 px gap) so the date never runs under it. */
-  .top {
-    top: max(16px, env(safe-area-inset-top));
-    left: max(16px, env(safe-area-inset-left));
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
-    pointer-events: none;
-  }
-  .meta,
-  .where,
-  .when {
-    margin: 0;
-    font-size: 11px;
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-  }
-  .meta {
-    color: var(--ast-fg-muted);
-  }
-  .where {
-    display: block;
-    pointer-events: auto;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--ast-fg);
-    cursor: pointer;
-    text-transform: uppercase;
-    margin-top: 6px;
-    font-family: var(--ast-font-display);
-    font-weight: 700;
-    font-size: 28px;
-    letter-spacing: 0.02em;
-    line-height: 1;
-  }
-  .when {
-    margin-top: 4px;
-    color: var(--ast-fg-muted);
-  }
-  .live {
-    white-space: nowrap;
-    margin-left: 6px;
-    color: var(--ast-fg);
-  }
-  .con {
-    display: block;
-    height: auto;
-    min-height: 32px;
-    padding: 0;
-    border: 0;
-    text-align: left;
-    margin: -4px 0 4px;
-    line-height: 1.4;
-    font-size: 11px;
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .con i {
-    font-family: var(--ast-font-serif);
-    font-size: 15px;
-    letter-spacing: 0;
-    text-transform: none;
-  }
   .warn {
     margin: 8px 0 0;
     font-size: 10px;
@@ -1220,71 +1029,8 @@ DIST {distance
   .view.hidden {
     display: none;
   }
-  .dial-icon {
-    display: grid;
-    place-items: center;
-    width: 100%;
-    height: 100%;
-    color: var(--ast-fg);
-  }
-  .dial[aria-pressed="true"] .dial-icon {
-    color: var(--ast-bg);
-  }
-  .compass {
-    top: max(16px, env(safe-area-inset-top));
-    right: max(16px, env(safe-area-inset-right));
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .dial {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    border: 1px solid var(--ast-hairline);
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
-    backdrop-filter: blur(4px);
-  }
-  .dial[aria-pressed="true"] {
-    background: var(--ast-fg);
-  }
-  .dial:disabled {
-    opacity: 0.5;
-  }
-  .dial svg {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  .dial .ring {
-    fill: none;
-    stroke: var(--ast-fg-muted);
-    stroke-width: 1;
-  }
-  .dial .north {
-    fill: var(--ast-fg);
-  }
-  .dial .south {
-    fill: none;
-    stroke: var(--ast-fg-muted);
-    stroke-width: 1;
-  }
-  .dial .n {
-    font: 700 6px var(--ast-font-mono);
-    fill: var(--ast-fg);
-  }
-  .dial[aria-pressed="true"] .ring,
-  .dial[aria-pressed="true"] .north {
-    stroke: var(--ast-bg);
-    fill: var(--ast-bg);
-  }
-  .dial[aria-pressed="true"] .ring {
-    fill: none;
-  }
   /* Left of the dials column (44 px + 12 px gap), below the header. */
   .toast {
-    top: calc(max(16px, env(safe-area-inset-top)) + 110px);
     left: max(16px, env(safe-area-inset-left));
     right: calc(max(16px, env(safe-area-inset-right)) + 56px);
     margin: 0 auto;
@@ -1308,16 +1054,35 @@ DIST {distance
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
+  .notice p {
+    margin: 0 0 8px;
+  }
+  .notice .actions {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+  .action {
+    border: 1px solid var(--ast-hairline);
+    color: var(--ast-fg);
+    justify-content: center;
+    min-width: 44px;
+  }
   .status {
     position: fixed;
     inset: 0;
     display: grid;
     place-content: center;
+    justify-items: center;
+    gap: 12px;
     margin: 0;
     font-size: 11px;
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
+  }
+  .status p {
+    margin: 0;
   }
   .bottom {
     left: max(16px, env(safe-area-inset-left));
@@ -1376,6 +1141,9 @@ DIST {distance
     padding: 0;
     min-width: 44px;
     justify-content: center;
+  }
+  .row button.icon:not([aria-pressed="true"], [aria-expanded="true"]) {
+    color: var(--ast-fg);
   }
   .hint {
     max-width: 420px;
@@ -1438,37 +1206,5 @@ DIST {distance
   button[aria-expanded="true"] {
     color: var(--ast-bg);
     background: var(--ast-fg);
-  }
-  .panel {
-    left: max(16px, env(safe-area-inset-left));
-    right: max(16px, env(safe-area-inset-right));
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 116px);
-    max-width: 300px;
-    border: 1px solid var(--ast-hairline);
-    background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
-    backdrop-filter: blur(6px);
-    padding: 12px 14px;
-  }
-  .name {
-    margin: 4px 0 8px;
-    font-family: var(--ast-font-display);
-    font-weight: 700;
-    font-size: 30px;
-    line-height: 1;
-    text-transform: uppercase;
-  }
-  .data {
-    margin: 0;
-    font: 11px/1.7 var(--ast-font-mono);
-    letter-spacing: 0.06em;
-    color: var(--ast-fg-muted);
-  }
-  .close {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    border: 0;
-    padding: 8px 10px;
-    font-size: 16px;
   }
 </style>
