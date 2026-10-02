@@ -10,7 +10,9 @@ import {
   type Vec3,
 } from "@asteria/astro-core";
 import { bodyFrag, pathFrag, planetFrag } from "./shaders";
-import { LabelLayout } from "./labels";
+import { LabelLayout, type Rect } from "./labels";
+import { ephemerisReliable } from "./ephemeris-range";
+import { disposeObjects, watchContext } from "./lifecycle";
 import { fillPathBuffers } from "./paths";
 import {
   globeFrag,
@@ -137,6 +139,14 @@ export class SpaceView {
   private dirty = true;
   private running = false;
   private raf = 0;
+  /** The WebGL context is lost: nothing is drawn until it is restored. */
+  private contextLost = false;
+  /** Removes every listener added by the view (input, context) on dispose. */
+  private readonly listeners = new AbortController();
+  /** Screen areas (CSS px) covered by the HUD, where no label is written. */
+  private hudExclusions: readonly Rect[] = [];
+  /** Moon and planet positions are within the validated range (see ephemeris-range.ts). */
+  private ephemerisOk = true;
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private velocity = { lon: 0, lat: 0 };
   private moved = 0;
@@ -352,6 +362,14 @@ export class SpaceView {
     this.monochrome = options.monochrome ?? false;
     this.setTheme(options.theme);
     this.buildObserverMarker();
+    watchContext(canvas, this.listeners.signal, {
+      lost: () => (this.contextLost = true),
+      restored: () => {
+        this.contextLost = false;
+        this.real?.refreshTextures();
+        this.update();
+      },
+    });
     this.bindInput(canvas);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -522,9 +540,24 @@ export class SpaceView {
     cancelAnimationFrame(this.raf);
   }
 
+  /**
+   * Screen rectangles (CSS px, overlay coordinates) covered by the interface (header, buttons,
+   * time controls): no label is written there, as on the sky map.
+   */
+  setHudExclusions(rects: readonly Rect[]): void {
+    this.hudExclusions = rects.map((r) => ({ ...r }));
+    this.dirty = true;
+  }
+
+  /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
   dispose(): void {
     this.stop();
+    this.listeners.abort();
     this.resizeObserver.disconnect();
+    disposeObjects(this.scene);
+    // The globe's material not in use (engraved or realistic) is outside the scene graph.
+    this.engravedGlobe.dispose();
+    this.real?.globeMaterial.dispose();
     this.renderer.dispose();
   }
 
@@ -569,9 +602,10 @@ export class SpaceView {
     const t = this.date.getTime();
     const at = this.sunwardAt;
     if (
-      !(Math.abs(t - at.time) < LIGHT_REFRESH_MS) ||
-      at.lat !== this.observer.latitude ||
-      at.lon !== this.observer.longitude
+      this.ephemerisOk &&
+      (!(Math.abs(t - at.time) < LIGHT_REFRESH_MS) ||
+        at.lat !== this.observer.latitude ||
+        at.lon !== this.observer.longitude)
     ) {
       // Distances for the sunlight geometry only; directions stay those given by the app.
       const sun = bodyPosition("Sun", this.date, this.observer);
@@ -584,8 +618,9 @@ export class SpaceView {
     }
     const toWorld = (v: Vec3, out: THREE.Vector3) => out.set(...v).applyMatrix3(prec);
 
-    if (this.bodies) {
-      real.setSun(toWorld(this.bodies.sun, dir));
+    if (this.bodies) real.setSun(toWorld(this.bodies.sun, dir));
+    else real.setSun(null);
+    if (this.bodies && this.ephemerisOk) {
       const axes = moonAxes(this.bodies.moon);
       real.setBody(
         0,
@@ -596,12 +631,11 @@ export class SpaceView {
         -12,
       );
     } else {
-      real.setSun(null);
       real.setBody(0, null, light, pole, prime, 99);
     }
     const mags = this.planetPoints.geometry.getAttribute("aMag") as THREE.BufferAttribute;
     PLANETS.forEach((planet, i) => {
-      const d = this.planets?.[i];
+      const d = this.ephemerisOk ? this.planets?.[i] : null;
       if (!d) {
         real.setBody(i + 1, null, light, pole, prime, 99);
         return;
@@ -706,6 +740,7 @@ export class SpaceView {
 
   private refresh(): void {
     this.stale = false;
+    this.ephemerisOk = ephemerisReliable(this.date);
     const gst = greenwichMeanSiderealTime(this.date) * DEG;
     this.earth.rotation.set(0, 0, gst);
     const prec = this.precession.set(...precessionMatrix(this.date));
@@ -733,9 +768,17 @@ export class SpaceView {
     }
     const engraved = this.style === "engraving";
     this.bodyPoints.visible = engraved && !!this.bodies;
-    this.planetPoints.visible = engraved && this.layers.planets && !!this.planets;
-    this.pathPoints.visible = this.layers.planets && this.pathPoints.geometry.drawRange.count > 0;
+    // Sun = point 0, Moon = point 1 (hidden out of the ephemeris range).
+    this.bodyPoints.geometry.setDrawRange(0, this.ephemerisOk ? 2 : 1);
+    this.planetPoints.visible = engraved && this.planetsShown();
+    this.pathPoints.visible =
+      this.layers.planets && this.ephemerisOk && this.pathPoints.geometry.drawRange.count > 0;
     if (this.real && !engraved) this.refreshRealistic(prec);
+  }
+
+  /** Planets are drawn (layer on, data given, date within the ephemeris range). */
+  private planetsShown(): boolean {
+    return this.layers.planets && this.ephemerisOk && !!this.planets;
   }
 
   private resize(): void {
@@ -755,6 +798,7 @@ export class SpaceView {
   private loop = (): void => {
     if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
+    if (this.contextLost) return;
     if (
       !this.pointers.size &&
       (Math.abs(this.velocity.lon) > 0.01 || Math.abs(this.velocity.lat) > 0.01)
@@ -821,31 +865,58 @@ export class SpaceView {
     return t > 0 && (atInfinity || t < p.distanceTo(o) - 1e-3);
   }
 
+  /**
+   * Labels, by priority, placed without overlaps and outside the HUD (setHudExclusions): "you
+   * are here", Sun, Moon, planets, celestial pole, then the dated marks of the selected path.
+   */
   private drawLabels(): void {
     const { ctx } = this;
     const { canvas, theme, labels } = this.options;
-    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    const { clientWidth: width, clientHeight: height } = canvas;
+    ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = theme.ink;
     ctx.textBaseline = "middle";
-    ctx.font = "700 11px 'JetBrains Mono', monospace";
-    ctx.letterSpacing = "0.12em";
+    ctx.textAlign = "left";
+    ctx.globalAlpha = 1;
+    // No label under the HUD, nor cut by the top or bottom edge.
+    const layout = new LabelLayout([
+      ...this.hudExclusions,
+      { x: -width, y: -100, w: 3 * width, h: 100 },
+      { x: -width, y: height, w: 3 * width, h: 100 },
+    ]);
+    const H = 12;
+    const font = (weightSize: string, spacing: string) => {
+      ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
+      ctx.letterSpacing = spacing;
+    };
+    /** A label beside a point: right, left, above, below; `dx` clears the glyph drawn there. */
     const label = (text: string, p: THREE.Vector3, atInfinity: boolean, dx = 10) => {
       if (this.hiddenByEarth(p, atInfinity)) return;
       const s = this.screenOf(p, atInfinity);
-      if (s) ctx.fillText(text.toUpperCase(), s[0] + dx, s[1]);
+      if (!s) return;
+      const [x, y] = s;
+      const t = text.toUpperCase();
+      const w = ctx.measureText(t).width;
+      const r = layout.place([
+        { x: x + dx, y: y - H / 2, w, h: H },
+        { x: x - dx - w, y: y - H / 2, w, h: H },
+        { x: x - w / 2, y: y - dx - H, w, h: H },
+        { x: x - w / 2, y: y + dx, w, h: H },
+      ]);
+      if (r) ctx.fillText(t, r.x, r.y + H / 2);
     };
+    font("700 11px", "0.12em");
     const here = geo(this.observer.longitude, this.observer.latitude, 1.3).applyMatrix4(
       this.earth.matrixWorld,
     );
     label(labels.here, here, false);
-    label(labels.pole, new THREE.Vector3(0, 0, 1), true);
     if (this.bodies) {
       label(labels.sun, this.dirAt(0), true, 20);
-      label(labels.moon, this.dirAt(1), true, this.labelOffset(0, 18));
+      if (this.ephemerisOk) label(labels.moon, this.dirAt(1), true, this.labelOffset(0, 18));
     }
     const names = this.options.planetNames;
-    if (this.layers.planets && this.planets && names) {
-      ctx.font = "700 10px 'JetBrains Mono', monospace";
+    if (this.planetsShown() && this.planets && names) {
+      font("700 10px", "0.12em");
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       const d = new THREE.Vector3();
       this.planets.forEach((p, i) => {
@@ -858,12 +929,12 @@ export class SpaceView {
         );
       });
     }
-    // Dated monthly marks of the selected planet's path, without overlaps.
+    font("700 11px", "0.12em");
+    label(labels.pole, new THREE.Vector3(0, 0, 1), true);
+    // Dated monthly marks of the selected planet's path (lowest priority).
     if (this.pathPoints.visible && this.pathMarks.length) {
-      ctx.font = "400 9px 'JetBrains Mono', monospace";
-      ctx.letterSpacing = "0.06em";
+      font("400 9px", "0.06em");
       ctx.globalAlpha = 0.65;
-      const layout = new LabelLayout();
       const h = 10;
       for (const { world, text } of this.pathMarks) {
         if (this.hiddenByEarth(world, true)) continue;
@@ -909,9 +980,9 @@ export class SpaceView {
     if (this.bodies) {
       const r = Math.max(22, this.uniforms.uBodySize.value / 2);
       consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
-      consider(this.dirAt(1), radius(0, r), { kind: "body", body: "Moon" });
+      if (this.ephemerisOk) consider(this.dirAt(1), radius(0, r), { kind: "body", body: "Moon" });
     }
-    if (this.layers.planets && this.planets) {
+    if (this.planetsShown() && this.planets) {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       this.planets.forEach((p, i) => {
         if (p)
@@ -925,38 +996,47 @@ export class SpaceView {
   }
 
   private bindInput(canvas: HTMLCanvasElement): void {
+    const signal = this.listeners.signal;
     canvas.style.touchAction = "none";
     let pinch = 0;
     const distance = () => {
       const [a, b] = [...this.pointers.values()];
       return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
     };
-    canvas.addEventListener("pointerdown", (e) => {
-      canvas.setPointerCapture(e.pointerId);
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.velocity = { lon: 0, lat: 0 };
-      this.moved = 0;
-      if (this.pointers.size === 2) pinch = distance();
-    });
-    canvas.addEventListener("pointermove", (e) => {
-      const prev = this.pointers.get(e.pointerId);
-      if (!prev) return;
-      const [dx, dy] = [e.clientX - prev.x, e.clientY - prev.y];
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.moved += Math.abs(dx) + Math.abs(dy);
-      if (this.pointers.size === 1) {
-        // Dragging turns the globe under the finger (the camera orbits the other way).
-        const k = (60 / canvas.clientHeight) * (this.orbit.dist / 4);
-        this.velocity = { lon: -dx * k, lat: dy * k };
-        this.orbit.lon += this.velocity.lon;
-        this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
-      } else if (this.pointers.size === 2) {
-        const d = distance();
-        if (pinch > 0) this.zoom(pinch / d);
-        pinch = d;
-      }
-      this.dirty = true;
-    });
+    canvas.addEventListener(
+      "pointerdown",
+      (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this.velocity = { lon: 0, lat: 0 };
+        this.moved = 0;
+        if (this.pointers.size === 2) pinch = distance();
+      },
+      { signal },
+    );
+    canvas.addEventListener(
+      "pointermove",
+      (e) => {
+        const prev = this.pointers.get(e.pointerId);
+        if (!prev) return;
+        const [dx, dy] = [e.clientX - prev.x, e.clientY - prev.y];
+        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this.moved += Math.abs(dx) + Math.abs(dy);
+        if (this.pointers.size === 1) {
+          // Dragging turns the globe under the finger (the camera orbits the other way).
+          const k = (60 / canvas.clientHeight) * (this.orbit.dist / 4);
+          this.velocity = { lon: -dx * k, lat: dy * k };
+          this.orbit.lon += this.velocity.lon;
+          this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
+        } else if (this.pointers.size === 2) {
+          const d = distance();
+          if (pinch > 0) this.zoom(pinch / d);
+          pinch = d;
+        }
+        this.dirty = true;
+      },
+      { signal },
+    );
     const end = (e: PointerEvent) => {
       if (!this.pointers.delete(e.pointerId)) return;
       if (this.pointers.size === 0 && this.moved < 6 && e.type === "pointerup") {
@@ -965,15 +1045,15 @@ export class SpaceView {
       }
       pinch = 0;
     };
-    canvas.addEventListener("pointerup", end);
-    canvas.addEventListener("pointercancel", end);
+    canvas.addEventListener("pointerup", end, { signal });
+    canvas.addEventListener("pointercancel", end, { signal });
     canvas.addEventListener(
       "wheel",
       (e) => {
         e.preventDefault();
         this.zoom(Math.exp(e.deltaY * 0.0012));
       },
-      { passive: false },
+      { passive: false, signal },
     );
   }
 

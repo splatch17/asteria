@@ -184,6 +184,17 @@ export class RealisticLayer {
     else [u.uAtlas.value, u.uHasAtlas.value] = [t, 1];
   }
 
+  /**
+   * After a WebGL context loss: uploads the loaded textures again. three.js already re-creates
+   * its GL objects on restore; flagging them makes the re-upload explicit and independent of its
+   * internals. The images stay referenced by the textures, so nothing is fetched again.
+   */
+  refreshTextures(): void {
+    const u = this.uniforms;
+    for (const t of [u.uDay.value, u.uMoonTex.value, u.uAtlas.value])
+      if (t instanceof THREE.Texture && t.image) t.needsUpdate = true;
+  }
+
   /** Sun direction (world), or null when unknown. */
   setSun(dir: THREE.Vector3 | null): void {
     this.hasSun = !!dir;
