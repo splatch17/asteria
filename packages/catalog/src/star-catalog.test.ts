@@ -31,12 +31,30 @@ const SAMPLE: CatalogStar[] = [
     name: "Sirius",
     bayer: "α CMa",
     con: "CMa",
+    distanceLy: 8.6,
+    distanceErrorLy: 0.04,
+    distanceSource: "hipparcos",
+    radialVelocity: -8,
+    radialVelocitySource: "bsc5",
+  },
+  {
+    hip: 102098,
+    ra: 310.357979,
+    dec: 45.280338,
+    v: 1.25,
+    con: "Cyg",
+    distanceLy: 2620,
+    distanceErrorLy: 220,
+    distanceSource: "literature",
+    distanceReference: "Schiller & Przybilla 2008, A&A 479, 849",
+    radialVelocity: -4.5,
+    radialVelocitySource: "gaia-dr3",
   },
   { hip: 1, ra: 359.999999, dec: 89.999999, v: 6.5, con: "UMi" },
   { hip: 2, ra: 0, dec: -90, v: 3.123, bv: -0.31, plx: -52.82, pmRa: 4168.31, con: "Oct" },
   { hip: 3, ra: 180.5, dec: 0.000001, v: 0, bv: 3.332, plx: 796.92, pmDec: -5813.62, con: "Vir" },
 ];
-const CONS = ["CMa", "Oct", "UMi", "Vir"];
+const CONS = ["CMa", "Cyg", "Oct", "UMi", "Vir"];
 
 function expectClose(actual: CatalogStar[], expected: CatalogStar[]) {
   expect(actual).toHaveLength(expected.length);
@@ -54,12 +72,32 @@ function expectClose(actual: CatalogStar[], expected: CatalogStar[]) {
 describe("star catalogue binary format", () => {
   it("round-trips a small catalogue", () => {
     const { buffer, strings } = encodeStarCatalog(SAMPLE, CONS);
-    expect(buffer.byteLength).toBe(16 + 4 * 3 + SAMPLE.length * BYTES_PER_STAR);
+    expect(BYTES_PER_STAR).toBe(51);
+    expect(buffer.byteLength).toBe(16 + 4 * 4 + SAMPLE.length * BYTES_PER_STAR);
     expect(strings.name).toEqual({ 32349: "Sirius" });
     const decoded = decodeStarCatalog(buffer, strings);
     expectClose(decoded, SAMPLE);
-    expect(decoded[1]).not.toHaveProperty("bv");
-    expect(decoded[1]).not.toHaveProperty("hd");
+    expect(decoded[2]).not.toHaveProperty("bv");
+    expect(decoded[2]).not.toHaveProperty("hd");
+    expect(decoded[2]).not.toHaveProperty("distanceLy");
+    expect(decoded[2]).not.toHaveProperty("radialVelocity");
+  });
+
+  it("still decodes version 1 files (no distance, no radial velocity)", () => {
+    const { buffer, strings } = encodeStarCatalog(SAMPLE, CONS, 1);
+    expect(new DataView(buffer).getUint16(4, true)).toBe(1);
+    expect(buffer.byteLength).toBe(16 + 4 * 4 + SAMPLE.length * 40);
+    const v1 = SAMPLE.map((s) => {
+      const copy: Partial<CatalogStar> = { ...s };
+      delete copy.distanceLy;
+      delete copy.distanceErrorLy;
+      delete copy.distanceSource;
+      delete copy.distanceReference;
+      delete copy.radialVelocity;
+      delete copy.radialVelocitySource;
+      return copy as CatalogStar;
+    });
+    expectClose(decodeStarCatalog(buffer, strings), v1);
   });
 
   it("rejects an invalid header", () => {
@@ -87,30 +125,43 @@ const pipelineOutput = ["stars.bin", "star-strings.json", "stars.json"].every((f
 );
 
 describe("pipeline output (packages/sky-data/out)", () => {
-  it.skipIf(!pipelineOutput)("stars.bin matches stars.json", () => {
-    const bin = readFileSync(out("stars.bin"));
-    const buffer = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
-    const strings = JSON.parse(readFileSync(out("star-strings.json"), "utf-8")) as StarStrings;
-    const json = JSON.parse(readFileSync(out("stars.json"), "utf-8")) as CatalogStar[];
+  it.skipIf(!pipelineOutput)(
+    "stars.bin matches stars.json",
+    () => {
+      const bin = readFileSync(out("stars.bin"));
+      const buffer = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
+      const strings = JSON.parse(readFileSync(out("star-strings.json"), "utf-8")) as StarStrings;
+      const json = JSON.parse(readFileSync(out("stars.json"), "utf-8")) as CatalogStar[];
 
-    const decoded = decodeStarCatalog(buffer, strings);
-    expect(decoded.length).toBe(json.length);
-    let maxError = 0;
-    decoded.forEach((d, i) => {
-      const e = json[i]!;
-      expect(d.hip).toBe(e.hip);
-      const dra = Math.abs(((d.ra - e.ra + 540) % 360) - 180);
-      maxError = Math.max(maxError, dra, Math.abs(d.dec - e.dec));
-      expect(Math.abs(d.v - e.v)).toBeLessThanOrEqual(0.001);
-      expect(d.name).toBe(e.name);
-      expect(d.bayer).toBe(e.bayer);
-      expect(d.con).toBe(e.con);
-      for (const key of ["bv", "plx", "ePlx", "pmRa", "pmDec"] as const) {
-        if (e[key] === undefined) expect(d[key]).toBeUndefined();
-        else expect(d[key]).toBeCloseTo(e[key], 6);
-      }
-      expect([d.hd, d.hr, d.flamsteed]).toEqual([e.hd, e.hr, e.flamsteed]);
-    });
-    expect(maxError).toBeLessThan(0.1 * ARCSEC);
-  });
+      const decoded = decodeStarCatalog(buffer, strings);
+      expect(decoded.length).toBe(json.length);
+      let maxError = 0;
+      decoded.forEach((d, i) => {
+        const e = json[i]!;
+        expect(d.hip).toBe(e.hip);
+        const dra = Math.abs(((d.ra - e.ra + 540) % 360) - 180);
+        maxError = Math.max(maxError, dra, Math.abs(d.dec - e.dec));
+        expect(Math.abs(d.v - e.v)).toBeLessThanOrEqual(0.001);
+        expect(d.name).toBe(e.name);
+        expect(d.bayer).toBe(e.bayer);
+        expect(d.con).toBe(e.con);
+        for (const key of ["bv", "plx", "ePlx", "pmRa", "pmDec"] as const) {
+          if (e[key] === undefined) expect(d[key]).toBeUndefined();
+          else expect(d[key]).toBeCloseTo(e[key], 6);
+        }
+        // stars.json keeps the pipeline's short field names.
+        const raw = e as unknown as Record<string, number | string | undefined>;
+        expect(d.distanceLy).toBe(raw.dist);
+        expect(d.distanceErrorLy).toBe(raw.eDist);
+        expect(d.distanceReference).toBe(raw.distRef);
+        expect(d.radialVelocity).toBe(raw.rv);
+        const sources = { hip: "hipparcos", gaia: "gaia-dr3", lit: "literature", bsc: "bsc5" };
+        expect(d.distanceSource).toBe(sources[raw.distSrc as keyof typeof sources]);
+        expect(d.radialVelocitySource).toBe(sources[raw.rvSrc as keyof typeof sources]);
+        expect([d.hd, d.hr, d.flamsteed]).toEqual([e.hd, e.hr, e.flamsteed]);
+      });
+      expect(maxError).toBeLessThan(0.1 * ARCSEC);
+    },
+    30_000,
+  ); // ~9 000 stars × 20 expectations: slow when the whole suite runs in parallel
 });

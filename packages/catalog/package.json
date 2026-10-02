@@ -10,6 +10,7 @@
     "typecheck": "tsc -p ."
   },
   "devDependencies": {
+    "@asteria/astro-core": "workspace:*",
     "@types/node": "^24.19.0"
   }
 }

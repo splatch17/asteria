@@ -19,10 +19,12 @@ const projection = /* glsl */ `
 `;
 
 /**
- * Stellar proper motion (#78): aDir is the catalogue direction at epoch J1991.25, aPm its
- * proper-motion vector (rad/yr, tangent to the sphere), uYears the years since that epoch. The
- * star moves on a straight line without radial velocity: normalize(aDir + uYears · aPm), the GPU
- * twin of astro-core's propagateDirections. Shared by the sky map and the space view.
+ * Stellar proper motion (#78): aDir is the catalogue direction at epoch J1991.25, aPm its motion
+ * vector (rad/yr), uYears the years since that epoch. The star moves on a straight line:
+ * normalize(aDir + uYears · aPm), the GPU twin of astro-core's propagateDirections. Since #79,
+ * aPm = μ + ζ·aDir carries the radial-velocity term ζ = v_r·ϖ/A (perspective acceleration):
+ * aDir + t·aPm = aDir·(1 + ζt) + μt, exactly astro-core's propagateStar once normalised.
+ * Shared by the sky map and the space view.
  */
 export const properMotion = /* glsl */ `
   uniform float uYears;

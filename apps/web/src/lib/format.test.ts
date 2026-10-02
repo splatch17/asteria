@@ -30,18 +30,42 @@ describe("format", () => {
     expect(parallaxToLightYears(undefined)).toBeNull();
   });
 
-  it("marks distances from imprecise parallaxes as approximate", () => {
-    // Sirius: 379.21 ± 1.58 mas → exact.
-    expect(starDistance(379.21, 1.58)).toEqual({ ly: 9, approx: false });
+  it("shows the reference distance, approximate when uncertain (#75)", () => {
+    // Catalogue values (packages/sky-data/out/stars.json).
+    // Sirius: Hipparcos 8.60 ± 0.04 ly → three significant figures.
+    expect(starDistance({ distanceLy: 8.6, distanceErrorLy: 0.04 })).toEqual({
+      ly: 8.6,
+      errorLy: 0.04,
+      approx: false,
+    });
+    // Deneb: Schiller & Przybilla 2008, 2 620 ± 220 ly → ≈ 2 600 ly (not 1 400 from Hipparcos).
+    expect(starDistance({ distanceLy: 2620, distanceErrorLy: 220, plx: 2.31, ePlx: 0.32 })).toEqual(
+      { ly: 2600, errorLy: 220, approx: true },
+    );
+    // Rigel: Hipparcos 863 ± 78 ly → ≈ 860 ly. Betelgeuse: Joyce et al. 2020, 548 ± 68 → ≈ 550.
+    expect(starDistance({ distanceLy: 863, distanceErrorLy: 78 })).toMatchObject({
+      ly: 860,
+      approx: true,
+    });
+    expect(starDistance({ distanceLy: 548, distanceErrorLy: 68 })).toMatchObject({
+      ly: 550,
+      approx: true,
+    });
+    // Vega (Gaia/Hipparcos, ± 0.5 %): 25.0 ly.
+    expect(starDistance({ distanceLy: 25.04, distanceErrorLy: 0.12 })).toMatchObject({ ly: 25 });
+    // Error above half the distance, or no distance: nothing shown.
+    expect(starDistance({ distanceLy: 3000, distanceErrorLy: 1600 })).toBeNull();
+    expect(starDistance({})).toBeNull();
+  });
+
+  it("falls back to the parallax for a catalogue without reference distances", () => {
     // Deneb (Hipparcos 2007): 2.31 ± 0.32 mas → ≈ 1 400 ly.
-    expect(starDistance(2.31, 0.32)).toEqual({ ly: 1400, approx: true });
-    // Betelgeuse: 6.55 ± 0.83 mas → ≈ 500 ly.
-    expect(starDistance(6.55, 0.83)).toEqual({ ly: 500, approx: true });
-    // Error larger than half the parallax: no distance.
-    expect(starDistance(1.2, 0.9)).toBeNull();
-    expect(starDistance(-0.5, 0.9)).toBeNull();
+    expect(starDistance({ plx: 2.31, ePlx: 0.32 })).toMatchObject({ ly: 1400, approx: true });
+    expect(starDistance({ plx: 379.21, ePlx: 1.58 })).toMatchObject({ ly: 8.6, approx: false });
+    expect(starDistance({ plx: 1.2, ePlx: 0.9 })).toBeNull();
+    expect(starDistance({ plx: -0.5, ePlx: 0.9 })).toBeNull();
     // No error known: shown as is.
-    expect(starDistance(10, undefined)).toEqual({ ly: 326, approx: false });
+    expect(starDistance({ plx: 10 })).toEqual({ ly: 326, errorLy: null, approx: false });
   });
 
   it("keeps Greek letters apart from the rest of a designation", () => {

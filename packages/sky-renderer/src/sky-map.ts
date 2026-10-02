@@ -88,6 +88,8 @@ export interface CatalogStar {
   /** Proper motion μα* = μα·cosδ and μδ (mas/yr); positions are at epoch J1991.25. */
   pmRa?: number;
   pmDec?: number;
+  /** Radial velocity (km/s, positive receding): perspective acceleration in aPm (#79). */
+  radialVelocity?: number;
   name?: string;
   bayer?: string;
   con: string;

@@ -21,26 +21,33 @@ procédurales.
 
 | Fichier                    | Contenu                                                     | Niveau 1 |
 | -------------------------- | ----------------------------------------------------------- | -------- |
-| `stars.bin`                | catalogue d'étoiles V ≤ 6.5, format binaire `ASTS` v1       | ✅       |
-| `star-strings.json`        | table de chaînes de `stars.bin` (noms IAU, Bayer) par HIP   | ✅       |
+| `stars.bin`                | catalogue d'étoiles V ≤ 6.5, format binaire `ASTS` v2       | ✅       |
+| `star-strings.json`        | chaînes de `stars.bin` par HIP (noms IAU, Bayer, réf. dist.) | ✅       |
 | `constellation-lines.json` | `{ "Ori": [[hip, hip, …], …], … }`                          | ✅       |
 | `stars.json`               | même catalogue en JSON (transitoire, sera retiré)           | —        |
 
-Le pipeline échoue (code 1) si l'aller-retour binaire → enregistrements diffère du JSON, ou si les
-fichiers du niveau 1 dépassent 1 000 000 octets. Tailles au 2026-10-01 (8 870 étoiles) :
+Le pipeline échoue (code 1) si l'aller-retour binaire → enregistrements diffère du JSON, si les
+fichiers du niveau 1 dépassent 1 000 000 octets ou si un contrôle échoue : étoiles témoins (nom,
+V, constellation), noms IAU lus en UTF-8 (Citalá, Lesath…), distances de référence (Sirius,
+Rigel, Bételgeuse, Deneb, tolérances dans `CONTROL_DISTANCES`), vitesses radiales (α Cen A,
+Sirius, Arcturus, 61 Cyg A) et borne du terme radial |ζ|·15 000 ans < 0,5. Tailles au 2026-10-02
+(8 872 étoiles) :
 
-| Fichier                    |          Brut |        gzip -9 |
-| -------------------------- | ------------: | -------------: |
-| `stars.json` (avant)       |   1 391 429 o |      384 532 o |
-| `stars.bin`                |     355 080 o |      246 111 o |
-| `star-strings.json`        |      31 060 o |       12 552 o |
-| `constellation-lines.json` |       6 379 o |        3 089 o |
-| **Niveau 1 (3 fichiers)**  | **392 519 o** |  **261 752 o** |
+| Fichier                    |   v1 (#16) brut |   v1 gzip -9 |   v2 (#75, #79) brut |   v2 gzip -9 |
+| -------------------------- | --------------: | -----------: | -------------------: | -----------: |
+| `stars.bin`                |       355 160 o |    246 156 o |            452 752 o |    296 844 o |
+| `star-strings.json`        |        31 060 o |     12 552 o |             31 241 o |     12 666 o |
+| `constellation-lines.json` |         6 690 o |      3 115 o |              6 690 o |      3 115 o |
+| **Niveau 1 (3 fichiers)**  |   **392 910 o** | **261 823 o** |        **490 683 o** | **312 625 o** |
+
+Le passage en v2 ajoute 11 octets par étoile (+98 Ko brut, +51 Ko gzip). Les distances sont
+arrondies à 3 chiffres significatifs (≤ 0,5 %, sous les erreurs de parallaxe) : 3 Ko gzip de moins
+qu'avec 4 chiffres. La parallaxe Gaia demande le paquet `gaiadr3-zeropoint` (requirements.txt).
 
 Décodeur TypeScript : `@asteria/catalog` (`decodeStarCatalog(buffer, strings)`). Écriture :
 `star_binary.py`, dont `decode_stars` sert de décodeur de référence au contrôle du pipeline.
 
-## Format `stars.bin` (ASTS v1)
+## Format `stars.bin` (ASTS v2)
 
 Tous les entiers sont **little-endian**. Les étoiles sont dans l'ordre de `stars.json` (V croissant).
 
@@ -49,7 +56,7 @@ Tous les entiers sont **little-endian**. Les étoiles sont dans l'ordre de `star
 | Offset | Type   | Champ         | Valeur                                                    |
 | -----: | ------ | ------------- | --------------------------------------------------------- |
 |      0 | 4 × u8 | `magic`       | `ASTS` (ASCII)                                            |
-|      4 | u16    | `version`     | `1` — toute évolution incompatible incrémente la version  |
+|      4 | u16    | `version`     | `2` (v1 : sans les 4 dernières colonnes, encore décodé)   |
 |      6 | u16    | `header_size` | offset du premier tableau (en-tête + table, aligné sur 4) |
 |      8 | u32    | `count`       | nombre d'étoiles N                                        |
 |     12 | u16    | `con_count`   | nombre de constellations C (88)                           |
@@ -59,8 +66,8 @@ Tous les entiers sont **little-endian**. Les étoiles sont dans l'ordre de `star
 (`And`, `Ant`, … `CMa`, … `Vul`), puis bourrage à zéro jusqu'à `header_size` (280 pour C = 88).
 
 **Colonnes** (_structure of arrays_) : à partir de `header_size`, un tableau de N valeurs par champ,
-dans cet ordre, sans bourrage. Taille totale attendue : `header_size + 40 × N` octets (vérifiée
-exactement par le décodeur).
+dans cet ordre, sans bourrage. Taille totale attendue : `header_size + 51 × N` octets en v2,
+`header_size + 40 × N` en v1 (vérifiée exactement par le décodeur).
 
 | Champ       | Type | Encodage                               | Absent (sentinelle) |
 | ----------- | ---- | -------------------------------------- | ------------------- |
@@ -77,6 +84,10 @@ exactement par le décodeur).
 | `hr`        | u16  | numéro HR (Yale BSC)                   | 0                   |
 | `flamsteed` | u8   | numéro Flamsteed                       | 0                   |
 | `con`       | u8   | index dans la table des constellations | — (toujours)        |
+| `dist`      | u32  | distance de référence (al) × 100 (v2)  | 0                   |
+| `eDist`     | u32  | son incertitude 1σ (al) × 100 (v2)     | 0                   |
+| `rv`        | i16  | vitesse radiale (km/s) × 10 (v2)       | −2¹⁵ (−32768)       |
+| `src`       | u8   | sources (v2) : bits 0-3 distance (1 Hipparcos, 2 Gaia DR3, 3 publication), bits 4-7 vitesse radiale (1 BSC5, 2 Gaia DR3) | 0 |
 
 Toutes les grandeurs autres que α/δ sont **sans perte** par rapport à `stars.json` (qui arrondit
 déjà à 0,001). Plages observées : parallaxe −52,82 à 796,92 mas, mouvements propres jusqu'à
@@ -93,8 +104,14 @@ mesurée du format retenu : **0,15 mas** au maximum (dominée par l'arrondi à 1
 ### Table de chaînes `star-strings.json`
 
 ```json
-{"format":"asteria-star-strings","version":1,"name":{"32349":"Sirius",…},"bayer":{"32349":"α CMa",…}}
+{"format":"asteria-star-strings","version":1,"name":{"32349":"Sirius",…},"bayer":{"32349":"α CMa",…},
+ "distRef":{"102098":"Schiller & Przybilla 2008, A&A 479, 849",…}}
 ```
+
+`distRef` (facultatif, ajouté par #75) cite la publication des distances de source 3. Le
+décodeur expose `distanceLy`, `distanceErrorLy`, `distanceSource`, `distanceReference`,
+`radialVelocity` et `radialVelocitySource` sur `CatalogStar`. Règle de choix de la distance :
+`docs/DATA_SOURCES.md`.
 
 Les chaînes sont indexées par numéro HIP et non stockées dans le binaire : une traduction ou une
 translittération des noms (ADR-0002) remplace ce fichier sans régénérer `stars.bin`. Les noms sont

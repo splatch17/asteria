@@ -173,8 +173,11 @@
   "data.dist": "DIST",
   "star.hip": "HIP {hip}",
   "star.distanceApprox": "≈ {ly, number} al",
-  "star.distanceApprox.hint": "Distance approximative : parallaxe Hipparcos peu précise",
-  "star.unknownDistance.hint": "Distance inconnue : parallaxe Hipparcos trop imprécise",
+  "star.distanceApprox.hint": "Distance approximative : ± {err, number} al. Source : {source}",
+  "star.distance.hint": "± {err, number} al. Source : {source}",
+  "star.distanceSource.hipparcos": "parallaxe Hipparcos (van Leeuwen 2007)",
+  "star.distanceSource.gaia-dr3": "parallaxe Gaia DR3 (ESA)",
+  "star.unknownDistance.hint": "Distance inconnue : parallaxe trop imprécise",
   "space.loadError": "Impossible de charger la Terre.",
   "time.rangeChange": "Changer d'échelle de temps (48 h, 1 an, 26 000 ans)",
   "time.backToNow": "Revenir à maintenant (en direct)"

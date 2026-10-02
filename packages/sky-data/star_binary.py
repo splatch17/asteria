@@ -1,4 +1,4 @@
-"""Compact binary encoding of the star catalogue (format "ASTS" v1).
+"""Compact binary encoding of the star catalogue (format "ASTS" v2; v1 still decodes).
 
 Layout (all integers little-endian, see packages/sky-data/README.md):
 
@@ -18,7 +18,8 @@ import struct
 from pathlib import Path
 
 MAGIC = b"ASTS"
-VERSION = 1
+VERSION = 2  # v2 (#75, #79): reference distance, its error and source, radial velocity
+STRINGS_VERSION = 1  # the string table only gained an optional "distRef" map
 HEADER = struct.Struct("<4sHHIHH")  # 16 bytes
 STRINGS_FORMAT = "asteria-star-strings"
 
@@ -52,8 +53,23 @@ COLUMNS: list[tuple[str, str]] = [
     ("hr", "H"),  # u16, 0 if absent
     ("flamsteed", "B"),  # u8, 0 if absent
     ("con", "B"),  # u8, index into the constellation table
+    # --- v2 ---
+    ("dist", "I"),  # u32, reference distance, ly * 100, 0 if absent
+    ("eDist", "I"),  # u32, its 1-sigma error, ly * 100, 0 if absent
+    ("rv", "h"),  # i16, radial velocity, km/s * 10, I16_NONE if absent
+    ("src", "B"),  # u8, distance source (low 4 bits) | radial velocity source << 4
 ]
-BYTES_PER_STAR = sum(struct.calcsize("<" + code) for _, code in COLUMNS)
+V1_COLUMNS = 13
+DIST_SOURCES = [None, "hip", "gaia", "lit"]  # index = low nibble of `src`
+RV_SOURCES = [None, "bsc", "gaia"]  # index = high nibble of `src`
+
+
+def bytes_per_star(version: int = VERSION) -> int:
+    cols = COLUMNS[:V1_COLUMNS] if version == 1 else COLUMNS
+    return sum(struct.calcsize("<" + code) for _, code in cols)
+
+
+BYTES_PER_STAR = bytes_per_star()
 
 
 def _milli(value: float | None, none: int) -> int:
@@ -73,6 +89,12 @@ def _encode(field: str, s: dict) -> int:
         return _milli(s.get("bv"), I16_NONE)
     if field == "con":
         return CONSTELLATIONS.index(s["con"])
+    if field in ("dist", "eDist"):
+        return round(s[field] * 100) if field in s else 0
+    if field == "rv":
+        return I16_NONE if "rv" not in s else round(s["rv"] * 10)
+    if field == "src":
+        return DIST_SOURCES.index(s.get("distSrc")) | RV_SOURCES.index(s.get("rvSrc")) << 4
     return s.get(field) or 0  # hip, hd, hr, flamsteed
 
 
@@ -94,24 +116,25 @@ def encode_stars(stars: list[dict]) -> bytes:
 def string_table(stars: list[dict]) -> dict:
     return {
         "format": STRINGS_FORMAT,
-        "version": VERSION,
+        "version": STRINGS_VERSION,
         "name": {str(s["hip"]): s["name"] for s in stars if "name" in s},
         "bayer": {str(s["hip"]): s["bayer"] for s in stars if "bayer" in s},
+        "distRef": {str(s["hip"]): s["distRef"] for s in stars if "distRef" in s},
     }
 
 
 def decode_stars(data: bytes, strings: dict) -> list[dict]:
     """Reference decoder, used by the pipeline to check the round trip."""
     magic, version, header_size, count, con_count, _ = HEADER.unpack_from(data, 0)
-    if magic != MAGIC or version != VERSION:
-        raise ValueError("not an ASTS v1 star catalogue")
-    if len(data) != header_size + count * BYTES_PER_STAR:
+    if magic != MAGIC or version not in (1, 2):
+        raise ValueError("not an ASTS v1/v2 star catalogue")
+    if len(data) != header_size + count * bytes_per_star(version):
         raise ValueError("truncated star catalogue")
     cons = data[HEADER.size : HEADER.size + 3 * con_count].decode("ascii")
     cons = [cons[i : i + 3] for i in range(0, len(cons), 3)]
     cols: dict[str, tuple] = {}
     offset = header_size
-    for field, code in COLUMNS:
+    for field, code in COLUMNS[:V1_COLUMNS] if version == 1 else COLUMNS:
         fmt = f"<{count}{code}"
         cols[field] = struct.unpack_from(fmt, data, offset)
         offset += struct.calcsize(fmt)
@@ -132,10 +155,18 @@ def decode_stars(data: bytes, strings: dict) -> list[dict]:
         for key in ("hd", "hr", "flamsteed"):
             if cols[key][i]:
                 s[key] = cols[key][i]
-        for key in ("name", "bayer"):
-            if str(hip) in strings[key]:
+        for key in ("name", "bayer", "distRef"):
+            if str(hip) in strings.get(key, {}):
                 s[key] = strings[key][str(hip)]
         s["con"] = cons[cols["con"][i]]
+        if version >= 2:
+            if cols["dist"][i]:
+                s["dist"] = cols["dist"][i] / 100
+                s["eDist"] = cols["eDist"][i] / 100
+                s["distSrc"] = DIST_SOURCES[cols["src"][i] & 15]
+            if cols["rv"][i] != I16_NONE:
+                s["rv"] = cols["rv"][i] / 10
+                s["rvSrc"] = RV_SOURCES[cols["src"][i] >> 4]
         stars.append(s)
     return stars
 

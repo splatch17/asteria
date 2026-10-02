@@ -19,21 +19,25 @@
  *   ζ = v_r·ϖ / A (rad/yr: radial velocity over distance, A = 4.740470446 km/s per AU/yr),
  *
  * with e, n the local East and North unit vectors. Without a radial velocity (ζ = 0) the parallax
- * plays no role at all: u(t) = p + μ t, which is what the GPU computes (shaders: aDir + uYears·aPm,
- * normalised).
+ * plays no role at all: u(t) = p + μ t.
+ *
+ * GPU and vectorised CPU twin (#79): u(t) = p + t·(μ + ζ p) is the same vector, so the radial term
+ * folds into one constant "motion" vector m = μ + ζ p per star. The shaders keep computing
+ * normalize(aDir + uYears·aPm) with aPm = m (`starMotion`), exactly `propagateStar` once
+ * normalised. Valid while 1 + ζt > 0 (the star does not cross the Sun): |ζ| ≤ 2.2·10⁻⁵ /yr in the
+ * catalogue (1/ζ ≥ 45 000 years), checked by the data pipeline for ±15 000 years.
  *
  * Accuracy (validated against SIMBAD, see proper-motion.test.ts)
  * - Over decades the model reproduces SIMBAD's own epoch propagation to < 0.01″; the real error
  *   is then the catalogue's (Hipparcos: ~1 mas/yr on μ, so < 0.1″ by 2026) plus unmodelled
  *   orbital motion of binaries (61 Cyg A vs Gaia: 0.6″ in 2026).
- * - Without radial velocity, the perspective acceleration is missed: the error grows as μ·ζ·t².
- *   At ±13 000 years it stays below 0.2° for most bright stars (Arcturus 0.05°, Sirius 0.14°) but
- *   reaches several degrees for the nearest fast stars (α Cen 3.4°, 61 Cyg 5.6°).
- * - The catalogue's μ errors (Hipparcos ≲ 1 mas/yr → ≲ 13″ at 13 000 years) and the
- *   straight-line model itself (no Galactic orbit, no orbital motion in multiple systems) stay
- *   small compared with the radial-velocity term. Over the 26 000-year scale the figures deform
- *   in the right direction, with the right amplitude to ~2 % for most stars (Arcturus 0.6 %,
- *   Sirius 3 %) but ~25 % off for α Cen and 61 Cyg: their far positions are illustrative.
+ * - The catalogue carries radial velocities since #79 (Gaia DR3, otherwise Yale BSC5): the
+ *   perspective acceleration μ·ζ·t² is modelled. Without it the error would reach several degrees
+ *   at ±13 000 years for the nearest fast stars (α Cen 3.4°, 61 Cyg 5.6°; Arcturus 0.05°).
+ *   Today it is negligible (< 0.15″ in 2026 for every catalogue star).
+ * - What remains: the catalogue's μ errors (Hipparcos ≲ 1 mas/yr → ≲ 13″ at 13 000 years), the
+ *   v_r errors (BSC5 values are rounded to 1 km/s: ~5 % of α Cen's 3.4° term) and the
+ *   straight-line model itself (no Galactic orbit, no orbital motion in multiple systems).
  */
 
 import { julianDate } from "./time";
@@ -107,11 +111,7 @@ export function propagateStar(star: Astrometry, years: number): Equatorial {
   const a = star.ra * RAD;
   const d = star.dec * RAD;
   const mu = properMotionVector(star.ra, star.dec, star.pmRa ?? 0, star.pmDec ?? 0);
-  const zeta =
-    star.radialVelocity !== undefined && star.plx !== undefined && star.plx > 0
-      ? (star.radialVelocity / AU_PER_YEAR_KM_S) * star.plx * MAS
-      : 0;
-  const k = 1 + zeta * years;
+  const k = 1 + radialMotionRate(star) * years;
   const x = Math.cos(d) * Math.cos(a) * k + mu[0] * years;
   const y = Math.cos(d) * Math.sin(a) * k + mu[1] * years;
   const z = Math.sin(d) * k + mu[2] * years;
@@ -119,15 +119,25 @@ export function propagateStar(star: Astrometry, years: number): Equatorial {
   return { ra: ra < 0 ? ra + 360 : ra, dec: Math.atan2(z, Math.hypot(x, y)) / RAD };
 }
 
-/** Packed epoch directions and proper-motion vectors (3 floats per star), for the renderers. */
+/** Packed epoch directions and motion vectors (3 floats per star), for the renderers. */
 export interface StarMotion {
   /** Unit vectors at the catalogue epoch. */
   dirs: Float32Array;
-  /** Proper-motion vectors, rad/yr (zero when the catalogue has no proper motion). */
+  /**
+   * Motion vectors m = μ + ζ·p, rad/yr: the proper motion plus, when the radial velocity and the
+   * parallax are known, the radial term (see module notes). Zero for a star without motion.
+   */
   pm: Float32Array;
 }
 
-/** Builds the packed arrays of `propagateDirections` from catalogue records. */
+/** ζ = v_r·ϖ / A, rad/yr (0 without radial velocity or positive parallax). */
+export function radialMotionRate(star: Astrometry): number {
+  return star.radialVelocity !== undefined && star.plx !== undefined && star.plx > 0
+    ? (star.radialVelocity / AU_PER_YEAR_KM_S) * star.plx * MAS
+    : 0;
+}
+
+/** Builds the packed arrays of `propagateDirections` (and the shaders' aDir / aPm). */
 export function starMotion(stars: readonly Astrometry[]): StarMotion {
   const dirs = new Float32Array(stars.length * 3);
   const pm = new Float32Array(stars.length * 3);
@@ -139,14 +149,17 @@ export function starMotion(stars: readonly Astrometry[]): StarMotion {
     dirs[3 * i + 1] = Math.cos(d) * Math.sin(a);
     dirs[3 * i + 2] = Math.sin(d);
     properMotionVector(s.ra, s.dec, s.pmRa ?? 0, s.pmDec ?? 0, v);
-    pm.set(v, 3 * i);
+    const zeta = radialMotionRate(s);
+    pm[3 * i] = v[0] + zeta * dirs[3 * i]!;
+    pm[3 * i + 1] = v[1] + zeta * dirs[3 * i + 1]!;
+    pm[3 * i + 2] = v[2] + zeta * dirs[3 * i + 2]!;
   });
   return { dirs, pm };
 }
 
 /**
- * Vectorised propagation without radial velocity: out_i = normalise(dirs_i + years·pm_i), the
- * exact CPU twin of the shaders. `out` may be a packed array (3 per star) or an array of Vec3
+ * Vectorised propagation: out_i = normalise(dirs_i + years·pm_i), the exact CPU twin of the
+ * shaders, equal to `propagateStar` (radial velocity included, folded into pm). `out` may be a packed array (3 per star) or an array of Vec3
  * updated in place; no allocation.
  */
 export function propagateDirections(

@@ -437,6 +437,9 @@
     });
     if (params.get("panel") === "layers") layersOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
+    const hip = Number(params.get("star")); // captures: ?star=<HIP> opens the star's sheet
+    const star = hip ? catalog?.stars.find((s) => s.hip === hip) : undefined;
+    if (star) selection = { kind: "star", star };
     // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
     if (params.get("space") === "1") {
       await toggleSpace();
@@ -656,8 +659,17 @@
   );
   const starRows = $derived.by((): InfoRow[] => {
     if (!selected || !selectedNow) return [];
-    // The map hands back the decoded catalogue records, which carry the parallax error.
-    const d = starDistance(selected.plx, (selected as CatalogRecord).ePlx);
+    // The map hands back the decoded catalogue records, which carry the reference distance (#75).
+    const record = selected as CatalogRecord;
+    const d = starDistance(record);
+    const source = !d
+      ? ""
+      : record.distanceSource === "literature"
+        ? (record.distanceReference ?? "")
+        : record.distanceSource
+          ? $_(`star.distanceSource.${record.distanceSource}`)
+          : $_("star.distanceSource.hipparcos");
+    const hint = d?.errorLy != null ? { err: d.errorLy, source } : null;
     const rows: InfoRow[] = [
       { label: $_("data.ra"), value: formatRa(selectedNow.ra) },
       { label: $_("data.dec"), value: formatDec(selectedNow.dec) },
@@ -672,11 +684,13 @@
         : d.approx
           ? $_("star.distanceApprox", { values: { ly: d.ly } })
           : $_("star.distance", { values: { ly: d.ly } }),
-      title: d?.approx
-        ? $_("star.distanceApprox.hint")
-        : !d && (selected.plx ?? 0) > 0
-          ? $_("star.unknownDistance.hint")
-          : undefined,
+      title: hint
+        ? $_(d?.approx ? "star.distanceApprox.hint" : "star.distance.hint", { values: hint })
+        : d
+          ? source
+          : (selected.plx ?? 0) > 0
+            ? $_("star.unknownDistance.hint")
+            : undefined,
     });
     return rows;
   });
