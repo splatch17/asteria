@@ -79,6 +79,8 @@ export interface CatalogStar {
   v: number;
   bv?: number;
   plx?: number;
+  /** Standard error of the parallax (mas), when the catalogue gives it. */
+  ePlx?: number;
   name?: string;
   bayer?: string;
   con: string;

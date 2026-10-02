@@ -259,6 +259,7 @@
     if (mode === "space") {
       mode = "sky";
       space?.stop();
+      map?.start();
       return;
     }
     if (pointer.state !== "off") pointer.stop();
@@ -323,6 +324,8 @@
     space.setSelectedPath(selectedPath);
     space.focusObserver(4);
     mode = "space";
+    map?.stop(); // hidden: its loop would render a 0×0 canvas
+    updateGraduationExclusions();
     space.start();
   }
 
@@ -493,12 +496,12 @@
   const hudBlocks = () => [header, compass, bottomNav].filter((el) => el !== undefined);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
-    map?.setHudExclusions(
-      hudBlocks().map((el) => {
-        const r = el.getBoundingClientRect();
-        return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
-      }),
-    );
+    const rects = hudBlocks().map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
+    });
+    map?.setHudExclusions(rects);
+    space?.setHudExclusions(rects);
   }
   function observeHud() {
     hudObserver = new ResizeObserver(updateGraduationExclusions);
