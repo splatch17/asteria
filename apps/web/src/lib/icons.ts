@@ -15,4 +15,6 @@ export type IconName =
   | "starNames"
   | "eqGrid"
   | "azGrid"
-  | "ecliptic";
+  | "ecliptic"
+  | "fullscreen"
+  | "fullscreenExit";

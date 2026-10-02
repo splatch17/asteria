@@ -205,6 +205,11 @@ export interface SkyMapOptions {
   onViewChange?: (view: Readonly<ViewState>) => void;
   /** Label for what the central reticle points at, when sensor pointing is on. */
   describeTarget?: (selection: SkySelection) => string;
+  /**
+   * Horizontal one-finger drag while sensor pointing is on (degrees of azimuth, same sign as a
+   * normal drag): lets the caller shift a compass-less heading by hand. Ignored when absent.
+   */
+  onPointingDrag?: (deltaAzimuth: number) => void;
   /** Text of the grid and ecliptic graduations (default: formatGraduation). */
   formatGraduation?: (kind: GraduationKind, value: number) => string;
   /** Initial layers (default: DEFAULT_SKY_LAYERS). */
@@ -1141,7 +1146,9 @@ export class SkyMap {
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.moved += Math.abs(dx) + Math.abs(dy);
 
-      if (this.pointers.size === 1 && !this.pointing) {
+      if (this.pointers.size === 1 && this.pointing) {
+        this.options.onPointingDrag?.((-dx * this.view.fov) / canvas.clientHeight);
+      } else if (this.pointers.size === 1) {
         this.animation = null;
         const degPerPx = this.view.fov / canvas.clientHeight;
         this.velocity = { az: -dx * degPerPx, alt: dy * degPerPx };

@@ -24,7 +24,36 @@
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
   import { PlanetPathCache } from "./lib/planet-paths";
-  import { devicePointing, pointingToView, smooth } from "./lib/orientation";
+  import {
+    devicePointing,
+    pointingToView,
+    quaternionPointing,
+    smooth,
+    type SkyPointing,
+  } from "./lib/orientation";
+  import {
+    absoluteAlpha,
+    classifyOrientationEvent,
+    decide,
+    failureMessageKey,
+    newProbe,
+    querySensorPermissions,
+    preflight,
+    recordReading,
+    wrap360,
+    type OrientationLike,
+    type PointingFailure,
+    type PointingMode,
+    type ProbeState,
+  } from "./lib/sensors";
+  import {
+    FULLSCREEN_STORAGE_KEY,
+    enterFullscreen,
+    exitFullscreen,
+    readFullscreenEnvironment,
+    shouldRestoreFullscreen,
+    showFullscreenButton,
+  } from "./lib/fullscreen";
   import Icon from "./components/Icon.svelte";
   import TimeScrubber from "./components/TimeScrubber.svelte";
   import LayersPanel from "./components/LayersPanel.svelte";
@@ -102,7 +131,7 @@
   let playFrame = 0;
   let viewAzimuth = $state(180);
   let viewRoll = $state(0);
-  let pointing = $state<"off" | "waiting" | "on" | "unavailable">("off");
+  let pointing = $state<"off" | "waiting" | "on" | "failed">("off");
   let place = $state(loadPlace());
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
@@ -180,57 +209,207 @@
     playing = false;
   }
 
-  // --- Sensor pointing (DeviceOrientation, needs HTTPS)
-  let smoothed: { forward: [number, number, number]; up: [number, number, number] } | null = null;
-  let pointingTimeout: ReturnType<typeof setTimeout>;
+  // --- Sensor pointing (#45, #59): sources and failure causes in lib/sensors.ts and ADR-0003
+  // (docs/adr/0003-visee-capteurs-web.md).
+  type Vec = [number, number, number];
+  let smoothed: { forward: Vec; up: Vec } | null = null;
+  let pointingMode = $state<PointingMode>("absolute");
+  let pointingError = $state<PointingFailure | null>(null);
+  let relativeNotice = $state(false);
+  /** Relative mode: degrees added to the sensor azimuth (NaN until the first reading). */
+  let headingOffset = NaN;
+  let probe: ProbeState | null = null;
+  let probeTimer: ReturnType<typeof setInterval> | undefined;
+  /** Which source drives the view once an absolute reading came in. */
+  let lockedSource: "event" | "sensor" | null = null;
+  let orientationSensor: GenericOrientationSensor | null = null;
+  const isBrave = "brave" in navigator;
+  const screenAngle = () => screen.orientation?.angle ?? 0;
 
-  function onOrientation(e: DeviceOrientationEvent) {
-    if (e.alpha === null || e.beta === null || e.gamma === null) return;
-    // Only an absolute (north-referenced) heading is usable for the sky.
-    if (e.type === "deviceorientation" && !e.absolute) return;
-    const raw = devicePointing(e.alpha, e.beta, e.gamma, screen.orientation?.angle ?? 0);
+  /** Generic Sensor API (Chromium), not in lib.dom. */
+  interface GenericOrientationSensor extends EventTarget {
+    quaternion: number[] | null;
+    start(): void;
+    stop(): void;
+  }
+  type SensorConstructor = new (options: {
+    frequency: number;
+    referenceFrame: "device" | "screen";
+  }) => GenericOrientationSensor;
+
+  function applyPointing(raw: { forward: Vec; up: Vec }) {
     smoothed = {
       forward: smooth(smoothed?.forward ?? null, raw.forward, 0.25),
       up: smooth(smoothed?.up ?? null, raw.up, 0.25),
     };
-    pointing = "on";
-    clearTimeout(pointingTimeout);
-    map?.setView(pointingToView(smoothed.forward, smoothed.up));
+    const view: SkyPointing = pointingToView(smoothed.forward, smoothed.up);
+    if (pointingMode === "relative") {
+      // Keep the map's current heading when the relative mode starts; the finger shifts it.
+      if (Number.isNaN(headingOffset)) headingOffset = viewAzimuth - view.azimuth;
+      view.azimuth = wrap360(view.azimuth + headingOffset);
+    }
+    map?.setView(view);
+  }
+
+  function onOrientation(e: DeviceOrientationEvent) {
+    const reading = e as unknown as OrientationLike;
+    const kind = classifyOrientationEvent(reading);
+    if (kind === "absolute") lockedSource ??= "event";
+    if (pointing === "waiting" && probe) {
+      recordReading(probe, kind, performance.now());
+      evaluateProbe();
+    }
+    if (pointing !== "on" || lockedSource === "sensor" || kind === "empty") return;
+    if (kind === "absolute" && pointingMode === "relative") {
+      // A compass woke up late: switch to the true heading.
+      pointingMode = "absolute";
+      relativeNotice = false;
+      smoothed = null;
+    }
+    if (pointingMode === "absolute" && kind !== "absolute") return;
+    const alpha = kind === "absolute" ? absoluteAlpha(reading) : kind === "tilt" ? 0 : e.alpha!;
+    applyPointing(devicePointing(alpha, e.beta!, e.gamma!, screenAngle()));
   }
 
   // "deviceorientationabsolute" is not in lib.dom's event map: listen through a generic handler.
   const onOrientationEvent = (e: Event) => onOrientation(e as DeviceOrientationEvent);
 
+  /** AbsoluteOrientationSensor, when the browser has it: a second chance if events are empty. */
+  function startOrientationSensor(): boolean {
+    const Sensor = (window as unknown as { AbsoluteOrientationSensor?: SensorConstructor })
+      .AbsoluteOrientationSensor;
+    if (!Sensor || !probe) return false;
+    try {
+      const sensor = new Sensor({ frequency: 60, referenceFrame: "device" });
+      sensor.addEventListener("reading", () => {
+        if (!sensor.quaternion) return;
+        lockedSource ??= "sensor";
+        if (pointing === "waiting" && probe) {
+          probe.sensor = "active";
+          recordReading(probe, "absolute", performance.now());
+          evaluateProbe();
+        }
+        if (pointing === "on" && lockedSource === "sensor")
+          applyPointing(quaternionPointing(sensor.quaternion, screenAngle()));
+      });
+      sensor.addEventListener("error", (e) => {
+        const name = (e as Event & { error?: DOMException }).error?.name ?? "Error";
+        stopOrientationSensor();
+        if (probe) {
+          probe.sensor = "error";
+          probe.sensorError = name;
+          evaluateProbe();
+        }
+        if (pointing === "on" && lockedSource === "sensor")
+          failPointing(name === "NotAllowedError" ? "denied" : "silent");
+      });
+      sensor.start();
+      orientationSensor = sensor;
+      return true;
+    } catch (e) {
+      // SecurityError (permissions policy) or ReferenceError: the events remain.
+      probe.sensorError = e instanceof DOMException ? e.name : "Error";
+      return false;
+    }
+  }
+
+  function stopOrientationSensor() {
+    orientationSensor?.stop();
+    orientationSensor = null;
+  }
+
+  function evaluateProbe() {
+    if (pointing !== "waiting" || !probe) return;
+    const decision = decide(probe, performance.now());
+    if (decision.kind === "wait") return;
+    clearInterval(probeTimer);
+    if (decision.kind === "fail") return failPointing(decision.reason);
+    pointingMode = decision.mode;
+    relativeNotice = decision.mode === "relative";
+    if (decision.mode === "relative") lockedSource = "event";
+    if (lockedSource === "event") stopOrientationSensor();
+    probe = null;
+    pointing = "on";
+  }
+
   async function togglePointing() {
     if (pointing === "on" || pointing === "waiting") return stopPointing();
-    // iOS Safari asks for permission; Android Chrome does not.
+    pointingError = null;
+    const early = preflight({
+      secure: isSecureContext,
+      orientationEvents: "DeviceOrientationEvent" in window,
+      absoluteSensor: "AbsoluteOrientationSensor" in window,
+    });
+    if (early) return failPointing(early);
+    // iOS Safari asks for permission; Android browsers do not.
     const request = (
       DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }
     ).requestPermission;
-    if (request && (await request().catch(() => "denied")) !== "granted") {
-      pointing = "unavailable";
-      return;
-    }
+    if (request && (await request().catch(() => "denied")) !== "granted")
+      return failPointing("denied");
     smoothed = null;
+    headingOffset = NaN;
+    lockedSource = null;
+    pointingMode = "absolute";
+    relativeNotice = false;
+    const current = newProbe(performance.now());
+    probe = current;
     pointing = "waiting";
     map?.setPointing(true);
     addEventListener("deviceorientationabsolute", onOrientationEvent);
     addEventListener("deviceorientation", onOrientationEvent);
-    pointingTimeout = setTimeout(() => {
-      if (pointing === "waiting") {
-        stopPointing();
-        pointing = "unavailable";
-      }
-    }, 2000);
+    if (startOrientationSensor()) current.sensor = "starting";
+    probeTimer = setInterval(evaluateProbe, 250);
+    const verdict = await querySensorPermissions();
+    if (probe === current && pointing === "waiting") {
+      current.permission = verdict;
+      evaluateProbe();
+    }
+  }
+
+  function failPointing(reason: PointingFailure) {
+    stopPointing();
+    pointingError = reason;
+    pointing = "failed";
   }
 
   function stopPointing() {
-    clearTimeout(pointingTimeout);
+    clearInterval(probeTimer);
     removeEventListener("deviceorientationabsolute", onOrientationEvent);
     removeEventListener("deviceorientation", onOrientationEvent);
+    stopOrientationSensor();
+    probe = null;
+    relativeNotice = false;
     map?.setPointing(false);
     pointing = "off";
   }
+
+  /** Relative mode: a one-finger horizontal drag shifts the heading. */
+  function onPointingDrag(deltaAzimuth: number) {
+    if (pointing !== "on" || pointingMode !== "relative" || Number.isNaN(headingOffset)) return;
+    headingOffset = wrap360(headingOffset + deltaAzimuth);
+  }
+
+  // --- Fullscreen (#59)
+  let fullscreenEnv = $state(readFullscreenEnvironment());
+  const fullscreenAvailable = $derived(showFullscreenButton(fullscreenEnv));
+  function onFullscreenChange() {
+    fullscreenEnv = readFullscreenEnvironment();
+    writeSetting(FULLSCREEN_STORAGE_KEY, fullscreenEnv.active);
+  }
+  function toggleFullscreen() {
+    if (fullscreenEnv.active) void exitFullscreen();
+    else void enterFullscreen();
+  }
+  // Fullscreen needs a user gesture: a remembered choice comes back on the first tap.
+  function restoreFullscreen() {
+    removeEventListener("pointerup", restoreFullscreen, true);
+    const env = readFullscreenEnvironment();
+    if (shouldRestoreFullscreen(readSetting(FULLSCREEN_STORAGE_KEY, false, isBool), env))
+      void enterFullscreen();
+  }
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  addEventListener("pointerup", restoreFullscreen, true);
 
   async function toggleSpace() {
     if (mode === "space") {
@@ -346,6 +525,7 @@
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: (s) => (selection = s),
+        onPointingDrag,
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
           viewRoll = v.roll ?? 0;
@@ -410,12 +590,15 @@
     addEventListener("resize", updateGraduationExclusions);
   }
   let controlsHeight = $state(140);
+  let dialsHeight = $state(148);
 
   onDestroy(() => {
     hudObserver?.disconnect();
     removeEventListener("resize", updateGraduationExclusions);
     space?.dispose();
     stopPointing();
+    document.removeEventListener("fullscreenchange", onFullscreenChange);
+    removeEventListener("pointerup", restoreFullscreen, true);
     stopPlaying();
     clearInterval(clock);
     map?.dispose();
@@ -627,7 +810,20 @@
   {/if}
 </header>
 
-<div class="hud compass" bind:this={compass}>
+<div class="hud compass" bind:this={compass} bind:clientHeight={dialsHeight}>
+  {#if fullscreenAvailable}
+    <button
+      class="dial"
+      onclick={toggleFullscreen}
+      aria-pressed={fullscreenEnv.active}
+      aria-label={fullscreenEnv.active ? $_("fullscreen.exit") : $_("fullscreen.enter")}
+      title={fullscreenEnv.active ? $_("fullscreen.exit") : $_("fullscreen.enter")}
+    >
+      <span class="dial-icon"
+        ><Icon name={fullscreenEnv.active ? "fullscreenExit" : "fullscreen"} /></span
+      >
+    </button>
+  {/if}
   <button
     class="dial"
     onclick={toggleSpace}
@@ -670,9 +866,17 @@
   {/if}
 </div>
 {#if pointing === "waiting"}
-  <p class="hud toast">{$_("pointing.hint")}</p>
-{:else if pointing === "unavailable"}
-  <button class="hud toast" onclick={() => (pointing = "off")}>{$_("pointing.unavailable")}</button>
+  <p class="hud toast" role="status">{$_("pointing.hint")}</p>
+{:else if pointing === "on" && relativeNotice}
+  <button class="hud toast" onclick={() => (relativeNotice = false)}>
+    {$_("pointing.relative")}<span class="dismiss">{$_("pointing.dismiss")}</span>
+  </button>
+{:else if pointing === "failed" && pointingError}
+  <button class="hud toast" aria-live="assertive" onclick={() => (pointing = "off")}>
+    {$_(failureMessageKey(pointingError, isBrave))}<span class="dismiss"
+      >{$_("pointing.dismiss")}</span
+    >
+  </button>
 {/if}
 
 {#if status !== "ready"}
@@ -724,7 +928,12 @@ DIST {distance
   </aside>
 {/if}
 
-<nav class="hud bottom" bind:this={bottomNav} style:--controls-h={`${controlsHeight}px`}>
+<nav
+  class="hud bottom"
+  bind:this={bottomNav}
+  style:--controls-h={`${controlsHeight}px`}
+  style:--dials-h={`${dialsHeight}px`}
+>
   {#if layersOpen}
     <LayersPanel
       view={mode}
@@ -802,10 +1011,11 @@ DIST {distance
     position: fixed;
     z-index: 2;
   }
+  /* Stops short of the dials column (44 px + 12 px gap) so the date never runs under it. */
   .top {
     top: max(16px, env(safe-area-inset-top));
-    left: 16px;
-    right: 16px;
+    left: max(16px, env(safe-area-inset-left));
+    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
     pointer-events: none;
   }
   .meta,
@@ -878,7 +1088,7 @@ DIST {distance
   }
   .compass {
     top: max(16px, env(safe-area-inset-top));
-    right: 16px;
+    right: max(16px, env(safe-area-inset-right));
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -928,10 +1138,11 @@ DIST {distance
   .dial[aria-pressed="true"] .ring {
     fill: none;
   }
+  /* Left of the dials column (44 px + 12 px gap), below the header. */
   .toast {
     top: calc(max(16px, env(safe-area-inset-top)) + 110px);
-    left: 16px;
-    right: 16px;
+    left: max(16px, env(safe-area-inset-left));
+    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
     margin: 0 auto;
     max-width: 320px;
     padding: 10px 12px;
@@ -940,6 +1151,18 @@ DIST {distance
     font: 11px/1.5 var(--ast-font-mono);
     color: var(--ast-fg);
     text-align: center;
+    text-transform: none;
+    letter-spacing: 0;
+    height: auto;
+    display: block;
+  }
+  .toast .dismiss {
+    display: block;
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
   }
   .status {
     position: fixed;
@@ -953,8 +1176,8 @@ DIST {distance
     color: var(--ast-fg-muted);
   }
   .bottom {
-    left: 16px;
-    right: 16px;
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
     bottom: max(16px, env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
@@ -1073,8 +1296,8 @@ DIST {distance
     background: var(--ast-fg);
   }
   .panel {
-    left: 16px;
-    right: 16px;
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
     bottom: calc(max(16px, env(safe-area-inset-bottom)) + 116px);
     max-width: 300px;
     border: 1px solid var(--ast-hairline);

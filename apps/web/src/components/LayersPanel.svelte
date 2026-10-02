@@ -88,10 +88,11 @@
     display: flex;
     flex-direction: column;
     /* Never taller than the room between the right-hand dials and the time controls
-       (--controls-h: height of the controls under the panel, set by the parent). */
+       (--dials-h, --controls-h: heights of the dials column and of the controls under the
+       panel, set by the parent). */
     max-height: calc(
-      100dvh - max(16px, env(safe-area-inset-top)) - 156px - var(--controls-h, 140px) -
-        max(16px, env(safe-area-inset-bottom)) - 8px
+      100dvh - max(16px, env(safe-area-inset-top)) - var(--dials-h, 148px) - 8px -
+        var(--controls-h, 140px) - max(16px, env(safe-area-inset-bottom)) - 8px
     );
     min-height: 0;
     outline: none;
