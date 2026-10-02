@@ -57,7 +57,20 @@ import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
 import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
-import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
+import { projectStereo, stereoScale, unprojectStereo, viewMatrix, type ViewState } from "./view";
+import {
+  AimThrottle,
+  STAR_BRIGHTNESS_BONUS,
+  STAR_PICK_RADIUS,
+  boundingCap,
+  coneAngle,
+  inCap,
+  pickStar,
+  starPickLimit,
+  type Cap,
+} from "./pick";
+import { ephemerisReliable } from "./ephemeris-range";
+import { disposeObjects, watchContext } from "./lifecycle";
 
 export interface CatalogStar {
   hip: number;
@@ -66,6 +79,8 @@ export interface CatalogStar {
   v: number;
   bv?: number;
   plx?: number;
+  /** Standard error of the parallax (mas), when the catalogue gives it. */
+  ePlx?: number;
   name?: string;
   bayer?: string;
   con: string;
@@ -257,7 +272,7 @@ export class SkyMap {
   private readonly starDirs: Vec3[];
   private readonly labels: { abbr: string; text: string; dir: Vec3 }[];
   /** Constellation figures as J2000 segments, for highlighting and picking (#61). */
-  private readonly figures: { abbr: string; segments: [Vec3, Vec3][] }[] = [];
+  private readonly figures: { abbr: string; segments: [Vec3, Vec3][]; cap: Cap }[] = [];
   private selectedConstellation: string | null = null;
   /** Constellation labels drawn in the last frame (CSS px), for picking. */
   private constellationLabelRects: { abbr: string; rect: Rect }[] = [];
@@ -270,6 +285,22 @@ export class SkyMap {
   private animation: { from: ViewState; to: ViewState; start: number; duration: number } | null =
     null;
   private raf = 0;
+  private running = false;
+  /** The WebGL context is lost: nothing is drawn until it is restored. */
+  private contextLost = false;
+  /** Removes every listener added by the map (input, fonts, context) on dispose. */
+  private readonly listeners = new AbortController();
+  /** Moon and planet positions are within the validated range (see ephemeris-range.ts). */
+  private ephemerisOk = true;
+  /** Reticle target's label (sensor pointing), recomputed under aimThrottle only. */
+  private aimLabel = "";
+  private readonly aimThrottle = new AimThrottle();
+  /** A frame reused a cached target: one more frame is due once the throttle allows it. */
+  private aimStale = false;
+  /** Scratch screen point of toScreen (no allocation per projected point). */
+  private readonly screenPt: [number, number] = [0, 0];
+  /** Magnitudes of the catalogue (sorted), for pickStar. */
+  private readonly mags: Float32Array;
   private velocity = { az: 0, alt: 0 };
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private moved = 0;
@@ -304,6 +335,7 @@ export class SkyMap {
     };
 
     this.starDirs = stars.map((s) => unitVector(s.ra, s.dec));
+    this.mags = Float32Array.from(stars, (s) => s.v);
     const byHip = new Map(stars.map((s, i) => [s.hip, this.starDirs[i]!]));
 
     // Stars
@@ -334,7 +366,7 @@ export class SkyMap {
           }
         }
       }
-      this.figures.push({ abbr, segments: figure });
+      this.figures.push({ abbr, segments: figure, cap: boundingCap(figure.flat()) });
     }
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(segs, 3));
@@ -442,18 +474,30 @@ export class SkyMap {
     this.setLayers(options.layers ?? {});
     this.setTheme(options.theme);
     // Widths measured before the web font finished loading are wrong: measure again.
-    document.fonts?.addEventListener("loadingdone", () => {
-      this.textWidths.clear();
-      this.fontKey = "";
-      for (const m of this.pathMarks) m.width = -1;
-      this.dirty = true;
+    const signal = this.listeners.signal;
+    document.fonts?.addEventListener(
+      "loadingdone",
+      () => {
+        this.textWidths.clear();
+        this.fontKey = "";
+        for (const m of this.pathMarks) m.width = -1;
+        this.dirty = true;
+      },
+      { signal },
+    );
+    watchContext(canvas, signal, {
+      lost: () => (this.contextLost = true),
+      restored: () => {
+        this.contextLost = false;
+        this.dirty = true;
+      },
     });
     this.bindInput(canvas);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
     this.updateSky();
-    this.loop();
+    this.start();
   }
 
   /** A reference-line layer; its uFrame is updated with the date (see updateSky). */
@@ -527,6 +571,9 @@ export class SkyMap {
   /** Sensor-driven pointing (the caller feeds setView with the phone orientation). */
   setPointing(on: boolean): void {
     this.pointing = on;
+    this.aimThrottle.reset();
+    this.aimLabel = "";
+    this.aimStale = false;
     this.animation = null;
     this.velocity = { az: 0, alt: 0 };
     if (!on) this.view.roll = 0;
@@ -581,8 +628,7 @@ export class SkyMap {
       dirs.needsUpdate = true;
       mags.needsUpdate = true;
     }
-    this.planetPoints.visible = this.layers.planets && !!this.planets;
-    this.dirty = true;
+    this.updateVisibility();
   }
 
   /**
@@ -591,23 +637,21 @@ export class SkyMap {
    * Call it only when the paths change (the caller's cache returns the same object meanwhile).
    */
   setPaths(paths: SkyPath[] | null): void {
-    const total = fillPathBuffers(this.pathPoints, paths ?? []);
-    this.pathPoints.visible = this.layers.allPaths && total > 0;
-    this.dirty = true;
+    fillPathBuffers(this.pathPoints, paths ?? []);
+    this.updateVisibility();
   }
 
   /** Path of the selected planet, with a dated label at each mark (null: nothing selected). */
   setSelectedPath(path: SkyPath | null): void {
     this.pathMarks = [];
-    const total = fillPathBuffers(this.selectedPathPoints, path ? [path] : []);
+    fillPathBuffers(this.selectedPathPoints, path ? [path] : []);
     const format = this.options.formatPathMark;
     if (path && format) {
       for (const pt of path.points)
         if (pt.mark)
           this.pathMarks.push({ dir: unitVector(pt.ra, pt.dec), text: format(pt.date), width: -1 });
     }
-    this.selectedPathPoints.visible = this.layers.planets && total > 0;
-    this.dirty = true;
+    this.updateVisibility();
   }
 
   /**
@@ -641,18 +685,33 @@ export class SkyMap {
       const value = partial[key];
       if (typeof value === "boolean" && key in this.layers) this.layers[key] = value;
     }
+    this.updateVisibility();
+  }
+
+  /** Visibility of every layer, from the layers, the data given and the date. */
+  private updateVisibility(): void {
     const l = this.layers;
+    // Moon and planets only within the validated ephemeris range (see ephemeris-range.ts).
+    const planets = l.planets && this.ephemerisOk;
     this.lineMesh.visible = l.constellationLines;
-    this.planetPoints.visible = l.planets && !!this.planets;
+    this.planetPoints.visible = planets && !!this.planets;
     this.selectedPathPoints.visible =
-      l.planets && this.selectedPathPoints.geometry.drawRange.count > 0;
-    this.pathPoints.visible = l.allPaths && this.pathPoints.geometry.drawRange.count > 0;
+      planets && this.selectedPathPoints.geometry.drawRange.count > 0;
+    this.pathPoints.visible =
+      l.allPaths && this.ephemerisOk && this.pathPoints.geometry.drawRange.count > 0;
+    // Sun = point 0, Moon = point 1.
+    this.bodyPoints.geometry.setDrawRange(0, this.ephemerisOk ? 2 : 1);
     this.equatorialGrid.visible = l.equatorialGrid;
     this.azimuthalGrid.visible = l.azimuthalGrid;
     this.eclipticLine.visible = l.ecliptic;
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
     this.dirty = true;
+  }
+
+  /** Planets are drawn (layer on, data given, date within the ephemeris range). */
+  private planetsShown(): boolean {
+    return this.layers.planets && this.ephemerisOk && !!this.planets;
   }
 
   getLayers(): Readonly<SkyLayers> {
@@ -674,9 +733,29 @@ export class SkyMap {
     this.setLayers({ constellationLines: visible, constellationNames: visible });
   }
 
-  dispose(): void {
+  /** Starts the render loop (on by default); see stop(). */
+  start(): void {
+    if (this.running) return;
+    this.running = true;
+    this.dirty = true;
+    this.loop();
+  }
+
+  /**
+   * Stops the render loop while the map is hidden (Earth view): date and view changes are kept
+   * and drawn on start().
+   */
+  stop(): void {
+    this.running = false;
     cancelAnimationFrame(this.raf);
+  }
+
+  /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
+  dispose(): void {
+    this.stop();
+    this.listeners.abort();
     this.resizeObserver.disconnect();
+    disposeObjects(this.scene);
     this.renderer.dispose();
   }
 
@@ -689,6 +768,11 @@ export class SkyMap {
     this.frameOf(this.equatorialGrid).set(...this.date2hor);
     this.frameOf(this.eclipticLine).set(...this.eq2hor);
     this.updateDaylight();
+    const ok = ephemerisReliable(this.date);
+    if (ok !== this.ephemerisOk) {
+      this.ephemerisOk = ok;
+      this.updateVisibility();
+    }
     this.dirty = true;
   }
 
@@ -734,6 +818,7 @@ export class SkyMap {
     const { canvas, overlay } = this.options;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
+    if (!w || !h) return; // hidden (Earth view): keep the last size, aspect stays finite
     this.size = { w, h };
     this.renderer.setSize(w, h, false);
     const dpr = this.renderer.getPixelRatio();
@@ -746,7 +831,9 @@ export class SkyMap {
   }
 
   private loop = (): void => {
+    if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
+    if (this.contextLost) return;
     if (
       !this.pointers.size &&
       (Math.abs(this.velocity.az) > 0.001 || Math.abs(this.velocity.alt) > 0.001)
@@ -769,6 +856,9 @@ export class SkyMap {
       this.clampView();
       this.dirty = true;
     }
+    // The reticle reused a cached target: draw once more when the throttle allows a new one.
+    if (this.aimStale && this.pointing && this.aimThrottle.due(this.view, performance.now()))
+      this.dirty = true;
     if (this.dirty) {
       this.dirty = false;
       this.render();
@@ -816,12 +906,27 @@ export class SkyMap {
     this.drawLabels();
   }
 
+  /**
+   * Screen position (CSS px) of a view-frame direction, null when off screen. Allocation-free:
+   * the returned pair is reused by the next call, so read it before projecting again.
+   */
   private toScreen(v: Vec3): [number, number] | null {
-    if (v[2] < -0.5) return null; // wide fields of view reach ~120° from the centre
+    return this.projectXYZ(v[0], v[1], v[2], stereoScale(this.view.fov));
+  }
+
+  /** toScreen for a direction given by its components, with the projection scale precomputed. */
+  private projectXYZ(x: number, y: number, z: number, scale: number): [number, number] | null {
+    if (z < -0.5) return null; // wide fields of view reach ~120° from the centre
     const { w, h } = this.size;
-    const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
+    // projectStereo, inlined: k = 2 / (1 + z) · scale, x scaled by the aspect ratio.
+    const k = (2 / (1 + z)) * scale;
+    const nx = (x * k * h) / w;
+    const ny = y * k;
     if (Math.abs(nx) > 1.1 || Math.abs(ny) > 1.1) return null;
-    return [((nx + 1) / 2) * w, ((1 - ny) / 2) * h];
+    const out = this.screenPt;
+    out[0] = ((nx + 1) / 2) * w;
+    out[1] = ((1 - ny) / 2) * h;
+    return out;
   }
 
   private drawLabels(): void {
@@ -873,7 +978,7 @@ export class SkyMap {
           ["Sun", this.bodies.sun],
           ["Moon", this.bodies.moon],
         ] as const) {
-          if (isBelow(dir) !== below) continue;
+          if (isBelow(dir) !== below || (body === "Moon" && !this.ephemerisOk)) continue;
           const p = this.toScreen(applyMat3(m, dir));
           if (!p) continue;
           // The disc itself is occupied: later labels (path dates…) must not cover it.
@@ -892,7 +997,7 @@ export class SkyMap {
       }
 
       // 3. Planets (those daylight leaves visible)
-      if (this.layers.planets && this.planets && this.options.planetNames) {
+      if (this.planetsShown() && this.planets && this.options.planetNames) {
         this.setLabelFont("700 10px", "0.12em", labelAlpha(0.9, below));
         for (const p of this.planets) {
           if (isBelow(p.dir) !== below || !this.planetVisible(p.magnitude, below)) continue;
@@ -1101,13 +1206,22 @@ export class SkyMap {
       ctx.lineTo(cx + dx * 40, cy + dy * 40);
     }
     ctx.stroke();
-    const target = this.pick(cx, cy);
-    if (target && this.options.describeTarget) {
+    // The target is only recomputed when the view turned by > 0.2° or every 150 ms (#73).
+    const now = performance.now();
+    if (this.aimThrottle.due(this.view, now)) {
+      const target = this.pick(cx, cy);
+      this.aimThrottle.mark(this.view, now);
+      this.aimStale = false;
+      this.aimLabel =
+        target && this.options.describeTarget
+          ? this.options.describeTarget(target).toUpperCase()
+          : "";
+    } else this.aimStale = true;
+    if (this.aimLabel) {
       this.setLabelFont("700 12px", "0.12em", 1);
       ctx.fillStyle = theme.ink;
-      const label = this.options.describeTarget(target).toUpperCase();
       ctx.textAlign = "center";
-      ctx.fillText(label, cx, cy + 56);
+      ctx.fillText(this.aimLabel, cx, cy + 56);
     }
   }
 
@@ -1155,7 +1269,9 @@ export class SkyMap {
    * only with seeThroughGround, after the others (from index `belowFrom`). `only` restricts the
    * work to one constellation.
    */
-  private projectFigures(only?: string): (FigureShape & { belowFrom: number })[] {
+  private projectFigures(
+    only?: string | ((figure: { abbr: string; cap: Cap }) => boolean),
+  ): (FigureShape & { belowFrom: number })[] {
     const view = viewMatrix(this.view);
     const seeThrough = this.layers.seeThroughGround;
     const shapes: (FigureShape & { belowFrom: number })[] = [];
@@ -1164,8 +1280,9 @@ export class SkyMap {
       const pb = this.toScreenUnclipped(applyMat3(view, hb));
       if (pa && pb) out.push([pa, pb]);
     };
-    for (const { abbr, segments } of this.figures) {
-      if (only && abbr !== only) continue;
+    for (const figure of this.figures) {
+      const { abbr, segments } = figure;
+      if (typeof only === "string" ? abbr !== only : only && !only(figure)) continue;
       const above: [Point, Point][] = [];
       const below: [Point, Point][] = [];
       for (const [a, b] of segments) {
@@ -1232,6 +1349,12 @@ export class SkyMap {
     ctx.restore();
   }
 
+  /**
+   * What a tap (or the reticle) at (x, y) designates, among what is drawn: constellation name,
+   * Sun or Moon, planet, star, then the figure around the point. Stars obey the shader's limits
+   * (daylight above the horizon, night below it, nothing below with the opaque ground), and are
+   * searched in a cone around the tap direction without projecting the whole catalogue (#73).
+   */
   private pick(x: number, y: number): SkySelection | null {
     // A constellation name is an explicit target: it wins over the stars around it.
     const label = pickLabel([x, y], this.constellationLabelRects);
@@ -1245,12 +1368,13 @@ export class SkyMap {
         ["Moon", this.bodies.moon],
         ["Sun", this.bodies.sun],
       ] as const) {
+        if (body === "Moon" && !this.ephemerisOk) continue;
         if (applyMat3(this.eq2hor, dir)[2] < 0 && !seeThrough) continue;
         const p = this.toScreen(applyMat3(m, dir));
         if (p && Math.hypot(p[0] - x, p[1] - y) < radius) return { kind: "body", body };
       }
     }
-    if (this.layers.planets && this.planets) {
+    if (this.planetsShown() && this.planets) {
       let found: Planet | null = null;
       let bestDist = Infinity;
       for (const pl of this.planets) {
@@ -1264,61 +1388,98 @@ export class SkyMap {
       }
       if (found) return { kind: "planet", planet: found };
     }
-    const limit = limitingMagnitude(this.view.fov);
-    let best: CatalogStar | null = null;
-    let bestScore = 26;
-    this.options.stars.forEach((s, i) => {
-      if (s.v > limit) return;
-      const dir = this.starDirs[i]!;
-      if (!seeThrough && applyMat3(this.eq2hor, dir)[2] <= 0) return;
-      const p = this.toScreen(applyMat3(m, dir));
-      if (!p) return;
-      const score = Math.hypot(p[0] - x, p[1] - y) - (limit - s.v) * 1.5;
-      if (score < bestScore) [best, bestScore] = [s, score];
+
+    // Tap direction: screen → view frame → J2000 (m is orthonormal: its inverse is its transpose).
+    const { w, h } = this.size;
+    const scale = stereoScale(this.view.fov);
+    const tap = unprojectStereo((2 * x) / w - 1, 1 - (2 * y) / h, scale, w / h);
+    const toward: Vec3 = [
+      m[0] * tap[0] + m[3] * tap[1] + m[6] * tap[2],
+      m[1] * tap[0] + m[4] * tap[1] + m[7] * tap[2],
+      m[2] * tap[0] + m[5] * tap[1] + m[8] * tap[2],
+    ];
+    const fovLimit = limitingMagnitude(this.view.fov);
+    const stars = this.options.stars;
+    // Widest screen radius a star can win from: the score threshold plus the brightest bonus.
+    const reach = STAR_PICK_RADIUS + (fovLimit - (stars[0]?.v ?? 0)) * STAR_BRIGHTNESS_BONUS;
+    const e = this.eq2hor;
+    const index = pickStar({
+      mags: this.mags,
+      dirs: this.starDirs,
+      toward,
+      cosMax: Math.cos(coneAngle(reach, scale, h)),
+      up: [e[6], e[7], e[8]],
+      limitAbove: starPickLimit(fovLimit, this.uniforms.uLimitMag.value),
+      limitBelow: seeThrough ? starPickLimit(fovLimit, this.uniforms.uLimitMagBelow.value) : null,
+      bonusFrom: fovLimit,
+      distance: (i) => {
+        const d = this.starDirs[i]!;
+        const p = this.projectXYZ(
+          m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+          m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+          m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+          scale,
+        );
+        return p ? Math.hypot(p[0] - x, p[1] - y) : NaN;
+      },
     });
-    if (best) return { kind: "star", star: best };
-    // No star or body nearby: the figure the tap falls in, if any.
+    if (index >= 0) return { kind: "star", star: stars[index]! };
+    // No star or body nearby: the figure the tap falls in, if any. Only figures whose bounding
+    // cap holds the tap direction (grown by the segment slop) are projected.
     if (!this.layers.constellationLines) return null;
-    const abbr = pickFigure([x, y], this.projectFigures());
+    const slop = coneAngle(14, scale, h);
+    const abbr = pickFigure(
+      [x, y],
+      this.projectFigures((f) => inCap(f.cap, toward, slop)),
+    );
     return abbr ? { kind: "constellation", abbr } : null;
   }
 
   private bindInput(canvas: HTMLCanvasElement): void {
+    const signal = this.listeners.signal;
     canvas.style.touchAction = "none";
     let pinchDist = 0;
 
-    canvas.addEventListener("pointerdown", (e) => {
-      canvas.setPointerCapture(e.pointerId);
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.velocity = { az: 0, alt: 0 };
-      this.moved = 0;
-      if (this.pointers.size === 2) pinchDist = this.pinchDistance();
-    });
+    canvas.addEventListener(
+      "pointerdown",
+      (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this.velocity = { az: 0, alt: 0 };
+        this.moved = 0;
+        if (this.pointers.size === 2) pinchDist = this.pinchDistance();
+      },
+      { signal },
+    );
 
-    canvas.addEventListener("pointermove", (e) => {
-      const prev = this.pointers.get(e.pointerId);
-      if (!prev) return;
-      const dx = e.clientX - prev.x;
-      const dy = e.clientY - prev.y;
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      this.moved += Math.abs(dx) + Math.abs(dy);
+    canvas.addEventListener(
+      "pointermove",
+      (e) => {
+        const prev = this.pointers.get(e.pointerId);
+        if (!prev) return;
+        const dx = e.clientX - prev.x;
+        const dy = e.clientY - prev.y;
+        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        this.moved += Math.abs(dx) + Math.abs(dy);
 
-      if (this.pointers.size === 1 && this.pointing) {
-        this.options.onPointingDrag?.((-dx * this.view.fov) / canvas.clientHeight);
-      } else if (this.pointers.size === 1) {
-        this.animation = null;
-        const degPerPx = this.view.fov / canvas.clientHeight;
-        this.velocity = { az: -dx * degPerPx, alt: dy * degPerPx };
-        this.view.azimuth += this.velocity.az;
-        this.view.altitude += this.velocity.alt;
-      } else if (this.pointers.size === 2) {
-        const d = this.pinchDistance();
-        if (pinchDist > 0) this.view.fov *= pinchDist / d;
-        pinchDist = d;
-      }
-      this.clampView();
-      this.dirty = true;
-    });
+        if (this.pointers.size === 1 && this.pointing) {
+          this.options.onPointingDrag?.((-dx * this.view.fov) / canvas.clientHeight);
+        } else if (this.pointers.size === 1) {
+          this.animation = null;
+          const degPerPx = this.view.fov / canvas.clientHeight;
+          this.velocity = { az: -dx * degPerPx, alt: dy * degPerPx };
+          this.view.azimuth += this.velocity.az;
+          this.view.altitude += this.velocity.alt;
+        } else if (this.pointers.size === 2) {
+          const d = this.pinchDistance();
+          if (pinchDist > 0) this.view.fov *= pinchDist / d;
+          pinchDist = d;
+        }
+        this.clampView();
+        this.dirty = true;
+      },
+      { signal },
+    );
 
     const end = (e: PointerEvent) => {
       if (!this.pointers.delete(e.pointerId)) return;
@@ -1328,8 +1489,8 @@ export class SkyMap {
       }
       pinchDist = 0;
     };
-    canvas.addEventListener("pointerup", end);
-    canvas.addEventListener("pointercancel", end);
+    canvas.addEventListener("pointerup", end, { signal });
+    canvas.addEventListener("pointercancel", end, { signal });
 
     canvas.addEventListener(
       "wheel",
@@ -1339,7 +1500,7 @@ export class SkyMap {
         this.clampView();
         this.dirty = true;
       },
-      { passive: false },
+      { passive: false, signal },
     );
   }
 

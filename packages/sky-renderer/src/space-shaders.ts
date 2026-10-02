@@ -65,8 +65,10 @@ export const skyBodyVert = /* glsl */ `
   attribute vec3 aDir;
   attribute float aKind;
   varying float vKind;
+  varying float vFade; // shared fragment shaders fade below the horizon (#69): never here
   void main() {
     vKind = aKind;
+    vFade = 1.0;
     gl_Position = projectDirection(aDir);
     gl_PointSize = uBodySize * (aKind < 0.5 ? 1.25 : 1.0) * uDpr;
   }
@@ -80,8 +82,10 @@ export const skyPlanetVert = /* glsl */ `
   attribute float aMag;
   attribute float aKind;
   varying float vKind;
+  varying float vFade; // shared fragment shaders fade below the horizon (#69): never here
   void main() {
     vKind = aKind;
+    vFade = 1.0;
     if (aMag > 50.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectDirection(aDir);
     float saturn = 1.0 - step(0.5, abs(aKind - 4.0));
@@ -97,8 +101,10 @@ export const skyPathVert = /* glsl */ `
   attribute vec3 aDir;
   attribute float aMark;
   varying float vMark;
+  varying float vFade;
   void main() {
     vMark = aMark;
+    vFade = 1.0;
     gl_Position = projectDirection(uPrec * aDir);
     gl_PointSize = (aMark > 0.5 ? 5.0 : 2.2) * uDpr;
   }
