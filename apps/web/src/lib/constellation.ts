@@ -5,6 +5,7 @@
 import {
   applyMat3,
   j2000ToHorizontalMatrix,
+  propagateStar,
   unitVector,
   type Observer,
   type Vec3,
@@ -20,14 +21,23 @@ export function brightestStar(stars: readonly CatalogStar[], abbr: string): Cata
   return best;
 }
 
-/** Directions (J2000 unit vectors) of the stars drawn in a constellation's figure. */
+/**
+ * Directions (J2000 unit vectors) of the stars drawn in a constellation's figure, moved by their
+ * proper motion over `years` (Julian years since the catalogue epoch J1991.25, #78).
+ */
 export function figureDirections(
   stars: readonly CatalogStar[],
   lines: Readonly<Record<string, number[][]>>,
   abbr: string,
+  years = 0,
 ): Vec3[] {
   const hips = new Set((lines[abbr] ?? []).flat());
-  return stars.filter((s) => hips.has(s.hip)).map((s) => unitVector(s.ra, s.dec));
+  return stars
+    .filter((s) => hips.has(s.hip))
+    .map((s) => {
+      const p = years ? propagateStar(s, years) : s;
+      return unitVector(p.ra, p.dec);
+    });
 }
 
 export type Visibility = "up" | "partial" | "down";
