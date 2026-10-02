@@ -22,6 +22,7 @@
     bottom,
     onclose,
     onstar,
+    on3d,
   }: {
     abbr: string;
     name: string;
@@ -36,6 +37,8 @@
     onclose: () => void;
     /** Opens the brightest star's sheet. */
     onstar?: (() => void) | undefined;
+    /** Opens the 3D view of the figure (#8). */
+    on3d?: (() => void) | undefined;
   } = $props();
 
   const hasStory = $derived(hasConstellationStory("fr", abbr));
@@ -97,6 +100,11 @@
     </dl>
     {#if daylight && visibility && visibility !== "down"}
       <p class="note daylight">{$_("constellation.daylight")}</p>
+    {/if}
+    {#if on3d}
+      <button class="more three-d" onclick={on3d}>
+        {$_("c3d.open")}<span class="muted">{$_("c3d.openHint")}</span>
+      </button>
     {/if}
     <div class="actions">
       {#if hasStory}
@@ -302,6 +310,12 @@
     padding: 0 12px;
     border: 1px solid var(--ast-hairline);
     color: var(--ast-fg);
+  }
+  .three-d {
+    margin-top: 10px;
+  }
+  .expanded .three-d {
+    display: none;
   }
   .body {
     flex: 1 1 auto;

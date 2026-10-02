@@ -9,6 +9,7 @@
     type SkyLayers,
     type SkySelection,
     type SpaceStyle,
+    type ViewState,
     isSpaceStyle,
     DEFAULT_SKY_LAYERS,
     DEFAULT_SPACE_LAYERS,
@@ -123,6 +124,33 @@
   const showPlanets = $derived(viewLayers[mode].planets);
   let layersOpen = $state(false);
   let creditsOpen = $state(false);
+  /** Constellation 3D view (#8): the figure, the catalogue and the map's view it starts from. */
+  let view3d = $state.raw<{
+    abbr: string;
+    view: ViewState;
+    stars: CatalogStar[];
+    lines: Record<string, number[][]>;
+  } | null>(null);
+  // Loaded on demand with its renderer: not in the start-up bundle.
+  let Constellation3D = $state.raw<
+    typeof import("./components/Constellation3D.svelte").default | null
+  >(null);
+  async function open3d(abbr: string) {
+    try {
+      Constellation3D ??= (await import("./components/Constellation3D.svelte")).default;
+    } catch (e) {
+      console.error(e); // offline before the chunk was cached: the sheet stays as it is
+      return;
+    }
+    if (!map || !catalog) return;
+    stopPlaying();
+    view3d = { abbr, view: { ...map.view }, stars: catalog.stars, lines: catalog.lines };
+    map.stop(); // hidden under the 3D view, which starts from its last frame
+  }
+  function close3d() {
+    view3d = null;
+    if (mode === "sky") map?.start();
+  }
   let layersButton = $state<HTMLButtonElement>();
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
@@ -440,6 +468,12 @@
     const hip = Number(params.get("star")); // captures: ?star=<HIP> opens the star's sheet
     const star = hip ? catalog?.stars.find((s) => s.hip === hip) : undefined;
     if (star) selection = { kind: "star", star };
+    // Constellation sheet and 3D view from the URL (captures): ?constellation=Ori&view3d=1
+    const con = params.get("constellation");
+    if (con && catalog?.lines[con]) {
+      select({ kind: "constellation", abbr: con });
+      if (params.get("view3d") === "1") open3d(con);
+    }
     // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
     if (params.get("space") === "1") {
       await toggleSpace();
@@ -950,8 +984,25 @@
       onstar={info.star
         ? () => info.star && (selection = { kind: "star", star: info.star })
         : undefined}
+      on3d={() => open3d(info.abbr)}
     />
   {/key}
+{/if}
+
+{#if view3d && Constellation3D}
+  {@const v = view3d}
+  <Constellation3D
+    abbr={v.abbr}
+    name={names[v.abbr] ?? v.abbr}
+    stars={v.stars}
+    lines={v.lines}
+    {date}
+    observer={place}
+    startView={v.view}
+    theme={night ? { ink: nightInk(brightness), sky: THEMES.red.sky } : THEMES.day}
+    monochrome={night}
+    onclose={close3d}
+  />
 {/if}
 
 {#if creditsOpen}
