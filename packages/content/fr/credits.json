@@ -59,6 +59,26 @@
       "license": "Citation demandée (règles VizieR)",
       "licenseUrl": "https://cds.unistra.fr/vizier-org/licences_vizier.html",
       "sourceUrl": "https://vizier.cds.unistra.fr/"
+    },
+    {
+      "id": "wikidata-star-names",
+      "name": "Wikidata, noms d'étoiles en français",
+      "role": "Graphies françaises des noms d'étoiles (Bételgeuse, Véga…).",
+      "author": "Contributeurs de Wikidata",
+      "notice": "Données Wikidata, CC0.",
+      "license": "CC0 1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "sourceUrl": "https://www.wikidata.org/"
+    },
+    {
+      "id": "iau-wgccre",
+      "name": "IAU WGCCRE 2015, pôles et méridiens",
+      "role": "Orientation des planètes, de la Lune et des anneaux de Saturne (style réaliste).",
+      "author": "Archinal et al. 2018, Celest. Mech. Dyn. Astr. 130:22",
+      "notice": "Archinal, B. A. et al. (2018), Report of the IAU Working Group on Cartographic Coordinates and Rotational Elements: 2015.",
+      "license": "Publication scientifique (citation)",
+      "licenseUrl": "https://doi.org/10.1007/s10569-017-9805-5",
+      "sourceUrl": "https://doi.org/10.1007/s10569-017-9805-5"
     }
   ],
   "assets": [
@@ -91,6 +111,36 @@
       "license": "Domaine public (crédit NASA)",
       "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
       "sourceUrl": "https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps"
+    },
+    {
+      "id": "blue-marble-color",
+      "name": "NASA Blue Marble: Next Generation, juin 2004",
+      "role": "Couleurs de la Terre (vue Terre, style réaliste).",
+      "author": "NASA Earth Observatory (R. Stöckli)",
+      "notice": "Credit: NASA Earth Observatory.",
+      "license": "Domaine public",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://visibleearth.nasa.gov/images/76487"
+    },
+    {
+      "id": "nasa-svs-moon",
+      "name": "NASA SVS CGI Moon Kit",
+      "role": "Surface de la Lune (vue Terre, style réaliste).",
+      "author": "NASA Scientific Visualization Studio, LRO LROC",
+      "notice": "Credit: NASA's Scientific Visualization Studio.",
+      "license": "Domaine public",
+      "licenseUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "sourceUrl": "https://svs.gsfc.nasa.gov/4720"
+    },
+    {
+      "id": "solar-system-scope",
+      "name": "Solar System Scope, textures des planètes",
+      "role": "Surfaces des planètes et anneaux de Saturne (vue Terre, style réaliste).",
+      "author": "Solar System Scope (INOVE), d'après des images NASA",
+      "notice": "Textures © Solar System Scope, CC BY 4.0.",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourceUrl": "https://www.solarsystemscope.com/textures/"
     },
     {
       "id": "stories",
