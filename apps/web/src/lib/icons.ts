@@ -20,5 +20,7 @@ export type IconName =
   | "fullscreen"
   | "fullscreenExit"
   | "realistic"
+  | "locate"
+  | "aim"
   | "expand"
   | "collapse";
