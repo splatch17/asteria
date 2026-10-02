@@ -16,8 +16,10 @@
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
  * partial objects keep working. setLinesVisible / setPlanetsVisible / setPathsVisible remain as
- * aliases. Graduation labels can be localised with the `formatGraduation` option, and kept out
- * of the HUD with setGraduationExclusions(rects) (CSS px, overlay coordinates).
+ * aliases. Graduation labels can be localised with the `formatGraduation` option.
+ * No label (cardinal points, bodies, stars, constellations, path dates, graduations) is written
+ * under the HUD: setHudExclusions(rects) gives its areas (CSS px, overlay coordinates);
+ * setGraduationExclusions remains as an alias.
  */
 import * as THREE from "three";
 import {
@@ -262,7 +264,7 @@ export class SkyMap {
   /** Graduation texts, by kind and value (built once). */
   private readonly graduationTexts = new Map<string, string>();
   /** Screen areas (CSS px) covered by the HUD, where graduations are not written. */
-  private graduationExclusions: readonly Rect[] = [];
+  private hudExclusions: readonly Rect[] = [];
   /** View matrix of the frame being labelled. */
   private labelView: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   /** The selected planet's path, with dated monthly marks. */
@@ -613,12 +615,18 @@ export class SkyMap {
 
   /** Switches layers on or off; keys left out keep their state. */
   /**
-   * Screen rectangles (CSS px, overlay coordinates) covered by the interface: grid and ecliptic
-   * graduations are not written there. Other labels are unaffected (they are placed before).
+   * Screen rectangles (CSS px, overlay coordinates) covered by the interface (header, buttons,
+   * time controls): no label is written there. Priority labels (cardinal points, Sun, Moon,
+   * planets) try their fallback positions, then are hidden.
    */
-  setGraduationExclusions(rects: readonly Rect[]): void {
-    this.graduationExclusions = rects.map((r) => ({ ...r }));
+  setHudExclusions(rects: readonly Rect[]): void {
+    this.hudExclusions = rects.map((r) => ({ ...r }));
     this.dirty = true;
+  }
+
+  /** @deprecated Alias of setHudExclusions (which now applies to every label). */
+  setGraduationExclusions(rects: readonly Rect[]): void {
+    this.setHudExclusions(rects);
   }
 
   setLayers(partial: Partial<SkyLayers>): void {
@@ -813,7 +821,14 @@ export class SkyMap {
     const view = viewMatrix(this.view);
     const aboveHorizon = (d: Vec3) => applyMat3(this.eq2hor, d)[2] > 0;
     // Labels are placed by priority; a label that collides with every fallback is dropped.
-    const layout = new LabelLayout();
+    // None goes under the HUD, nor is cut by the top or bottom edge (a fallback above the
+    // header would otherwise show only half its letters).
+    const { clientWidth: width, clientHeight: height } = canvas;
+    const layout = new LabelLayout([
+      ...this.hudExclusions,
+      { x: -width, y: -100, w: 3 * width, h: 100 },
+      { x: -width, y: height, w: 3 * width, h: 100 },
+    ]);
     const H = 12;
 
     // 1. Cardinal points on the horizon
@@ -824,7 +839,10 @@ export class SkyMap {
         const p = this.toScreen(applyMat3(view, [Math.cos(a), Math.sin(a), 0]));
         if (!p) return;
         const w = this.measure(label);
-        const r = layout.place([{ x: p[0] - w / 2, y: p[1] + 16 - H / 2, w, h: H }]);
+        const r = layout.place([
+          { x: p[0] - w / 2, y: p[1] + 16 - H / 2, w, h: H }, // below the horizon
+          { x: p[0] - w / 2, y: p[1] - 16 - H / 2, w, h: H }, // above it
+        ]);
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
       });
     }
@@ -842,12 +860,14 @@ export class SkyMap {
         if (!p) continue;
         // The disc itself is occupied: later labels (path dates…) must not cover it.
         const half = offset - 6;
-        layout.place([{ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half }]);
+        layout.occupy({ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half });
         const label = this.options.bodyNames[body].toUpperCase();
         const w = this.measure(label);
         const r = layout.place([
           { x: p[0] + offset, y: p[1] - H / 2, w, h: H },
           { x: p[0] - offset - w, y: p[1] - H / 2, w, h: H },
+          { x: p[0] - w / 2, y: p[1] - offset - H, w, h: H },
+          { x: p[0] - w / 2, y: p[1] + offset, w, h: H },
         ]);
         if (r) ctx.fillText(label, r.x, r.y + H / 2);
       }
@@ -864,7 +884,7 @@ export class SkyMap {
         const w = this.measure(label);
         const off = planetRadius(p) + 5;
         const [x, y] = pos;
-        layout.place([{ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 }]);
+        layout.occupy({ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 });
         const r = layout.place([
           { x: x + off, y: y - H / 2, w, h: H },
           { x: x - off - w, y: y - H / 2, w, h: H },
@@ -940,7 +960,6 @@ export class SkyMap {
     // 7. Graduations of the grids and of the ecliptic (lightest, last)
     if (this.layers.equatorialGrid || this.layers.azimuthalGrid || this.layers.ecliptic) {
       this.setLabelFont("400 9px", "0.06em", 0.55);
-      layout.reserve(this.graduationExclusions);
       this.labelView = view;
       if (this.layers.equatorialGrid)
         this.drawGridGraduations(layout, multiplyMat3(view, this.date2hor), "ra", "dec");
