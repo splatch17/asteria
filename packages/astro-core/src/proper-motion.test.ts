@@ -178,3 +178,76 @@ describe("propagateDirections (CPU twin of the shaders)", () => {
     });
   }
 });
+
+describe("radial velocity in the packed motion (#79)", () => {
+  // Radial velocities as in the app's catalogue (stars.json): Arcturus, Sirius and α Cen A from
+  // the Yale BSC5 (whole km/s), 61 Cyg A from Gaia DR3.
+  const RV: Record<string, number> = { arcturus: -5, sirius: -8, alphaCenA: -22, cyg61A: -66 };
+  const keys = Object.keys(HIP);
+  const stars: Astrometry[] = keys.map((k) => ({ ...HIP[k]!, radialVelocity: RV[k]! }));
+  const motion = starMotion(stars);
+  const toEq = (x: number, y: number, z: number): Equatorial => ({
+    ra: (Math.atan2(y, x) / RAD + 360) % 360,
+    dec: Math.atan2(z, Math.hypot(x, y)) / RAD,
+  });
+  const star = (key: string) => stars[keys.indexOf(key)]!;
+
+  for (const t of [0, 35, 13_000, -13_000]) {
+    it(`propagateDirections = propagateStar with v_r at t = ${t} yr (0.05″)`, () => {
+      const out: Vec3[] = stars.map(() => [0, 0, 0]);
+      propagateDirections(motion, t, out);
+      stars.forEach((s, i) => {
+        const [x, y, z] = out[i]!;
+        expect(sepArcsec(toEq(x, y, z), propagateStar(s, t))).toBeLessThan(0.05);
+      });
+    });
+  }
+
+  /**
+   * GPU / CPU coherence: the vertex shader computes normalize(aDir + uYears · aPm) in float32 from
+   * the Float32Array attributes (shaders.ts, `properMotion`); emulated here with Math.fround
+   * after every operation.
+   */
+  function shader(i: number, years: number): Equatorial {
+    const f = Math.fround;
+    const t = f(years);
+    const c = [0, 1, 2].map((k) => f(motion.dirs[3 * i + k]! + f(t * motion.pm[3 * i + k]!)));
+    const [x, y, z] = c as [number, number, number];
+    const n = f(Math.sqrt(f(f(f(x * x) + f(y * y)) + f(z * z))));
+    return toEq(f(x / n), f(y / n), f(z / n));
+  }
+
+  it("α Cen A at +13 000 years: the shader matches propagateStar with v_r within 1″", () => {
+    const i = keys.indexOf("alphaCenA");
+    expect(sepArcsec(shader(i, 13_000), propagateStar(stars[i]!, 13_000))).toBeLessThan(1);
+    // The radial term is really there: ~3.4° from the position without it.
+    expect(sepDeg(shader(i, 13_000), propagateStar(HIP.alphaCenA!, 13_000))).toBeGreaterThan(3);
+  });
+
+  it("every test star, past and future: shader within 1″ of propagateStar", () => {
+    stars.forEach((s, i) => {
+      for (const t of [13_000, -13_000, 2_000, 35])
+        expect(sepArcsec(shader(i, t), propagateStar(s, t))).toBeLessThan(1);
+    });
+  });
+
+  it("current positions: the radial term moves α Cen A, Arcturus, Sirius by < 0.1″ in 2026", () => {
+    const t = yearsSinceHipparcos(J2026);
+    for (const k of ["alphaCenA", "arcturus", "sirius"])
+      expect(sepArcsec(propagateStar(star(k), t), propagateStar(HIP[k]!, t))).toBeLessThan(0.1);
+    // 61 Cyg A has the catalogue's largest μ·ζ: 0.12″ by 2026, a real effect that SIMBAD and
+    // Gaia include too.
+    const shift = sepArcsec(propagateStar(star("cyg61A"), t), propagateStar(HIP.cyg61A!, t));
+    expect(shift).toBeGreaterThan(0.1);
+    expect(shift).toBeLessThan(0.15);
+  });
+
+  it("α Cen A with v_r stays within 0.1″ of SIMBAD at J2000 and J2026", () => {
+    const s = star("alphaCenA");
+    for (const [date, ref] of [
+      [J2000, SIMBAD.alphaCenA!.j2000],
+      [J2026, SIMBAD.alphaCenA!.j2026],
+    ] as const)
+      expect(sepArcsec(propagateStar(s, yearsSinceHipparcos(date)), ref)).toBeLessThan(0.1);
+  });
+});
