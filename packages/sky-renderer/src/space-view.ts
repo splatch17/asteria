@@ -42,6 +42,21 @@ import {
 import { sphericalGrid } from "./grids";
 import { RealisticLayer, type SpaceTextureName } from "./space-realistic";
 import { moonAxes, planetAxes, sunwardDirection, type SpaceStyle } from "./space-style";
+import {
+  FLIGHT_MS,
+  FlightPath,
+  LANDING_VIEW,
+  ORBIT_FOV,
+  ORBIT_RADIUS,
+  OverZoom,
+  flightProgress,
+  globeDetail,
+  headingOf,
+  horizonBasis,
+  shouldEnterSky,
+  type HorizonBasis,
+} from "./flight";
+import type { ViewState } from "./view";
 
 export type { SpaceTextureName } from "./space-realistic";
 
@@ -85,6 +100,21 @@ export interface SpaceViewOptions {
    * arrives, or if it fails, the realistic style uses procedural colours.
    */
   loadTexture?: (name: SpaceTextureName) => Promise<HTMLImageElement | ImageBitmap>;
+  /**
+   * Zooming in past the closest distance with "you are here" near the centre of the globe (#37):
+   * the caller lands in the sky map (see flyToSky).
+   */
+  onEnterSky?: () => void;
+}
+
+/** A flight between the sky map's point of view and the orbit (#37), see flight.ts. */
+export interface FlightOptions {
+  /** Duration in ms (default FLIGHT_MS); 0 jumps to the end (reduced motion). */
+  duration?: number;
+  /** Called after each rendered frame with the altitude progress s (0 = ground, 1 = orbit). */
+  onFrame?: (s: number) => void;
+  /** Called once the flight is over (also when it is cancelled). */
+  onDone?: () => void;
 }
 
 /** Sunlight on the Moon and planets is recomputed when the date moves by more than this. */
@@ -121,6 +151,8 @@ export class SpaceView {
   private readonly uniforms;
   private readonly bodyPoints: THREE.Points;
   private readonly observerMarker = new THREE.Group();
+  /** Earth's axis (to 1.5 radii): hidden near the ground, where it would stand in the sky. */
+  private readonly axis: THREE.LineSegments;
   private orbit = { lon: 0, lat: 30, dist: 4 }; // camera, in world (equatorial) coordinates
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
@@ -176,6 +208,34 @@ export class SpaceView {
     pole: new THREE.Vector3(),
     prime: new THREE.Vector3(),
   };
+  /** Scratch objects of the per-frame projections (screenOf, hiddenByEarth, labels). */
+  private readonly frameTmp = {
+    a: new THREE.Vector3(),
+    b: new THREE.Vector3(),
+    forward: new THREE.Vector3(),
+    sun: new THREE.Vector3(),
+    moon: new THREE.Vector3(),
+    here: new THREE.Vector3(),
+    pole: new THREE.Vector3(0, 0, 1),
+    point: [0, 0] as [number, number],
+    size: new THREE.Vector2(),
+  };
+  // --- Sky <-> Earth flight (#37)
+  private readonly flightPath = new FlightPath();
+  private flight: {
+    direction: "out" | "in";
+    start: number;
+    duration: number;
+    options: FlightOptions;
+  } | null = null;
+  /** Observer's horizon in the world frame, at the current date. */
+  private readonly horizon: HorizonBasis = {
+    north: new THREE.Vector3(),
+    east: new THREE.Vector3(),
+    up: new THREE.Vector3(),
+  };
+  /** Zoom pushed past the closest distance, towards the sky map. */
+  private readonly overZoom = new OverZoom();
 
   constructor(private readonly options: SpaceViewOptions) {
     const { canvas, overlay, stars, lines, earth } = options;
@@ -360,11 +420,11 @@ export class SpaceView {
     this.engraved = [starPoints, coast, graticule];
 
     // Earth's axis, through the poles towards the celestial pole (fixed in the world frame)
-    const axis = this.surfaceLines([0, 0, -1.5, 0, 0, 1.5], 0.6);
+    this.axis = this.surfaceLines([0, 0, -1.5, 0, 0, 1.5], 0.6);
 
     this.scene.add(
       this.earth,
-      axis,
+      this.axis,
       starPoints,
       constellationLines,
       equatorialGrid,
@@ -543,6 +603,61 @@ export class SpaceView {
     this.dirty = true;
   }
 
+  /**
+   * Leaves the sky map (#37): the camera starts at the observer's eye, looking along the map's
+   * `view`, and climbs to the orbit above the observer (as focusObserver(ORBIT_RADIUS)). The
+   * view must be running (start()); input is ignored until the flight ends.
+   */
+  flyFromSky(view: ViewState, options: FlightOptions = {}): void {
+    this.prepareFlight();
+    this.flightPath.setup(this.horizon, view);
+    this.beginFlight("out", options);
+  }
+
+  /**
+   * Lands in the sky map (#37), from the current orbit down to the observer's eye. Returns the
+   * sky map view the flight ends on (heading as the camera's, see headingOf), to be given to the
+   * map before it is shown.
+   */
+  flyToSky(options: FlightOptions = {}): ViewState {
+    this.prepareFlight();
+    this.placeCamera();
+    const view: ViewState = {
+      azimuth: headingOf(this.camera.quaternion, this.horizon),
+      altitude: LANDING_VIEW.altitude,
+      fov: LANDING_VIEW.fov,
+      roll: 0,
+    };
+    const dir = this.camera.position.clone().normalize();
+    this.flightPath.setup(this.horizon, view, dir, this.orbit.dist);
+    this.beginFlight("in", options);
+    return view;
+  }
+
+  /** A flight is under way. */
+  isFlying(): boolean {
+    return this.flight !== null;
+  }
+
+  /** Ends a flight at once (its onDone is called). */
+  cancelFlight(): void {
+    if (this.flight) this.endFlight();
+  }
+
+  /**
+   * Compiles the shaders and uploads the globe's textures ahead of the first frame, so that a
+   * flight does not stall on its first frame (preloading, #37). Works while hidden.
+   */
+  async prepare(): Promise<void> {
+    this.refresh();
+    this.placeCamera();
+    for (const t of [this.uniforms.uRelief.value, this.uniforms.uLights.value])
+      this.renderer.initTexture(t);
+    await this.renderer.compileAsync(this.scene, this.camera);
+    // One frame while hidden (the canvas keeps its layout): uploads the geometry buffers too.
+    if (!this.contextLost && this.options.canvas.clientWidth > 0) this.render();
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -668,6 +783,75 @@ export class SpaceView {
     });
     real.setPlanetsShown(this.layers.planets);
     real.setVisible(this.style === "realistic");
+  }
+
+  /** Date-dependent state and the observer's horizon in the world frame, now. */
+  private prepareFlight(): void {
+    if (this.stale) this.refresh();
+    const gst = greenwichMeanSiderealTime(this.date);
+    horizonBasis(this.observer.latitude, this.observer.longitude, gst, this.horizon);
+    // The canvas may just have been shown: size it before the first frame (only if it changed:
+    // resizing reallocates the drawing buffer).
+    const size = this.renderer.getSize(this.frameTmp.size);
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    if (w !== size.x || h !== size.y) this.resize();
+  }
+
+  private beginFlight(direction: "out" | "in", options: FlightOptions): void {
+    this.cancelFlight();
+    this.pointers.clear();
+    this.velocity = { lon: 0, lat: 0 };
+    this.overZoom.reset();
+    this.flight = {
+      direction,
+      start: performance.now(),
+      duration: options.duration ?? FLIGHT_MS,
+      options,
+    };
+    this.dirty = true;
+  }
+
+  /** Time fraction of the flight now, in [0, 1]. */
+  private flightTime(now: number): number {
+    const f = this.flight!;
+    return f.duration > 0 ? Math.min(1, Math.max(0, (now - f.start) / f.duration)) : 1;
+  }
+
+  private endFlight(): void {
+    const f = this.flight;
+    if (!f) return;
+    this.flight = null;
+    if (f.direction === "out") {
+      // Hand over to the orbit camera exactly where the flight ends.
+      const gst = greenwichMeanSiderealTime(this.date);
+      this.orbit = {
+        lon: this.observer.longitude + gst,
+        lat: this.observer.latitude,
+        dist: ORBIT_RADIUS,
+      };
+    }
+    this.velocity = { lon: 0, lat: 0 };
+    this.dirty = true;
+    f.options.onDone?.();
+  }
+
+  /** Orbit camera: position from (lon, lat, dist), looking at the Earth's centre, north up. */
+  private placeCamera(): void {
+    const { lon, lat, dist } = this.orbit;
+    const [l, b] = [lon * DEG, lat * DEG];
+    this.camera.position.set(
+      dist * Math.cos(b) * Math.cos(l),
+      dist * Math.cos(b) * Math.sin(l),
+      dist * Math.sin(b),
+    );
+    this.camera.lookAt(0, 0, 0);
+    this.setFov(ORBIT_FOV);
+  }
+
+  private setFov(fov: number): void {
+    if (fov === this.camera.fov) return;
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
   }
 
   private material(vertexShader: string, fragmentShader: string, additive: boolean) {
@@ -830,53 +1014,82 @@ export class SpaceView {
       this.dirty = true;
     }
     if (this.stale) this.refresh();
+    if (this.flight) {
+      // A flight draws every frame, the camera posed along its path (see flight.ts).
+      const t = this.flightTime(performance.now());
+      const s = flightProgress(t, this.flight.direction);
+      this.setFov(this.flightPath.pose(s, this.camera.position, this.camera.quaternion));
+      this.dirty = false;
+      this.render(true);
+      this.flight.options.onFrame?.(s);
+      if (t >= 1) this.endFlight();
+      return;
+    }
     if (this.dirty) {
       this.dirty = false;
       this.render();
     }
   };
 
-  private render(): void {
-    const { lon, lat, dist } = this.orbit;
-    this.camera.position.copy(geo(lon, lat, dist));
-    this.camera.lookAt(0, 0, 0);
+  /** `posed`: the camera was placed by a flight (otherwise from the orbit). */
+  private render(posed = false): void {
+    if (!posed) this.placeCamera();
     this.camera.updateMatrixWorld();
+    const dist = this.camera.position.length();
+    // Near the ground (flight) the ground below the eye is closer than the usual near plane.
+    const near = Math.min(0.01, Math.max(1e-4, (dist - 1) * 0.5));
+    if (near !== this.camera.near) {
+      this.camera.near = near;
+      this.camera.updateProjectionMatrix();
+    }
     // Mix with zoom: engraved from afar, relief shows through when close.
-    this.uniforms.uDetail.value = Math.min(1, Math.max(0, (6 - dist) / 3.5));
+    this.uniforms.uDetail.value = globeDetail(dist);
+    // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar.
+    this.observerMarker.visible = dist > 1.05;
+    this.axis.visible = dist >= DIST_MIN;
     if (this.style === "realistic")
       this.real?.setCameraEarth(this.camera.position, this.earth.rotation.z);
     if (this.bodies) {
-      const sun = this.screenOf(this.dirAt(0));
-      const moon = this.screenOf(this.dirAt(1));
-      if (sun && moon)
-        this.uniforms.uSunAngle.value = Math.atan2(-(sun[1] - moon[1]), sun[0] - moon[0]);
+      const { sun, moon } = this.frameTmp;
+      const s = this.screenOf(this.dirAt(0, sun));
+      const [sx, sy] = s ? s : [NaN, NaN];
+      const m = this.screenOf(this.dirAt(1, moon));
+      if (s && m) this.uniforms.uSunAngle.value = Math.atan2(-(sy - m[1]), sx - m[0]);
     }
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
   }
 
-  private dirAt(i: number): THREE.Vector3 {
+  private dirAt(i: number, out = new THREE.Vector3()): THREE.Vector3 {
     const a = this.bodyPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
-    return new THREE.Vector3(a.getX(i), a.getY(i), a.getZ(i));
+    return out.fromBufferAttribute(a, i);
   }
 
-  /** Screen position of a world point, or of a direction at infinity (w = 0). */
+  /**
+   * Screen position of a world point, or of a direction at infinity (w = 0). Allocation-free:
+   * the returned pair is reused by the next call, so read it before projecting again.
+   */
   private screenOf(p: THREE.Vector3, atInfinity = true): [number, number] | null {
     const { clientWidth: w, clientHeight: h } = this.options.canvas;
-    const v = atInfinity ? p.clone().multiplyScalar(1000).add(this.camera.position) : p.clone();
-    const toCam = v.clone().sub(this.camera.position);
-    const forward = new THREE.Vector3();
+    const { a: v, b: toCam, forward, point } = this.frameTmp;
+    if (atInfinity) v.copy(p).multiplyScalar(1000).add(this.camera.position);
+    else v.copy(p);
+    toCam.copy(v).sub(this.camera.position);
     this.camera.getWorldDirection(forward);
     if (toCam.dot(forward) <= 0) return null;
     v.project(this.camera);
     if (Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) return null;
-    return [((v.x + 1) / 2) * w, ((1 - v.y) / 2) * h];
+    point[0] = ((v.x + 1) / 2) * w;
+    point[1] = ((1 - v.y) / 2) * h;
+    return point;
   }
 
   /** True when the segment camera → world point passes through the globe. */
   private hiddenByEarth(p: THREE.Vector3, atInfinity: boolean): boolean {
     const o = this.camera.position;
-    const d = (atInfinity ? p.clone() : p.clone().sub(o)).normalize();
+    const d = this.frameTmp.b.copy(p);
+    if (!atInfinity) d.sub(o);
+    d.normalize();
     const b = o.dot(d);
     const c = o.lengthSq() - 1;
     const disc = b * b - c;
@@ -926,13 +1139,17 @@ export class SpaceView {
       if (r) ctx.fillText(t, r.x, r.y + H / 2);
     };
     font("700 11px", "0.12em");
-    const here = geo(this.observer.longitude, this.observer.latitude, 1.3).applyMatrix4(
-      this.earth.matrixWorld,
-    );
-    label(labels.here, here, false);
+    const { here, sun, moon, pole } = this.frameTmp;
+    const [lon, lat] = [this.observer.longitude * DEG, this.observer.latitude * DEG];
+    here
+      .set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat))
+      .multiplyScalar(1.3)
+      .applyMatrix4(this.earth.matrixWorld);
+    // On the ground (flight) the marker is hidden: its label would float overhead.
+    if (this.observerMarker.visible) label(labels.here, here, false);
     if (this.bodies) {
-      label(labels.sun, this.dirAt(0), true, 20);
-      if (this.ephemerisOk) label(labels.moon, this.dirAt(1), true, this.labelOffset(0, 18));
+      label(labels.sun, this.dirAt(0, sun), true, 20);
+      if (this.ephemerisOk) label(labels.moon, this.dirAt(1, moon), true, this.labelOffset(0, 18));
     }
     const names = this.options.planetNames;
     if (this.planetsShown() && this.planets && names) {
@@ -950,7 +1167,7 @@ export class SpaceView {
       });
     }
     font("700 11px", "0.12em");
-    label(labels.pole, new THREE.Vector3(0, 0, 1), true);
+    label(labels.pole, pole, true);
     // Dated monthly marks of the selected planet's path (lowest priority).
     if (this.pathPoints.visible && this.pathMarks.length) {
       font("400 9px", "0.06em");
@@ -1026,6 +1243,7 @@ export class SpaceView {
     canvas.addEventListener(
       "pointerdown",
       (e) => {
+        if (this.flight) return; // the flight owns the camera
         canvas.setPointerCapture(e.pointerId);
         this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         this.velocity = { lon: 0, lat: 0 };
@@ -1071,14 +1289,22 @@ export class SpaceView {
       "wheel",
       (e) => {
         e.preventDefault();
-        this.zoom(Math.exp(e.deltaY * 0.0012));
+        if (!this.flight) this.zoom(Math.exp(e.deltaY * 0.0012));
       },
       { passive: false, signal },
     );
   }
 
   private zoom(factor: number): void {
-    this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.orbit.dist * factor));
+    const requested = this.orbit.dist * factor;
+    this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, requested));
     this.dirty = true;
+    // Zooming in past the closest distance on "you are here": into the sky (#37).
+    if (!this.options.onEnterSky || !this.overZoom.push(DIST_MIN / requested, performance.now()))
+      return;
+    this.placeCamera();
+    const gst = greenwichMeanSiderealTime(this.date);
+    horizonBasis(this.observer.latitude, this.observer.longitude, gst, this.horizon);
+    if (shouldEnterSky(this.camera.position, this.horizon.up)) this.options.onEnterSky();
   }
 }

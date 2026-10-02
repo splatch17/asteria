@@ -1,3 +1,13 @@
+<script module lang="ts">
+  /**
+   * Height (CSS px) the offset bubble rises above the scrubber's top edge, plus a 4 px margin:
+   * 9 px gap + 41 px bubble (6 + 6 padding, 13 px value, 2 px gap, 12 px date, 2 px borders).
+   * What sits right above the scrubber while the bubble shows (the playback hint, #80) is pushed
+   * up by this much minus the column gap. Keep in sync with `.bubble` below.
+   */
+  export const BUBBLE_RISE = 54;
+</script>
+
 <script lang="ts">
   import { _ } from "@asteria/ui";
   import { RANGES, type TimeRange } from "../lib/timeline";

@@ -118,6 +118,8 @@
   "layers.ecliptic.hint": "Chemin apparent du Soleil dans l'année",
   "layers.seeThroughGround": "Voir à travers la Terre",
   "layers.seeThroughGround.hint": "Étoiles sous l'horizon, en transparence",
+  "layers.miniGlobe": "Mini-globe",
+  "layers.miniGlobe.hint": "Le jour et la nuit sur la Terre, vus d'ici",
   "sky.belowHorizon": "Sous l'horizon · vu à travers la Terre",
   "layers.grad.ra": "{h}h",
   "layers.grad.dec": "δ {sign}{n}°",

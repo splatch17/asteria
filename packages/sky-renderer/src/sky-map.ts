@@ -13,6 +13,7 @@
  *   azimuthalGrid,   // azimuth/altitude, 15° / 10°, labelled in degrees
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
+ *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -75,6 +76,7 @@ import {
 } from "./pick";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
+import { OverZoom, PRELOAD_FOV } from "./flight";
 
 export interface CatalogStar {
   hip: number;
@@ -154,6 +156,8 @@ export interface SkyLayers {
    * ground.
    */
   seeThroughGround: boolean;
+  /** Mini-globe in a corner of the sky view (#38): drawn by the app (MiniGlobe), not the map. */
+  miniGlobe: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -166,6 +170,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   azimuthalGrid: false,
   ecliptic: false,
   seeThroughGround: true,
+  miniGlobe: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -218,6 +223,13 @@ export interface SkyMapOptions {
   formatGraduation?: (kind: GraduationKind, value: number) => string;
   /** Initial layers (default: DEFAULT_SKY_LAYERS). */
   layers?: Partial<SkyLayers>;
+  /**
+   * Zooming out past the widest field (FOV_MAX), by pinch or wheel (#37): the caller leaves for
+   * the Earth view. Without it the field simply stops at FOV_MAX.
+   */
+  onZoomPastMax?: () => void;
+  /** The field is being widened beyond PRELOAD_FOV, towards FOV_MAX: time to preload (#37). */
+  onNearMaxFov?: () => void;
 }
 
 const FOV_MIN = 2;
@@ -325,6 +337,8 @@ export class SkyMap {
   /** Magnitudes of the catalogue (sorted), for pickStar. */
   private readonly mags: Float32Array;
   private velocity = { az: 0, alt: 0 };
+  /** Zoom pushed past FOV_MAX, towards the Earth view (#37). */
+  private readonly overZoom = new OverZoom();
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private moved = 0;
   private readonly resizeObserver: ResizeObserver;
@@ -1537,7 +1551,7 @@ export class SkyMap {
           this.view.altitude += this.velocity.alt;
         } else if (this.pointers.size === 2) {
           const d = this.pinchDistance();
-          if (pinchDist > 0) this.view.fov *= pinchDist / d;
+          if (pinchDist > 0) this.zoomBy(pinchDist / d);
           pinchDist = d;
         }
         this.clampView();
@@ -1561,12 +1575,21 @@ export class SkyMap {
       "wheel",
       (e) => {
         e.preventDefault();
-        this.view.fov *= Math.exp(e.deltaY * 0.0012);
+        this.zoomBy(Math.exp(e.deltaY * 0.0012));
         this.clampView();
         this.dirty = true;
       },
       { passive: false, signal },
     );
+  }
+
+  /** Pinch / wheel zoom: past FOV_MAX, the push may leave for the Earth view (#37). */
+  private zoomBy(factor: number): void {
+    const requested = this.view.fov * factor;
+    this.view.fov = requested;
+    if (factor > 1 && requested > PRELOAD_FOV) this.options.onNearMaxFov?.();
+    if (this.options.onZoomPastMax && this.overZoom.push(requested / FOV_MAX, performance.now()))
+      this.options.onZoomPastMax();
   }
 
   private pinchDistance(): number {
