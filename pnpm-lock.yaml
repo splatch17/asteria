@@ -105,6 +105,9 @@ importers:
       '@types/node':
         specifier: ^22.20.4
         version: 22.20.4
+      vite:
+        specifier: ^8.3.1
+        version: 8.3.1(@types/node@22.20.4)
 
   packages/sky-renderer:
     dependencies:
@@ -2476,6 +2479,17 @@ snapshots:
       punycode: 2.3.1
 
   util-deprecate@1.0.2: {}
+
+  vite@8.3.1(@types/node@22.20.4):
+    dependencies:
+      lightningcss: 1.33.0
+      picomatch: 4.0.7
+      postcss: 8.5.28
+      rolldown: 1.2.11
+      tinyglobby: 0.2.17
+    optionalDependencies:
+      '@types/node': 22.20.4
+      fsevents: 2.3.3
 
   vite@8.3.1(@types/node@24.19.0):
     dependencies:

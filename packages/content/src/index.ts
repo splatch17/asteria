@@ -13,3 +13,5 @@ const NAMES: Record<ContentLocale, Record<string, string>> = { fr };
 export function constellationNames(locale: ContentLocale): Readonly<Record<string, string>> {
   return NAMES[locale];
 }
+
+export * from "./stories";

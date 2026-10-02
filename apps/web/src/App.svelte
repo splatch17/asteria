@@ -57,6 +57,8 @@
   import Icon from "./components/Icon.svelte";
   import TimeScrubber from "./components/TimeScrubber.svelte";
   import LayersPanel from "./components/LayersPanel.svelte";
+  import ConstellationSheet from "./components/ConstellationSheet.svelte";
+  import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import {
     LAYERS_STORAGE_KEY,
     graduationFormatter,
@@ -121,6 +123,9 @@
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
   const selectedPlanet = $derived(selection?.kind === "planet" ? selection.planet : null);
+  const selectedConstellation = $derived(
+    selection?.kind === "constellation" ? selection.abbr : null,
+  );
   let date = $state(new Date());
   let live = $state(true);
   let range = $state<TimeRange>("48h");
@@ -524,7 +529,7 @@
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
-        onSelect: (s) => (selection = s),
+        onSelect: select,
         onPointingDrag,
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
@@ -535,7 +540,9 @@
             ? $_(`body.${t.body}` as `body.${BodyName}`)
             : t.kind === "planet"
               ? planetName(t.planet)
-              : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
+              : t.kind === "constellation"
+                ? (names[t.abbr] ?? t.abbr)
+                : (t.star.name ?? t.star.bayer ?? `HIP ${t.star.hip}`),
       });
       map.setObserver(place);
       status = "ready";
@@ -570,6 +577,43 @@
     }
   });
 
+  // --- Constellation sheet (#61)
+  /** Selects from the map; a constellation hidden under the sheet is brought above it. */
+  function select(s: SkySelection | null) {
+    selection = s;
+    if (s?.kind !== "constellation" || !map || !catalog || pointing !== "off") return;
+    const placement = placeFigure(
+      figureDirections(catalog.stars, catalog.lines, s.abbr),
+      date,
+      place,
+    );
+    if (!placement || placement.visibility === "down") return;
+    const next = frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
+    if (next) map.animateTo(next);
+  }
+  const constellationInfo = $derived.by(() => {
+    if (!selectedConstellation || !catalog) return null;
+    const abbr = selectedConstellation;
+    const star = brightestStar(catalog.stars, abbr);
+    const placement = placeFigure(
+      figureDirections(catalog.stars, catalog.lines, abbr),
+      date,
+      place,
+    );
+    return {
+      abbr,
+      name: names[abbr] ?? abbr,
+      latin: CONSTELLATION_LATIN[abbr] ?? abbr,
+      star,
+      brightest: star ? { label: star.name ?? star.bayer ?? `HIP ${star.hip}`, v: star.v } : null,
+      visibility: placement?.visibility ?? null,
+    };
+  });
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setSelectedConstellation(selectedConstellation);
+  });
+
   // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).
   let header: HTMLElement;
   let compass: HTMLElement;
@@ -591,6 +635,7 @@
   }
   let controlsHeight = $state(140);
   let dialsHeight = $state(148);
+  let headerHeight = $state(90);
 
   onDestroy(() => {
     hudObserver?.disconnect();
@@ -729,7 +774,7 @@
           });
     return {
       name: planetName(p.name),
-      con: { name: names[con], latin: CONSTELLATION_LATIN[con] },
+      con: { abbr: con, name: names[con], latin: CONSTELLATION_LATIN[con] },
       lines: [
         `${$_("planet.magnitude").padEnd(9)} ${p.magnitude.toFixed(1)}`,
         `${$_("body.altitude").padEnd(9)} ${p.altitude.toFixed(1)}°`,
@@ -791,7 +836,7 @@
   <canvas class="overlay" bind:this={spaceOverlay}></canvas>
 </div>
 
-<header class="hud top" bind:this={header}>
+<header class="hud top" bind:this={header} bind:clientHeight={headerHeight}>
   <p class="meta">
     {mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
     {#if spaceLoading}· {$_("space.loading")}{/if}
@@ -887,7 +932,12 @@
   <aside class="hud panel">
     <p class="meta">HIP {selected.hip}{selected.bayer ? ` // ${selected.bayer}` : ""}</p>
     <p class="name">{selected.name ?? selected.bayer ?? `HIP ${selected.hip}`}</p>
-    <p class="con">{names[selected.con]} · <i>{CONSTELLATION_LATIN[selected.con]}</i></p>
+    <button
+      class="con"
+      onclick={() => (selection = { kind: "constellation", abbr: selected.con })}
+      aria-label={$_("constellation.open", { values: { name: names[selected.con] } })}
+      >{names[selected.con]} · <i>{CONSTELLATION_LATIN[selected.con]}</i> ›</button
+    >
     <pre class="data">RA   {formatRa(selected.ra)}
 DEC  {formatDec(selected.dec)}
 V    {selected.v.toFixed(2)}{selected.bv !== undefined ? `\nB−V  ${selected.bv.toFixed(2)}` : ""}
@@ -921,11 +971,36 @@ DIST {distance
   <aside class="hud panel">
     <p class="meta">{$_("planet.kind")}</p>
     <p class="name">{planetInfo.name}</p>
-    <p class="con">{planetInfo.con.name} · <i>{planetInfo.con.latin}</i></p>
+    <button
+      class="con"
+      onclick={() => (selection = { kind: "constellation", abbr: planetInfo.con.abbr })}
+      aria-label={$_("constellation.open", { values: { name: planetInfo.con.name } })}
+      >{planetInfo.con.name} · <i>{planetInfo.con.latin}</i> ›</button
+    >
     <pre class="data">{planetInfo.lines}</pre>
     <button class="close" onclick={() => (selection = null)} aria-label={$_("star.close")}>×</button
     >
   </aside>
+{/if}
+
+{#if constellationInfo}
+  {@const info = constellationInfo}
+  {#key info.abbr}
+    <ConstellationSheet
+      abbr={info.abbr}
+      name={info.name}
+      latin={info.latin}
+      brightest={info.brightest}
+      visibility={info.visibility}
+      daylight={bodies.sun.altitude > -6}
+      top={`calc(max(16px, env(safe-area-inset-top)) + ${Math.max(headerHeight, mode === "sky" ? dialsHeight : 0) + 8}px)`}
+      bottom={`calc(max(16px, env(safe-area-inset-bottom)) + ${controlsHeight + 8}px)`}
+      onclose={() => (selection = null)}
+      onstar={info.star
+        ? () => info.star && (selection = { kind: "star", star: info.star })
+        : undefined}
+    />
+  {/key}
 {/if}
 
 <nav
@@ -1055,7 +1130,14 @@ DIST {distance
     color: var(--ast-fg);
   }
   .con {
-    margin: -4px 0 8px;
+    display: block;
+    height: auto;
+    min-height: 32px;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    margin: -4px 0 4px;
+    line-height: 1.4;
     font-size: 11px;
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;

@@ -62,6 +62,10 @@
     <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
   {:else if name === "fullscreenExit"}
     <path d="M6 2.5 V6 H2.5 M13.5 6 H10 V2.5 M10 13.5 V10 H13.5 M2.5 10 H6 V13.5" />
+  {:else if name === "expand"}
+    <path d="M3.5 10 L8 5.5 L12.5 10" />
+  {:else if name === "collapse"}
+    <path d="M3.5 6 L8 10.5 L12.5 6" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
   {/if}
