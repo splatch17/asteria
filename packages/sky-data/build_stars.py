@@ -187,7 +187,17 @@ def gaia_parallax(g) -> tuple[float, float] | None:
         return None
     nu = float(colour) if solved == 31 else np.nan
     pc = float(colour) if solved == 95 else np.nan
-    zero = float(zpt.get_zpt(float(g["phot_g_mean_mag"]), nu, pc, float(g["ecl_lat"]), solved))
+    # gaiadr3-zeropoint calls np.can_cast on its inputs, which NumPy 2 rejects for Python scalars:
+    # pass 1-element arrays.
+    zero = float(
+        zpt.get_zpt(
+            np.array([float(g["phot_g_mean_mag"])]),
+            np.array([nu]),
+            np.array([pc]),
+            np.array([float(g["ecl_lat"])]),
+            np.array([solved]),
+        )[0]
+    )
     return float(g["parallax"]) - zero, float(g["parallax_error"])
 
 
