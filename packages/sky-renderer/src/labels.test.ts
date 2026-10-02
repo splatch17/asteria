@@ -24,4 +24,42 @@ describe("LabelLayout", () => {
     expect(layout.place([inside])).toBeNull();
     expect(layout.place([inside, outside])).toEqual(outside);
   });
+
+  // A phone-sized HUD (CSS px): header strip, column of round buttons on the right, bottom row.
+  const header = { x: 12, y: 12, w: 280, h: 100 };
+  const dials = { x: 300, y: 12, w: 52, h: 216 };
+  const bottom = { x: 12, y: 640, w: 336, h: 128 };
+  const hud = [header, dials, bottom];
+
+  it("reserves the HUD from the constructor, for the first label too", () => {
+    const layout = new LabelLayout(hud);
+    // A constellation name over the title, with its vertical fallbacks (as in SkyMap).
+    const lynx = [0, -16, 16, -32, 32].map((dy) => ({ x: 140, y: 50 + dy, w: 40, h: 12 }));
+    expect(layout.place(lynx)).toBeNull();
+    // Just below the header (padding included), it fits.
+    const free = { x: 140, y: 115, w: 40, h: 12 };
+    expect(layout.place([...lynx, free])).toEqual(free);
+  });
+
+  it("hides a label under the buttons or the bottom row, keeps a fallback outside", () => {
+    const layout = new LabelLayout(hud);
+    const right = { x: 310, y: 100, w: 40, h: 12 }; // under the dials
+    const left = { x: 250, y: 120, w: 40, h: 12 }; // below the header, left of the dials
+    expect(layout.place([right, left])).toEqual(left);
+    expect(layout.place([{ x: 100, y: 700, w: 60, h: 12 }])).toBeNull();
+    expect(layout.place([{ x: 100, y: 600, w: 60, h: 12 }])).not.toBeNull();
+  });
+
+  it("ignores empty reserved areas", () => {
+    const layout = new LabelLayout([{ x: 150, y: 300, w: 0, h: 0 }, header]);
+    expect(layout.isFree({ x: 20, y: 20, w: 5, h: 5 })).toBe(false); // under the header
+    expect(layout.isFree({ x: 150, y: 300, w: 5, h: 5 })).toBe(true);
+  });
+
+  it("occupies areas (planet discs) even when they cross the HUD", () => {
+    const layout = new LabelLayout(hud);
+    layout.occupy({ x: 280, y: 100, w: 30, h: 30 }); // disc straddling the header edge
+    expect(layout.place([{ x: 285, y: 125, w: 20, h: 10 }])).toBeNull();
+    expect(layout.place([{ x: 200, y: 150, w: 20, h: 10 }])).not.toBeNull();
+  });
 });

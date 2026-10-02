@@ -577,7 +577,7 @@
   let hudObserver: ResizeObserver | undefined;
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
-    map?.setGraduationExclusions(
+    map?.setHudExclusions(
       [header, compass, bottomNav].map((el) => {
         const r = el.getBoundingClientRect();
         return { x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m };
