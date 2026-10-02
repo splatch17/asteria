@@ -44,6 +44,31 @@ export function devicePointing(
   };
 }
 
+/** Rotates v by the unit quaternion q = [x, y, z, w]: q · v · q⁻¹. */
+function rotateByQuaternion([x, y, z, w]: readonly number[], v: V3): V3 {
+  // t = 2 · (q.xyz × v); v' = v + w·t + q.xyz × t
+  const tx = 2 * (y! * v[2] - z! * v[1]);
+  const ty = 2 * (z! * v[0] - x! * v[2]);
+  const tz = 2 * (x! * v[1] - y! * v[0]);
+  return [
+    v[0] + w! * tx + (y! * tz - z! * ty),
+    v[1] + w! * ty + (z! * tx - x! * tz),
+    v[2] + w! * tz + (x! * ty - y! * tx),
+  ];
+}
+
+/**
+ * Same as devicePointing, from a Generic Sensor quaternion [x, y, z, w]
+ * (AbsoluteOrientationSensor, `referenceFrame: "device"`: device frame → East, North, Up).
+ */
+export function quaternionPointing(q: readonly number[], screenAngle = 0): { forward: V3; up: V3 } {
+  const s = screenAngle * RAD;
+  return {
+    forward: rotateByQuaternion(q, [0, 0, -1]),
+    up: rotateByQuaternion(q, [Math.sin(s), Math.cos(s), 0]),
+  };
+}
+
 /** Converts pointing vectors (East, North, Up) to the sky map's azimuth / altitude / roll. */
 export function pointingToView(forward: V3, up: V3): SkyPointing {
   const [e, n, u] = forward;

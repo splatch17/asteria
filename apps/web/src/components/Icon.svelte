@@ -58,6 +58,10 @@
     <path d="M1.5 9.5 H14.5" class="thin" />
     <path d="M1.5 12.5 L14.5 5" stroke-dasharray="1.6 1.2" />
     <circle cx="9.9" cy="7.7" r="1.9" class="fill" />
+  {:else if name === "fullscreen"}
+    <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
+  {:else if name === "fullscreenExit"}
+    <path d="M6 2.5 V6 H2.5 M13.5 6 H10 V2.5 M10 13.5 V10 H13.5 M2.5 10 H6 V13.5" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
   {/if}
