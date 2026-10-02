@@ -22,32 +22,47 @@ export function parallaxToLightYears(plx: number | undefined): number | null {
 }
 
 /**
- * Relative parallax error above which a Hipparcos distance is only an order of magnitude
- * (Deneb: σπ/π = 0.14, 1 400 ly from its parallax for ~2 600 ly by other methods).
+ * Relative distance error above which the distance is shown as approximate ("≈", two
+ * significant figures): Rigel (± 9 %), Deneb (± 8 %), Betelgeuse (± 12 %). Below, three
+ * significant figures are meaningful (Sirius 8.60 ± 0.04 ly).
  */
-export const APPROX_PARALLAX_ERROR = 0.1;
-/** Beyond this, the parallax says almost nothing about the distance: none is shown. */
-export const UNKNOWN_PARALLAX_ERROR = 0.5;
+export const APPROX_DISTANCE_ERROR = 0.05;
+/** Beyond this, the distance is barely an order of magnitude: none is shown. */
+export const UNKNOWN_DISTANCE_ERROR = 0.5;
+
+/** The distance fields of a catalogue record (`@asteria/catalog`, #75). */
+export interface StarDistanceFields {
+  distanceLy?: number | undefined;
+  distanceErrorLy?: number | undefined;
+  /** Fallback for catalogues without a reference distance (format v1): the parallax, mas. */
+  plx?: number | undefined;
+  ePlx?: number | undefined;
+}
 
 /**
- * Distance shown in the star panel: exact (rounded to the light-year) when the parallax is
- * precise, "≈" with two significant figures when it is not, null when it is meaningless.
+ * Distance shown in the star panel, from the catalogue's reference distance (Gaia DR3, Hipparcos
+ * or a published value, #75): three significant figures when it is precise, "≈" with two when it
+ * is not, null when it is meaningless. `errorLy` is the rounded 1σ uncertainty.
  */
 export function starDistance(
-  plx: number | undefined,
-  ePlx: number | undefined,
-): { ly: number; approx: boolean } | null {
-  const ly = parallaxToLightYears(plx);
-  if (ly === null) return null;
-  const ratio = ePlx !== undefined ? ePlx / plx! : 0;
-  if (ratio > UNKNOWN_PARALLAX_ERROR) return null;
-  if (ratio > APPROX_PARALLAX_ERROR) return { ly: significant(ly, 2), approx: true };
-  return { ly: Math.round(ly), approx: false };
+  star: StarDistanceFields,
+): { ly: number; errorLy: number | null; approx: boolean } | null {
+  let ly = star.distanceLy ?? null;
+  let error = star.distanceErrorLy;
+  if (ly === null) {
+    ly = parallaxToLightYears(star.plx);
+    if (ly !== null && star.ePlx !== undefined) error = (ly * star.ePlx) / star.plx!;
+  }
+  if (ly === null || !(ly > 0)) return null;
+  const ratio = error !== undefined ? error / ly : 0;
+  const errorLy = error !== undefined ? significant(error, 2) : null;
+  if (ratio > UNKNOWN_DISTANCE_ERROR) return null;
+  if (ratio > APPROX_DISTANCE_ERROR) return { ly: significant(ly, 2), errorLy, approx: true };
+  return { ly: significant(ly, 3), errorLy, approx: false };
 }
 
 function significant(x: number, digits: number): number {
-  const p = 10 ** (Math.floor(Math.log10(x)) - digits + 1);
-  return Math.round(x / p) * p;
+  return Number(x.toPrecision(digits)); // 8.6 stays 8.6 (no 8.600000000000001)
 }
 
 /**
