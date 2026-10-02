@@ -97,9 +97,12 @@ export function inlineSegments(text: string): InlineSegment[] {
   return out;
 }
 
-// One lazy chunk per file. Keys look like "../fr/constellations/Ori.md".
+// One lazy chunk per file. Keys look like "../fr/constellations/Ori.md". The README exclusion is
+// relative to this file: "!**/README.md" is matched against root-relative paths, and from
+// apps/web the files sit under "../../packages/…", which "**" does not cross, so the README was
+// bundled and listed as a story (#67).
 const FILES: Record<ContentLocale, Record<string, () => Promise<string>>> = {
-  fr: import.meta.glob<string>(["../fr/constellations/*.md", "!**/README.md"], {
+  fr: import.meta.glob<string>(["../fr/constellations/*.md", "!../fr/constellations/README.md"], {
     query: "?raw",
     import: "default",
   }),

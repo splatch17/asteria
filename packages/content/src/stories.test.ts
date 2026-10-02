@@ -126,6 +126,17 @@ describe("story loading", () => {
     expect(hasConstellationStory("fr", "And")).toBe(false);
   });
 
+  it('excludes the README with a pattern relative to stories.ts (not "**/", see #67)', () => {
+    expect(storyIds("fr")).not.toContain("README");
+    const source = readFileSync(fileURLToPath(new URL("./stories.ts", import.meta.url)), "utf8");
+    const globs = [...source.matchAll(/import\.meta\.glob<string>\(\[([^\]]*)\]/g)];
+    expect(globs.length).toBeGreaterThan(0);
+    for (const [, patterns] of globs) {
+      expect(patterns).toContain('"!../fr/constellations/README.md"');
+      expect(patterns).not.toMatch(/"!\*\*/);
+    }
+  });
+
   it("loads and parses a story on demand, null when there is none", async () => {
     const ori = await loadConstellationStory("fr", "Ori");
     expect(ori?.id).toBe("Ori");
