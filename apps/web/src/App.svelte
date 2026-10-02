@@ -20,7 +20,7 @@
     moonPhase,
     type Planet,
   } from "@asteria/astro-core";
-  import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
+  import { CONSTELLATION_LATIN, constellationNames, localizeStarStrings } from "@asteria/content";
   import { decodeCoastlines, decodeStarCatalog } from "@asteria/catalog";
   import { formatDec, formatRa, parallaxToLightYears } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
@@ -531,7 +531,7 @@
         load("star-strings.json").then((r) => r.json()),
         load("constellation-lines.json").then((r) => r.json()),
       ]);
-      const stars = decodeStarCatalog(catalogBuffer, strings);
+      const stars = decodeStarCatalog(catalogBuffer, localizeStarStrings("fr", strings));
       catalog = { stars, lines: constellationLines };
       map = new SkyMap({
         canvas,

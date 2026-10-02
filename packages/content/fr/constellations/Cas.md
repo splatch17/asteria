@@ -13,6 +13,9 @@ sources:
   - title: "Star Tales — Cassiopeia (Ian Ridpath)"
     url: "http://www.ianridpath.com/startales/cassiopeia.html"
     license: "© Ian Ridpath, tous droits réservés (faits cités, texte non repris)"
+  - title: "Star Tales — Cepheus (Ian Ridpath)"
+    url: "http://www.ianridpath.com/startales/cepheus.html"
+    license: "© Ian Ridpath, tous droits réservés (faits cités, texte non repris)"
   - title: "Cassiopeia A — Wikipedia (en)"
     url: "https://en.wikipedia.org/wiki/Cassiopeia_A"
     license: "CC BY-SA 4.0"
@@ -22,7 +25,7 @@ sources:
 
 Cassiopée était la reine d'Éthiopie, l'épouse du roi Céphée et la mère de la princesse Andromède. Elle était très belle, mais aussi très vaniteuse. Un jour, en coiffant ses longs cheveux, elle osa prétendre qu'elle était plus belle que les Néréides, les cinquante nymphes de la mer. Vexées, celles-ci demandèrent vengeance à Poséidon, le dieu des océans, qui avait épousé l'une d'elles. Il envoya un monstre marin ravager les côtes du royaume. Pour le calmer, le roi et la reine durent enchaîner leur fille Andromède à un rocher… Heureusement, le héros Persée arriva à temps pour la délivrer.
 
-Dans le ciel, Cassiopée est assise sur son trône, tout près de son mari Céphée : ce sont le seul couple marié parmi les constellations. Mais sa punition continue : chaque nuit, elle tourne autour du pôle et se retrouve parfois la tête en bas, au risque de tomber de son siège ! Le poète Aratos la comparait à un plongeur qui pique dans la mer, car vue de Grèce elle frôlait l'horizon. Dans certains manuscrits anciens, ses poignets sont même attachés au trône.
+Dans le ciel, Cassiopée est assise sur son trône, tout près de son mari Céphée. Toute la famille est d'ailleurs réunie dans cette région du ciel : leur fille Andromède brille à côté, et Persée aussi, qui l'épousa après l'avoir sauvée. Mais sa punition continue : chaque nuit, elle tourne autour du pôle et se retrouve parfois la tête en bas, au risque de tomber de son siège ! Le poète Aratos la comparait à un plongeur qui pique dans la mer, car vue de Grèce elle frôlait l'horizon. Dans certains manuscrits anciens, ses poignets sont même attachés au trône.
 
 ## Anecdotes
 

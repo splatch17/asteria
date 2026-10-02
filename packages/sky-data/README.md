@@ -6,6 +6,7 @@ Scripts Python reproductibles : source officielle → nettoyage → croisement �
 python -m venv .venv && .venv/Scripts/activate   # Windows
 pip install -r requirements.txt
 python build_stars.py          # → out/ (+ raw/ en cache)
+python build_star_names_fr.py  # → ../content/fr/star-names.json (versionné ; IAU + Wikidata)
 ```
 
 Vue Terre : `python build_earth.py` (côtes, relief, lumières → `out/earth/`) et
