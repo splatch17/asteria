@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { altitudeOf } from "./horizon";
+import { altitudeOf, horizontalOf } from "./horizon";
 
 // Positions J2000 (SIMBAD): Polaris 37.954561, +89.264109; Achernar 24.428523, −57.236753.
 const PARIS = { latitude: 48.8566, longitude: 2.3522 };
@@ -18,5 +18,16 @@ describe("altitudeOf", () => {
       const date = new Date(Date.UTC(2027, 1, 19, h));
       expect(altitudeOf(24.428523, -57.236753, date, PARIS)).toBeLessThan(-15);
     }
+  });
+});
+
+describe("horizontalOf", () => {
+  it("agrees with altitudeOf and puts Polaris due north", () => {
+    const date = new Date("2026-10-05T21:00:00Z");
+    const h = horizontalOf(37.954561, 89.264109, date, PARIS);
+    expect(h.altitude).toBeCloseTo(altitudeOf(37.954561, 89.264109, date, PARIS), 10);
+    // Polar distance 0.74° seen from 48.86° N: at most asin(sin 0.74° / cos 48.86°) ≈ 1.13° off north.
+    const offNorth = Math.min(h.azimuth, 360 - h.azimuth);
+    expect(offNorth).toBeLessThan(1.2);
   });
 });

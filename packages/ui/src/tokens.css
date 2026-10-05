@@ -1,4 +1,4 @@
-/* Asteria design tokens — see docs/ART_DIRECTION.md §2 */
+/* Asteria design tokens — see docs/ART_DIRECTION.md §2 and §6 (ambiance) */
 :root {
   --ast-night: #101b52;
   --ast-night-deep: #0a1136;
@@ -17,11 +17,32 @@
   --ast-radius: 0;
 
   --ast-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  /* Ambiance (#91): a slight overshoot for what "settles" into place, and two durations. */
+  --ast-ease-settle: cubic-bezier(0.2, 0.9, 0.25, 1.08);
+  --ast-dur-fast: 140ms;
+  --ast-dur-reveal: 320ms;
+
+  /* Halo around an active control: made of the ink, never of another colour (bichrome DA). */
+  --ast-glow-strength: 45%;
+  --ast-glow: 0 0 14px -2px color-mix(in srgb, var(--ast-fg) var(--ast-glow-strength), transparent);
+  --ast-glow-soft: 0 0 24px -6px
+    color-mix(in srgb, var(--ast-fg) var(--ast-glow-strength), transparent);
+
+  /* 1-bit ordered dither (3 cells out of 16), used as a mask over the ink colour so that the
+     texture follows the theme (parchment, night red). Static: no animation cost. */
+  --ast-dither: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' shape-rendering='crispEdges'%3E%3Crect width='1' height='1'/%3E%3Crect x='2' y='2' width='1' height='1'/%3E%3Crect x='3' y='1' width='1' height='1'/%3E%3C/svg%3E");
+  /* Engraver's hatching: fine 45° lines, for pressed or featured surfaces. */
+  --ast-hatch: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--ast-fg) 10%, transparent) 0 1px,
+    transparent 1px 5px
+  );
 }
 
-/* Night vision: remap both tones to red on black */
+/* Night vision: remap both tones to red on black; halos are dimmer (dark adaptation). */
 :root[data-night="red"] {
   --ast-night: #000;
   --ast-night-deep: #000;
   --ast-parchment: #ff2a1a;
+  --ast-glow-strength: 25%;
 }

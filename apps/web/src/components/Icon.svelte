@@ -110,6 +110,51 @@
     <path d={sparkle(12.6, 3, 2.4)} class="fill" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
+  {:else if name === "library"}
+    <!-- An open book under a star: the library of the sky (#90). -->
+    <path
+      d="M8 7.2 C6.3 6.1 4 5.9 1.5 6.3 V14 C4 13.6 6.3 13.8 8 14.9 C9.7 13.8 12 13.6 14.5 14 V6.3 C12 5.9 9.7 6.1 8 7.2 Z"
+    />
+    <path d="M8 7.2 V14.9" class="thin" />
+    <path d={sparkle(8, 2.6, 2.3)} class="fill" />
+  {:else if name === "back"}
+    <path d="M10.5 2.5 L5 8 L10.5 13.5" />
+  {:else if name === "search"}
+    <circle cx="6.8" cy="6.8" r="4.3" />
+    <path d="M10 10 L14 14" />
+  {:else if name === "catalog"}
+    <!-- A list whose bullets are stars. -->
+    <path d={sparkle(3, 3.5, 1.8)} class="fill" />
+    <path d={sparkle(3, 8, 1.8)} class="fill" />
+    <path d={sparkle(3, 12.5, 1.8)} class="fill" />
+    <path d="M6.5 3.5 H14.5 M6.5 8 H14.5 M6.5 12.5 H12" />
+  {:else if name === "story"}
+    <!-- A quill: the stories told about the sky. -->
+    <path d="M14 1.8 C9 2.4 5.6 6 4.6 11 L6.6 11 C10 9.4 12.6 6.4 14 1.8 Z" />
+    <path d="M9.6 6 L4.6 11 L2.5 14" />
+    <path d="M7.5 14.5 H14" class="thin" />
+  {:else if name === "games"}
+    <!-- A die whose pips are stars. -->
+    <rect x="2" y="2" width="12" height="12" rx="1.5" />
+    <path d={sparkle(5.2, 5.2, 1.7)} class="fill" />
+    <path d={sparkle(8, 8, 1.7)} class="fill" />
+    <path d={sparkle(10.8, 10.8, 1.7)} class="fill" />
+  {:else if name === "explore"}
+    <!-- A cube in perspective: exploring the sky in 3D. -->
+    <path d="M8 1.6 L14 4.9 V11.1 L8 14.4 L2 11.1 V4.9 Z" />
+    <path d="M2 4.9 L8 8.2 L14 4.9 M8 8.2 V14.4" class="thin" />
+  {:else if name === "target"}
+    <!-- A sight: show it in the sky. -->
+    <circle cx="8" cy="8" r="4.6" />
+    <path d="M8 1 V4.5 M8 11.5 V15 M1 8 H4.5 M11.5 8 H15" />
+    <circle cx="8" cy="8" r="1.1" class="fill" />
+  {:else if name === "sun"}
+    <circle cx="8" cy="8" r="3" />
+    <path
+      d="M8 1.5 V3.3 M8 12.7 V14.5 M1.5 8 H3.3 M12.7 8 H14.5 M3.4 3.4 L4.7 4.7 M11.3 11.3 L12.6 12.6 M3.4 12.6 L4.7 11.3 M11.3 4.7 L12.6 3.4"
+    />
+  {:else if name === "moon"}
+    <path d="M10 2.2 A6 6 0 1 0 13.8 11.5 A5 5 0 0 1 10 2.2 Z" />
   {/if}
 </svg>
 

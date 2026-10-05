@@ -82,3 +82,29 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 - Orion en 3 variantes : **A** gravure tramée 1-bit ✅ retenue, **B** halftone/scanlines, **C** particules/grain.
 - Chaque variante en mode nuit rouge.
 - Planche typographique (3 combinaisons).
+
+## 6. Ambiance (#91, 2026-10-05)
+
+> Demande du porteur : sortir un peu du « simple et sobre » avec des touches créatives (boutons, menus, transitions), sans trahir la gravure bichrome. **À valider par le porteur** (captures : `docs/design/library/`).
+
+Principe : la gravure reste la règle (deux tons, angles vifs, filets) ; l'ambiance vient de la **lumière de l'encre** et de la **matière imprimée**, jamais d'une troisième couleur. Tout passe par des tokens (`packages/ui/src/tokens.css`), donc le mode nuit rouge suit sans code dédié.
+
+| Touche | Où | Comment | Pourquoi |
+|---|---|---|---|
+| **Halo d'encre** (`--ast-glow`, `--ast-glow-soft`) | Boutons actifs (`aria-pressed`/`aria-expanded`), focus clavier, cartes et cadran survolés, point « visible » | `box-shadow` de la couleur d'encre à 45 % (25 % en nuit rouge) | Un instrument allumé « rayonne » ; signale l'état sans couleur nouvelle. Atténué la nuit pour l'adaptation à l'obscurité |
+| **Grain imprimé** (`--ast-dither`) | Fond de tous les panneaux `.frame`, tampon « Bientôt », bande de Voie lactée | Masque de trame ordonnée 1-bit (4×4) sur l'encre, 7 % d'opacité, dégradé depuis le bord haut | Rappelle le tramage des figures ; statique, aucun coût d'animation |
+| **Hachures de graveur** (`--ast-hatch`) | Survol / appui des lignes de liste et des cartes, anecdote du jour | Filets à 45° de 1 px | Retour tactile « gravé » plutôt qu'un aplat |
+| **Coins qui s'étirent** | `.frame`, cartes de la bibliothèque | Longueur des équerres (`--l`, propriété enregistrée) 7 → 11-14 px au survol / focus | Le panneau « s'ouvre » à la main |
+| **Révélation gravée** | Apparition de tout panneau `.frame` | `clip-path` du haut vers le bas, 320 ms | Comme une plaque qui s'imprime |
+| **Iris** | Ouverture / fermeture de la bibliothèque | Cercle qui s'ouvre depuis le bouton (diaphragme de télescope), 460 / 260 ms | Lie le menu à son bouton ; transition d'instrument d'optique |
+| **Ciel en parallaxe** | Fond de la bibliothèque | 3 couches d'étoiles pixel (masques en tuiles, générés une fois), dérive lente + parallaxe au défilement, 6 scintillements | Profondeur et vie, uniquement par `transform`/`opacity` (composités) |
+| **Astrolabe** | Accueil de la bibliothèque | Anneau gradué en filets, rotation 240 s, 16 % d'opacité | Objet savant ancien, cohérent avec les atlas |
+| **Cadran Bibliothèque** | Haut de la colonne de boutons | Anneau plus lumineux, halo, petite étoile en orbite (2 tours au démarrage puis repos) | Le distingue comme porte d'entrée, sans libellé |
+| **Lettrine & ornements** | Récits | Lettrine en Cormorant italique, ornement ✦ entre filets, numéros d'anecdote évidés (contour) | Page d'atlas ancien |
+| **Tampon « Bientôt »** | Sections à venir | Cadre incliné de -7°, encre trouée par la trame | Ton ludique, reste dans la matière imprimée |
+| **Micro-interactions** | Tous les boutons | Pression `scale(0.95)`, courbes `--ast-ease-settle` (léger rebond), `--ast-dur-fast` 140 ms | Réponse immédiate au doigt |
+
+### Garde-fous
+- **`prefers-reduced-motion`** : règle globale dans `app.css` (animations et transitions ramenées à ~0, pas de pression) + règles locales ; l'iris est instantané.
+- **Performance (60 fps, Android milieu de gamme)** : seuls `transform`, `opacity`, `clip-path` (courts) et `box-shadow` (petites surfaces) bougent ; aucun `backdrop-filter` ajouté sur de grandes surfaces animées (la bibliothèque est opaque) ; pas de boucle infinie au-dessus de la carte (l'orbite du cadran s'arrête après 2 tours, la carte ne dessine qu'à la demande) ; listes longues en `content-visibility: auto`.
+- **Nuit rouge** : tout dérive de `--ast-fg`/`--ast-bg` ; halos réduits (`--ast-glow-strength: 25%`).

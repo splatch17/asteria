@@ -16,16 +16,24 @@ body {
   font-family: var(--ast-font-mono);
 }
 
-/* Instrument panel: hairline border with brighter corner brackets (Hermes-like UI). */
+/* Corner length of the frames, registered so that it can be transitioned (#91). */
+@property --l {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 7px;
+}
+
+/* Instrument panel: hairline border with brighter corner brackets (Hermes-like UI). It is
+   "engraved in" when it appears: revealed from the top like a plate being printed (#91). */
 .frame {
   position: relative;
   border: 1px solid var(--ast-hairline);
   background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
   backdrop-filter: blur(6px);
+  animation: ast-engrave var(--ast-dur-reveal) var(--ast-ease-out);
 }
 .frame::before {
   --c: var(--ast-fg);
-  --l: 7px;
   content: "";
   position: absolute;
   inset: -1px;
@@ -40,4 +48,72 @@ body {
     linear-gradient(var(--c) 0 0) bottom right / var(--l) 1px,
     linear-gradient(var(--c) 0 0) bottom right / 1px var(--l);
   background-repeat: no-repeat;
+  transition: --l var(--ast-dur-fast) var(--ast-ease-out);
+}
+/* The brackets reach out when the panel is touched or focused. */
+.frame:hover::before,
+.frame:focus-within::before {
+  --l: 11px;
+}
+/* Printed grain: a 1-bit dither fading down from the top edge, in the ink colour. Behind the
+   content (the frame is a stacking context through its backdrop filter). */
+.frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--ast-fg);
+  opacity: 0.07;
+  mask:
+    var(--ast-dither) 0 0 / 4px 4px,
+    linear-gradient(#000, transparent 70%);
+  mask-composite: intersect;
+}
+@keyframes ast-engrave {
+  from {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0.3;
+  }
+  to {
+    clip-path: inset(-12px);
+    opacity: 1;
+  }
+}
+
+/* Buttons (#91): a soft press, a halo when active, a visible focus. Low specificity (:where)
+   so that each component keeps its own look. Only transform, colours and shadows change: no
+   layout, cheap on a phone. */
+:where(button) {
+  transition:
+    transform var(--ast-dur-fast) var(--ast-ease-out),
+    background-color var(--ast-dur-fast) var(--ast-ease-out),
+    color var(--ast-dur-fast) var(--ast-ease-out),
+    box-shadow var(--ast-dur-fast) var(--ast-ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+:where(button:not(:disabled):active) {
+  transform: scale(0.95);
+}
+:where(button[aria-pressed="true"], button[aria-expanded="true"]) {
+  box-shadow: var(--ast-glow);
+}
+:where(button, a, summary, input, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 1px solid var(--ast-fg);
+  outline-offset: 2px;
+  box-shadow: var(--ast-glow);
+}
+
+/* Reduced motion: no reveal, no press, no ambient loops anywhere in the app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  :where(button:not(:disabled):active) {
+    transform: none;
+  }
 }

@@ -18,6 +18,8 @@
     onnorth,
     onpoint,
     onstyle,
+    onlibrary,
+    libraryOpen = false,
     element = $bindable(),
     height = $bindable(148),
   }: {
@@ -37,6 +39,9 @@
     onnorth: () => void;
     onpoint: () => void;
     onstyle: () => void;
+    /** Opens the library (#90); receives the button's centre, where its reveal starts. */
+    onlibrary?: ((origin: { x: number; y: number }) => void) | undefined;
+    libraryOpen?: boolean;
     element?: HTMLElement | undefined;
     height?: number;
   } = $props();
@@ -45,6 +50,23 @@
 </script>
 
 <div class="dials" bind:this={element} bind:clientHeight={height}>
+  {#if onlibrary}
+    <!-- The library (#90): set apart by an orbit turning around it, the way into everything else. -->
+    <button
+      class="dial library"
+      onclick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        onlibrary({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }}
+      aria-haspopup="dialog"
+      aria-expanded={libraryOpen}
+      aria-label={$_("library.open")}
+      title={$_("library.open")}
+    >
+      <span class="orbit" aria-hidden="true"></span>
+      <Icon name="library" size={ICON} />
+    </button>
+  {/if}
   {#if fullscreen !== null}
     {@const label = fullscreen ? $_("fullscreen.exit") : $_("fullscreen.enter")}
     <button
@@ -148,12 +170,53 @@
     color: var(--ast-fg);
     cursor: pointer;
   }
+  .dial:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--ast-fg) 45%, transparent);
+    box-shadow: var(--ast-glow);
+  }
   .dial[aria-pressed="true"] {
     background: var(--ast-fg);
     color: var(--ast-bg);
   }
   .dial:disabled {
     opacity: 0.5;
+  }
+  /* Library dial (#91): a brighter ring, a halo, and a small star orbiting it. It turns twice
+     after start-up, then rests: a loop running forever would keep the compositor awake over a
+     map that otherwise only draws on demand (battery). */
+  .library {
+    position: relative;
+    border-color: color-mix(in srgb, var(--ast-fg) 55%, transparent);
+    box-shadow: var(--ast-glow-soft);
+  }
+  .library[aria-expanded="true"] {
+    background: var(--ast-fg);
+    color: var(--ast-bg);
+  }
+  .orbit {
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px dashed color-mix(in srgb, var(--ast-fg) 30%, transparent);
+    animation: orbit 9s var(--ast-ease-settle) 1.2s 2;
+    pointer-events: none;
+  }
+  .orbit::after {
+    content: "";
+    position: absolute;
+    top: -2.5px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    background: var(--ast-fg);
+    transform: rotate(45deg);
+    box-shadow: var(--ast-glow);
+  }
+  @keyframes orbit {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .busy {
     animation: pulse 1s ease-in-out infinite alternate;
@@ -164,7 +227,8 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .busy {
+    .busy,
+    .orbit {
       animation: none;
     }
   }

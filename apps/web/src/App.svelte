@@ -56,7 +56,8 @@
   import DialsColumn from "./components/DialsColumn.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
-  import { altitudeOf } from "./lib/horizon";
+  import { altitudeOf, horizontalOf } from "./lib/horizon";
+  import { viewToward, type LibraryTarget } from "./lib/library";
   import {
     LAYERS_STORAGE_KEY,
     graduationFormatter,
@@ -160,6 +161,62 @@
     if (mode === "sky") map?.start();
   }
   let layersButton = $state<HTMLButtonElement>();
+
+  // --- Library (#90): full-screen menu, loaded on demand; the map rests underneath.
+  let library = $state<{ origin: { x: number; y: number } } | null>(null);
+  function openLibrary(origin: { x: number; y: number }) {
+    stopPlaying();
+    layersOpen = false;
+    library = { origin };
+  }
+  /** What the library lists: the loaded catalogue, at the displayed date and place. */
+  const libraryData = () => ({
+    stars: catalog?.stars ?? [],
+    lines: catalog?.lines ?? {},
+    names,
+    latin: CONSTELLATION_LATIN,
+    date,
+    observer: place,
+    sun: bodies.sun,
+    moon: bodies.moon,
+    planets,
+  });
+  function closeLibrary() {
+    library = null;
+  }
+  /** Shows an object picked in the library: selected, and turned to above its sheet. */
+  function showFromLibrary(t: LibraryTarget) {
+    if (!catalog) return;
+    let s: SkySelection;
+    let at: { altitude: number; azimuth: number } | null | undefined;
+    if (t.kind === "constellation") {
+      s = t;
+      at = placeFigure(
+        figureDirections(catalog.stars, catalog.lines, t.abbr, yearsSinceHipparcos(date)),
+        date,
+        place,
+      );
+    } else if (t.kind === "star") {
+      const star = catalog.stars.find((x) => x.hip === t.hip);
+      if (!star) return;
+      s = { kind: "star", star };
+      const p = propagateStar(star, yearsSinceHipparcos(date));
+      at = horizontalOf(p.ra, p.dec, date, place);
+    } else if (t.kind === "body") {
+      s = t;
+      at = t.body === "Sun" ? bodies.sun : bodies.moon;
+    } else {
+      const planet = planets?.find((q) => q.name === t.planet);
+      if (!planet) return;
+      s = { kind: "planet", planet: planet.name };
+      at = planet;
+      if (!showPlanets) viewLayers[mode].planets = true; // a hidden planet could not be shown
+    }
+    if (mode === "space") flyToSky();
+    selection = s;
+    if (at && map && pointer.state === "off")
+      map.animateTo(viewToward(at.altitude, at.azimuth, map.view.fov), 900);
+  }
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
@@ -1007,6 +1064,8 @@
   onnorth={faceNorth}
   onpoint={() => pointer.toggle()}
   onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
+  onlibrary={status === "ready" ? openLibrary : undefined}
+  libraryOpen={library !== null}
 />
 
 {#if globeLayer}
@@ -1175,6 +1234,19 @@
         creditsOpen = false;
         layersButton?.focus();
       }}
+    />
+  {/await}
+{/if}
+
+{#if library && status === "ready"}
+  <!-- Loaded on demand (#90): the library and its lists stay out of the start-up bundle. The
+       exploration mode (onExplore) is wired by its own ticket. -->
+  {#await import("./components/library/Library.svelte") then { default: Library }}
+    <Library
+      data={libraryData()}
+      origin={library?.origin ?? null}
+      onclose={closeLibrary}
+      onshow={showFromLibrary}
     />
   {/await}
 {/if}

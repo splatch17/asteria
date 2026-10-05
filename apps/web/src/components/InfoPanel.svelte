@@ -37,7 +37,7 @@
   } = $props();
 </script>
 
-<aside class="panel" style:bottom>
+<aside class="panel frame" style:bottom>
   <p class="meta">{@render meta()}</p>
   <p class="name"><Designation text={name} /></p>
   {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
