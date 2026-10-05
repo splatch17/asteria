@@ -1,8 +1,14 @@
 /** Limiting magnitudes of the sky map (stars by field of view, planets by daylight). */
 
+/** Beyond this field the limit keeps decreasing (#89): the centre of the map gets denser. */
+const WIDE_FOV = 200;
+/** Magnitudes lost per degree of field beyond WIDE_FOV (4.6 at 200°, 4.0 at 300°). */
+const WIDE_FOV_SLOPE = 0.006;
+
 /** Faintest magnitude displayed for a given field of view. */
 export function limitingMagnitude(fov: number): number {
-  return Math.min(6.5, Math.max(4.6, 5.0 + 2.2 * Math.log10(90 / fov)));
+  const wide = Math.max(0, fov - WIDE_FOV) * WIDE_FOV_SLOPE;
+  return Math.min(6.5, Math.max(4.6, 5.0 + 2.2 * Math.log10(90 / fov))) - wide;
 }
 
 /** At night, planets are hidden this many magnitudes later than stars (they are never lost). */

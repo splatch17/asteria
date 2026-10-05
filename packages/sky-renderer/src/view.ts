@@ -54,3 +54,44 @@ export function unprojectStereo(nx: number, ny: number, scale: number, aspect: n
   const r2 = px * px + py * py;
   return [(4 * px) / (4 + r2), (4 * py) / (4 + r2), (4 - r2) / (4 + r2)];
 }
+
+/**
+ * Widest field across the narrow side of the screen (#89): a little more than the 180° of the
+ * whole sky above the horizon, so that looking at the zenith shows it as a disc with a margin
+ * (~210° ⇒ the hemisphere spans ~77 % of the narrow side).
+ */
+export const FOV_MAX_NARROW = 210;
+/** Never wider vertically than this, whatever the screen (very tall screens). */
+export const FOV_MAX_VERTICAL = 300;
+
+/**
+ * Widest vertical field of view (degrees) for a screen of the given aspect (width / height):
+ * FOV_MAX_NARROW across the narrow side. Portrait 1080×2340 (aspect 0.46): ~282°; landscape:
+ * 210°. A fixed vertical limit would stretch landscape screens far beyond the antipode.
+ */
+export function maxFov(aspect: number): number {
+  if (!(aspect < 1)) return FOV_MAX_NARROW;
+  const fov = (4 * Math.atan(Math.tan((FOV_MAX_NARROW * RAD) / 4) / aspect)) / RAD;
+  return Math.min(FOV_MAX_VERTICAL, fov);
+}
+
+/** Angle (degrees) between the view centre and the screen corners. */
+export function cornerAngle(fovDeg: number, aspect: number): number {
+  const r = Math.hypot(aspect, 1) / stereoScale(fovDeg); // corner radius, r = 2·tan(θ/2)
+  return (2 * Math.atan(r / 2)) / RAD;
+}
+
+/** Beyond the screen corners, what is still projected: a figure segment may end out there. */
+const BACK_MARGIN_DEG = 25;
+/** Never closer to the antipode of the view centre (where the projection diverges). */
+const BACK_MAX_DEG = 172;
+
+/**
+ * Smallest view-frame z (cosine of the angle from the view centre) still projected, for the
+ * shaders and the CPU twins (labels, picking). Narrow fields keep the historical −0.6
+ * (~127°); very wide ones (#89) reach their corners plus BACK_MARGIN_DEG, up to BACK_MAX_DEG.
+ */
+export function backCutoff(fovDeg: number, aspect: number): number {
+  const angle = Math.min(BACK_MAX_DEG, cornerAngle(fovDeg, aspect) + BACK_MARGIN_DEG);
+  return Math.min(-0.6, Math.cos(angle * RAD));
+}

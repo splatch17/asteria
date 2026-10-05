@@ -62,10 +62,19 @@ import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
 import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
-import { projectStereo, stereoScale, unprojectStereo, viewMatrix, type ViewState } from "./view";
+import {
+  backCutoff,
+  maxFov,
+  projectStereo,
+  stereoScale,
+  unprojectStereo,
+  viewMatrix,
+  type ViewState,
+} from "./view";
 import {
   AimThrottle,
   STAR_BRIGHTNESS_BONUS,
+  STAR_OVER_LABEL_RADIUS,
   STAR_PICK_RADIUS,
   boundingCap,
   coneAngle,
@@ -76,7 +85,6 @@ import {
 } from "./pick";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
-import { OverZoom, PRELOAD_FOV } from "./flight";
 
 export interface CatalogStar {
   hip: number;
@@ -223,17 +231,9 @@ export interface SkyMapOptions {
   formatGraduation?: (kind: GraduationKind, value: number) => string;
   /** Initial layers (default: DEFAULT_SKY_LAYERS). */
   layers?: Partial<SkyLayers>;
-  /**
-   * Zooming out past the widest field (FOV_MAX), by pinch or wheel (#37): the caller leaves for
-   * the Earth view. Without it the field simply stops at FOV_MAX.
-   */
-  onZoomPastMax?: () => void;
-  /** The field is being widened beyond PRELOAD_FOV, towards FOV_MAX: time to preload (#37). */
-  onNearMaxFov?: () => void;
 }
 
 const FOV_MIN = 2;
-const FOV_MAX = 200;
 const FRICTION = 0.9;
 
 const toThreeMat3 = (m: Mat3) => new THREE.Matrix3().set(...m);
@@ -337,13 +337,12 @@ export class SkyMap {
   /** Magnitudes of the catalogue (sorted), for pickStar. */
   private readonly mags: Float32Array;
   private velocity = { az: 0, alt: 0 };
-  /** Zoom pushed past FOV_MAX, towards the Earth view (#37). */
-  private readonly overZoom = new OverZoom();
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private moved = 0;
   private readonly resizeObserver: ResizeObserver;
   /** Canvas size in CSS px, kept by resize(): read for every projected label, it avoids layout reads. */
   private size = { w: 1, h: 1 };
+  private readonly backZCache = { fov: NaN, aspect: NaN, z: -0.6 };
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -357,6 +356,7 @@ export class SkyMap {
       uViewInv: { value: new THREE.Matrix3() },
       uScale: { value: 1 },
       uAspect: { value: 1 },
+      uBackZ: { value: -0.6 },
       uDpr: { value: this.renderer.getPixelRatio() },
       uLimitMag: { value: 5 },
       uPlanetLimit: { value: 9 },
@@ -890,7 +890,8 @@ export class SkyMap {
   private clampView(): void {
     this.view.altitude = Math.max(-89.9, Math.min(89.9, this.view.altitude));
     this.view.azimuth = ((this.view.azimuth % 360) + 360) % 360;
-    this.view.fov = Math.max(FOV_MIN, Math.min(FOV_MAX, this.view.fov));
+    // Widest field: depends on the screen's shape (maxFov, #89).
+    this.view.fov = Math.max(FOV_MIN, Math.min(maxFov(this.size.w / this.size.h), this.view.fov));
   }
 
   private resize(): void {
@@ -906,6 +907,7 @@ export class SkyMap {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.fontKey = ""; // resizing the canvas resets its context state
     this.uniforms.uAspect.value = w / h;
+    this.clampView(); // the widest field depends on the aspect (portrait ↔ landscape)
     this.dirty = true;
   }
 
@@ -945,6 +947,19 @@ export class SkyMap {
     }
   };
 
+  /** Smallest view-frame z still projected for the current field and screen (see backCutoff). */
+  private backZ(): number {
+    const c = this.backZCache;
+    const { fov } = this.view;
+    const aspect = this.size.w / this.size.h;
+    if (c.fov !== fov || c.aspect !== aspect) {
+      c.fov = fov;
+      c.aspect = aspect;
+      c.z = backCutoff(fov, aspect);
+    }
+    return c.z; // memoised: read for every projected label and pick candidate
+  }
+
   /** Combined J2000 → view matrix, for CPU-side projection (labels, picking). */
   private eqToView(): Mat3 {
     return multiplyMat3(viewMatrix(this.view), this.eq2hor);
@@ -955,6 +970,7 @@ export class SkyMap {
     this.uniforms.uView.value = toThreeMat3(view);
     this.uniforms.uViewInv.value = toThreeMat3(transpose(view));
     this.uniforms.uScale.value = stereoScale(this.view.fov);
+    this.uniforms.uBackZ.value = this.backZ();
     // Daylight drowns the stars: at noon only magnitude ≲ −1 objects would remain.
     this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov) - this.daylight * 7;
     this.uniforms.uPlanetLimit.value = planetLimitingMagnitude(
@@ -995,7 +1011,7 @@ export class SkyMap {
 
   /** toScreen for a direction given by its components, with the projection scale precomputed. */
   private projectXYZ(x: number, y: number, z: number, scale: number): [number, number] | null {
-    if (z < -0.5) return null; // wide fields of view reach ~120° from the centre
+    if (z < this.backZ()) return null; // wide fields reach far behind the centre (#89)
     const { w, h } = this.size;
     // projectStereo, inlined: k = 2 / (1 + z) · scale, x scaled by the aspect ratio.
     const k = (2 / (1 + z)) * scale;
@@ -1304,6 +1320,59 @@ export class SkyMap {
     }
   }
 
+  /** J2000 direction of the screen point (x, y); `m`: J2000 → view. */
+  private tapDirection(x: number, y: number, m: Mat3): Vec3 {
+    // Screen → view frame → J2000 (m is orthonormal: its inverse is its transpose).
+    const { w, h } = this.size;
+    const tap = unprojectStereo(
+      (2 * x) / w - 1,
+      1 - (2 * y) / h,
+      stereoScale(this.view.fov),
+      w / h,
+    );
+    return [
+      m[0] * tap[0] + m[3] * tap[1] + m[6] * tap[2],
+      m[1] * tap[0] + m[4] * tap[1] + m[7] * tap[2],
+      m[2] * tap[0] + m[5] * tap[1] + m[8] * tap[2],
+    ];
+  }
+
+  /**
+   * Index of the star a tap at (x, y) designates (pickStar, score under `radius`), or −1.
+   * `m`: J2000 → view.
+   */
+  private findStar(x: number, y: number, m: Mat3, seeThrough: boolean, radius: number): number {
+    const { h } = this.size;
+    const scale = stereoScale(this.view.fov);
+    const toward = this.tapDirection(x, y, m);
+    const fovLimit = limitingMagnitude(this.view.fov);
+    const stars = this.options.stars;
+    // Widest screen radius a star can win from: the score threshold plus the brightest bonus.
+    const reach = STAR_PICK_RADIUS + (fovLimit - (stars[0]?.v ?? 0)) * STAR_BRIGHTNESS_BONUS;
+    const e = this.eq2hor;
+    return pickStar({
+      mags: this.mags,
+      dirs: this.starDirs,
+      toward,
+      cosMax: Math.cos(coneAngle(reach, scale, h)),
+      up: [e[6], e[7], e[8]],
+      limitAbove: starPickLimit(fovLimit, this.uniforms.uLimitMag.value),
+      limitBelow: seeThrough ? starPickLimit(fovLimit, this.uniforms.uLimitMagBelow.value) : null,
+      bonusFrom: fovLimit,
+      radius,
+      distance: (i) => {
+        const d = this.starDirs[i]!;
+        const p = this.projectXYZ(
+          m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+          m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+          m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+          scale,
+        );
+        return p ? Math.hypot(p[0] - x, p[1] - y) : NaN;
+      },
+    });
+  }
+
   /** Same rule as planetVert (see planetLimitingMagnitude; night limit below the horizon). */
   private planetVisible(magnitude: number, below = false): boolean {
     const limit = below ? this.uniforms.uPlanetLimitBelow : this.uniforms.uPlanetLimit;
@@ -1337,7 +1406,7 @@ export class SkyMap {
 
   /** Projects a view-frame direction without the screen bounds check of toScreen (for lines). */
   private toScreenUnclipped(v: Vec3): Point | null {
-    if (v[2] < -0.5) return null;
+    if (v[2] < this.backZ()) return null;
     const { w, h } = this.size;
     const [nx, ny] = projectStereo(v, stereoScale(this.view.fov), w / h);
     return [((nx + 1) / 2) * w, ((1 - ny) / 2) * h];
@@ -1429,18 +1498,24 @@ export class SkyMap {
   }
 
   /**
-   * What a tap (or the reticle) at (x, y) designates, among what is drawn: constellation name,
+   * What a tap (or the reticle) at (x, y) designates, among what is drawn: constellation name
+   * (unless a star lies right under the tap),
    * Sun or Moon, planet, star, then the figure around the point. Stars obey the shader's limits
    * (daylight above the horizon, night below it, nothing below with the opaque ground), and are
    * searched in a cone around the tap direction without projecting the whole catalogue (#73).
    */
   private pick(x: number, y: number): SkySelection | null {
     // A constellation name is an explicit target: it wins over the stars around it.
-    const label = pickLabel([x, y], this.constellationLabelRects);
-    if (label) return { kind: "constellation", abbr: label };
-    const m = this.eqToView();
     // Below the horizon, only what seeThroughGround shows can be picked (night limits there).
     const seeThrough = this.layers.seeThroughGround;
+    const m = this.eqToView();
+    const label = pickLabel([x, y], this.constellationLabelRects);
+    if (label) {
+      // Except a star right under the finger: wide fields pack names against stars (#89).
+      const i = this.findStar(x, y, m, seeThrough, STAR_OVER_LABEL_RADIUS);
+      const star = i >= 0 ? this.options.stars[i] : undefined;
+      return star ? { kind: "star", star } : { kind: "constellation", abbr: label };
+    }
     if (this.bodies) {
       const radius = Math.max(22, this.uniforms.uBodySize.value / 2);
       for (const [body, dir] of [
@@ -1468,45 +1543,16 @@ export class SkyMap {
       if (found) return { kind: "planet", planet: found };
     }
 
-    // Tap direction: screen → view frame → J2000 (m is orthonormal: its inverse is its transpose).
-    const { w, h } = this.size;
+    const { h } = this.size;
     const scale = stereoScale(this.view.fov);
-    const tap = unprojectStereo((2 * x) / w - 1, 1 - (2 * y) / h, scale, w / h);
-    const toward: Vec3 = [
-      m[0] * tap[0] + m[3] * tap[1] + m[6] * tap[2],
-      m[1] * tap[0] + m[4] * tap[1] + m[7] * tap[2],
-      m[2] * tap[0] + m[5] * tap[1] + m[8] * tap[2],
-    ];
-    const fovLimit = limitingMagnitude(this.view.fov);
+    const index = this.findStar(x, y, m, seeThrough, STAR_PICK_RADIUS);
     const stars = this.options.stars;
-    // Widest screen radius a star can win from: the score threshold plus the brightest bonus.
-    const reach = STAR_PICK_RADIUS + (fovLimit - (stars[0]?.v ?? 0)) * STAR_BRIGHTNESS_BONUS;
-    const e = this.eq2hor;
-    const index = pickStar({
-      mags: this.mags,
-      dirs: this.starDirs,
-      toward,
-      cosMax: Math.cos(coneAngle(reach, scale, h)),
-      up: [e[6], e[7], e[8]],
-      limitAbove: starPickLimit(fovLimit, this.uniforms.uLimitMag.value),
-      limitBelow: seeThrough ? starPickLimit(fovLimit, this.uniforms.uLimitMagBelow.value) : null,
-      bonusFrom: fovLimit,
-      distance: (i) => {
-        const d = this.starDirs[i]!;
-        const p = this.projectXYZ(
-          m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
-          m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
-          m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
-          scale,
-        );
-        return p ? Math.hypot(p[0] - x, p[1] - y) : NaN;
-      },
-    });
     if (index >= 0) return { kind: "star", star: stars[index]! };
     // No star or body nearby: the figure the tap falls in, if any. Only figures whose bounding
     // cap holds the tap direction (grown by the segment slop) are projected.
     if (!this.layers.constellationLines) return null;
     const slop = coneAngle(14, scale, h);
+    const toward = this.tapDirection(x, y, m);
     const abbr = pickFigure(
       [x, y],
       this.projectFigures((f) => inCap(f.cap, toward, slop)),
@@ -1583,13 +1629,9 @@ export class SkyMap {
     );
   }
 
-  /** Pinch / wheel zoom: past FOV_MAX, the push may leave for the Earth view (#37). */
+  /** Pinch / wheel zoom; the field stops at maxFov (no flight to the Earth view, #89). */
   private zoomBy(factor: number): void {
-    const requested = this.view.fov * factor;
-    this.view.fov = requested;
-    if (factor > 1 && requested > PRELOAD_FOV) this.options.onNearMaxFov?.();
-    if (this.options.onZoomPastMax && this.overZoom.push(requested / FOV_MAX, performance.now()))
-      this.options.onZoomPastMax();
+    this.view.fov *= factor;
   }
 
   private pinchDistance(): number {

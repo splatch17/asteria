@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { unitVector, type Vec3 } from "@asteria/astro-core";
 import {
   AimThrottle,
+  STAR_OVER_LABEL_RADIUS,
   STAR_SHOWN_MARGIN,
   angleBetween,
   boundingCap,
@@ -90,6 +91,14 @@ describe("pickStar", () => {
 
   it("ignores stars off screen", () => {
     expect(pickStar(search({ distance: () => NaN }))).toBe(-1);
+  });
+
+  it("over a constellation name, only takes a star right under the tap (#89)", () => {
+    const at = (px: number) => search({ distance: (i) => (i === 1 ? px : NaN) });
+    // Star 1 (bonus 6.18): 12 px away scores 5.82, 20 px away 13.82.
+    expect(pickStar({ ...at(12), radius: STAR_OVER_LABEL_RADIUS })).toBe(1);
+    expect(pickStar({ ...at(20), radius: STAR_OVER_LABEL_RADIUS })).toBe(-1);
+    expect(pickStar(at(20))).toBe(1); // STAR_PICK_RADIUS otherwise
   });
 });
 

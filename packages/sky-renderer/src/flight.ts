@@ -33,8 +33,6 @@ export const FLIGHT_MS = 2200;
  * (product of the zoom factors beyond it), so that reaching the limit alone does not leave.
  */
 export const OVERZOOM_THRESHOLD = 1.25;
-/** Sky map field of view from which the Earth view is preloaded (approaching FOV_MAX = 200°). */
-export const PRELOAD_FOV = 160;
 /** Zooming in on the Earth enters the sky only when "you are here" is this close to the centre. */
 export const DIVE_MAX_ANGLE = 35;
 
