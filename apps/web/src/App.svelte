@@ -372,11 +372,6 @@
     view.setSelectedPath(selectedPath);
   }
 
-  /** Starts building the Earth view in the background (approaching the widest field). */
-  function preloadSpace() {
-    if (status === "ready") ensureSpace().catch(() => {}); // a user request reports errors
-  }
-
   // Flight duration: none with reduced motion; `?flightMs=` slows it down for captures.
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const urlFlightMs = Number(new URLSearchParams(location.search).get("flightMs"));
@@ -386,8 +381,8 @@
   const canLeaveSky = () => !flying && mode === "sky" && map !== undefined;
 
   /**
-   * Leaves the sky for the Earth view (#37): globe button, mini-globe, or zooming out past the
-   * widest field. The camera climbs from the observer's eye, looking where the map looks.
+   * Leaves the sky for the Earth view (#37): globe button or mini-globe (no longer on zoom-out,
+   * #89). The camera climbs from the observer's eye, looking where the map looks.
    */
   async function flyToSpace(instant = false): Promise<void> {
     if (!canLeaveSky()) return;
@@ -516,8 +511,6 @@
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
         onSelect: select,
-        onZoomPastMax: () => void flyToSpace(),
-        onNearMaxFov: preloadSpace,
         onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;

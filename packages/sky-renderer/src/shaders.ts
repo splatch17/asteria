@@ -8,6 +8,8 @@ const projection = /* glsl */ `
   uniform float uAspect;
   // Below the horizon (#65): 0 = hidden (opaque ground), > 0 = opacity seen through the Earth.
   uniform float uBelowAlpha;
+  // Smallest view-frame z still drawn (backCutoff): wide fields reach far behind the centre (#89).
+  uniform float uBackZ;
 
   // Opacity factor of a horizontal direction's altitude z (0: not drawn).
   float horizonFade(float z) { return z < 0.0 ? uBelowAlpha : 1.0; }
@@ -58,7 +60,7 @@ export const starVert = /* glsl */ `
     float size = clamp(2.3 * sqrt(rel), 0.0, 26.0);
     vAlpha = clamp(0.35 + rel * 0.9, 0.0, 1.0) * fade;
     vSpike = aMag < 1.6 ? 1.0 : 0.0;
-    if (v.z < -0.6 || fade <= 0.0 || rel < 0.35) {
+    if (v.z < uBackZ || fade <= 0.0 || rel < 0.35) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -97,7 +99,7 @@ export const lineVert = /* glsl */ `
   void main() {
     vec3 h = uEq2Hor * starDirection(aDir);
     vec3 v = uView * h;
-    vVisible = v.z > -0.6 ? 1.0 : 0.0;
+    vVisible = v.z > uBackZ ? 1.0 : 0.0;
     vUp = h.z;
     gl_Position = projectView(v);
   }
@@ -181,7 +183,7 @@ export const bodyVert = /* glsl */ `
     vec3 v = uView * h;
     vKind = aKind;
     vFade = horizonFade(h.z + 0.01);
-    if (v.z < -0.6 || vFade <= 0.0) {
+    if (v.z < uBackZ || vFade <= 0.0) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -254,7 +256,7 @@ export const planetVert = /* glsl */ `
     vKind = aKind;
     vFade = horizonFade(h.z + 0.01);
     float limit = h.z < -0.01 ? uPlanetLimitBelow : uPlanetLimit;
-    if (v.z < -0.6 || vFade <= 0.0 || aMag > limit) {
+    if (v.z < uBackZ || vFade <= 0.0 || aMag > limit) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -303,7 +305,7 @@ export const pathVert = /* glsl */ `
     vec3 v = uView * h;
     vMark = aMark;
     vFade = horizonFade(h.z);
-    if (v.z < -0.6 || vFade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    if (v.z < uBackZ || vFade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectView(v);
     gl_PointSize = (aMark > 0.5 ? 5.0 : 2.4) * uDpr;
   }
@@ -338,7 +340,7 @@ export const guideVert = /* glsl */ `
   void main() {
     vec3 h = uFrame * aDir;
     vec3 v = uView * h;
-    vVisible = v.z > -0.6 ? 1.0 : 0.0;
+    vVisible = v.z > uBackZ ? 1.0 : 0.0;
     vUp = h.z;
     vDash = aDash;
     gl_Position = projectView(v);

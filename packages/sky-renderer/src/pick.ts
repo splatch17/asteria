@@ -23,6 +23,11 @@ export function starPickLimit(fovLimit: number, shaderLimit: number): number {
 export const STAR_BRIGHTNESS_BONUS = 1.5;
 /** Score threshold (px) under which a star is picked. */
 export const STAR_PICK_RADIUS = 26;
+/**
+ * Score under which a star wins over a constellation name whose tap area holds the tap (#89):
+ * only a star right under the finger, so that names stay easy to tap.
+ */
+export const STAR_OVER_LABEL_RADIUS = 8;
 
 /**
  * Largest angle (radians) from the tap direction at which a point can lie `radiusPx` away on
@@ -52,6 +57,8 @@ export interface StarSearch {
   bonusFrom: number;
   /** Screen distance (px) from the tap to star `i`, NaN when off screen. Must not allocate. */
   distance: (i: number) => number;
+  /** Score threshold (px), STAR_PICK_RADIUS by default. */
+  radius?: number;
 }
 
 /**
@@ -62,7 +69,7 @@ export function pickStar(s: StarSearch): number {
   const { mags, dirs, toward, cosMax, up, limitAbove, limitBelow, bonusFrom } = s;
   const stop = limitBelow === null ? limitAbove : Math.max(limitAbove, limitBelow);
   let best = -1;
-  let bestScore = STAR_PICK_RADIUS;
+  let bestScore = s.radius ?? STAR_PICK_RADIUS;
   for (let i = 0; i < mags.length; i++) {
     const v = mags[i]!;
     if (v > stop) break;
