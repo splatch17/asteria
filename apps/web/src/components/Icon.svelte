@@ -110,6 +110,20 @@
     <path d={sparkle(12.6, 3, 2.4)} class="fill" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
+  {:else if name === "search"}
+    <!-- A magnifier: find an object in the sky (#99). -->
+    <circle cx="6.8" cy="6.8" r="4.3" />
+    <path d="M10 10 L14 14" />
+    <path d={sparkle(6.8, 6.8, 1.9)} class="fill" />
+  {:else if name === "star"}
+    <path d={sparkle(8, 8, 6)} class="fill" />
+  {:else if name === "sun"}
+    <circle cx="8" cy="8" r="3" class="fill" />
+    <path
+      d="M8 1.5 V3.2 M8 12.8 V14.5 M1.5 8 H3.2 M12.8 8 H14.5 M3.4 3.4 L4.6 4.6 M11.4 11.4 L12.6 12.6 M3.4 12.6 L4.6 11.4 M11.4 4.6 L12.6 3.4"
+    />
+  {:else if name === "moon"}
+    <path d="M9 2 A6 6 0 1 0 14 10.5 A5 5 0 0 1 9 2 Z" class="fill" />
   {/if}
 </svg>
 

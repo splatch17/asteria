@@ -92,7 +92,8 @@ function screenFraction(
 /**
  * View that brings a figure above the sheet: its centre goes to `yTarget` (fraction of the height
  * from the top). Null when every star above the horizon already sits between 8 % and `yMax` of the
- * height and inside the width, i.e. nothing is hidden by the sheet.
+ * height and inside the width, i.e. nothing is hidden by the sheet. A figure (or a single object)
+ * entirely below the horizon is framed where it is, seen through the Earth (search, #99).
  */
 export function frameAbove(
   figure: Pick<FigurePlacement, "altitude" | "azimuth" | "stars">,
@@ -101,7 +102,8 @@ export function frameAbove(
   yTarget = 0.25,
   yMax = 0.44,
 ): { azimuth: number; altitude: number } | null {
-  const visible = figure.stars.filter((h) => h[2] > 0);
+  const above = figure.stars.filter((h) => h[2] > 0);
+  const visible = above.length ? above : figure.stars;
   const fits = visible.every((h) => {
     const p = screenFraction(h, view, aspect);
     return !!p && p[1] >= 0.08 && p[1] <= yMax && p[0] >= 0.02 && p[0] <= 0.98;

@@ -215,5 +215,17 @@
   "c3d.list": "Étoiles de la figure et leurs distances",
   "c3d.star.sourceLiterature": "Source : {source} (distance publiée, la parallaxe de cette étoile est biaisée)",
   "c3d.star.sourceGaia": "Source : Gaia DR3, parallaxe corrigée du point zéro (Lindegren et al. 2021)",
-  "c3d.star.error": "Incertitude : ± {err, number} al ({pct, number, percent})"
+  "c3d.star.error": "Incertitude : ± {err, number} al ({pct, number, percent})",
+  "search.open": "Rechercher un objet",
+  "search.label": "Nom ou désignation",
+  "search.placeholder": "Bételgeuse, α Ori, Mars…",
+  "search.close": "Fermer la recherche",
+  "search.hint": "Étoiles, constellations, Soleil, Lune et planètes. Désignations acceptées : α Ori, alpha Ori, 58 Ori, HIP 27989.",
+  "search.results": "{count, plural, =0 {Aucun résultat} one {# résultat} other {# résultats}}",
+  "search.empty": "Aucun objet ne correspond à « {query} ».",
+  "search.kind.star": "Étoile",
+  "search.kind.constellation": "Constellation",
+  "search.kind.planet": "Planète",
+  "search.kind.Sun": "Notre étoile",
+  "search.kind.Moon": "Satellite de la Terre"
 }
