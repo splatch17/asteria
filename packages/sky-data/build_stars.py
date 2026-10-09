@@ -25,6 +25,7 @@ import gzip
 import json
 import re
 import sys
+import time
 import unicodedata
 from pathlib import Path
 
@@ -121,7 +122,6 @@ def parse_iau_csn(text: str) -> dict[int, str]:
 LY_PER_PC = 3.261563777  # IAU 2015: 1 pc = 648000/π au, 1 ly = c × 365.25 d
 GAIA_G_MIN = 6.0  # brighter: saturated, outside the parallax zero-point calibration (L21: 6 < G < 21)
 GAIA_RUWE_MAX = 1.4  # Lindegren et al. 2021: above, the single-star astrometric solution is poor
-GAIA_CACHE = "gaia-dr3-hip.ecsv"
 GAIA_QUERY = """
 SELECT n.original_ext_source_id AS hip, g.source_id, g.phot_g_mean_mag, g.parallax,
        g.parallax_error, g.ruwe, g.astrometric_params_solved, g.nu_eff_used_in_astrometry,
@@ -130,6 +130,11 @@ FROM gaiadr3.hipparcos2_best_neighbour AS n
 JOIN gaiadr3.gaia_source AS g ON g.source_id = n.source_id
 WHERE g.phot_g_mean_mag < 9
 """
+# Cached in raw/, which CI restores from earlier runs (#115): rename this file whenever
+# GAIA_QUERY changes, so a restored cache never serves another query's result.
+GAIA_CACHE = "gaia-dr3-hip.ecsv"
+# The Gaia archive sometimes answers HTTP 500 (#115): retry before failing the build.
+GAIA_RETRY_WAITS_S = (60, 300)
 
 # Published distances for bright stars whose parallax is biased or imprecise (σϖ/ϖ > 0.1 in
 # Hipparcos 2007, too bright for Gaia). Each value is transcribed from the cited paper (ADS
@@ -156,7 +161,16 @@ def load_gaia() -> dict[int, dict]:
         from astroquery.gaia import Gaia
 
         RAW.mkdir(parents=True, exist_ok=True)
-        Gaia.launch_job_async(GAIA_QUERY).get_results().write(path, format="ascii.ecsv")
+        for attempt, wait in enumerate((*GAIA_RETRY_WAITS_S, None), start=1):
+            try:
+                result = Gaia.launch_job_async(GAIA_QUERY).get_results()
+                break
+            except requests.exceptions.RequestException as e:
+                if wait is None:
+                    raise
+                print(f"  Gaia archive error (attempt {attempt}): {e}; retrying in {wait} s")
+                time.sleep(wait)
+        result.write(path, format="ascii.ecsv")
     from zero_point import zpt
 
     zpt.load_tables()  # Lindegren et al. 2021 parallax zero-point

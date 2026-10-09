@@ -7,6 +7,7 @@ python -m venv .venv && .venv/Scripts/activate   # Windows
 pip install -r requirements.txt
 python build_stars.py          # → out/ (+ raw/ en cache)
 python build_star_names_fr.py  # → ../content/fr/star-names.json (versionné ; IAU + Wikidata)
+python -I build_deepsky.py     # → out/deepsky.json (ciel profond, OpenNGC v20260501, #100)
 ```
 
 Vue Terre : `python build_earth.py` (côtes, relief, lumières → `out/earth/`) et
@@ -25,6 +26,7 @@ procédurales.
 | `star-strings.json`        | chaînes de `stars.bin` par HIP (noms IAU, Bayer, réf. dist.) | ✅       |
 | `constellation-lines.json` | `{ "Ori": [[hip, hip, …], …], … }`                          | ✅       |
 | `stars.json`               | même catalogue en JSON (transitoire, sera retiré)           | —        |
+| `deepsky.json`             | ciel profond : Messier + NGC/IC brillants (chargé à la demande) | —    |
 
 Le pipeline échoue (code 1) si l'aller-retour binaire → enregistrements diffère du JSON, si les
 fichiers du niveau 1 dépassent 1 000 000 octets ou si un contrôle échoue : étoiles témoins (nom,
@@ -116,3 +118,32 @@ décodeur expose `distanceLy`, `distanceErrorLy`, `distanceSource`, `distanceRef
 Les chaînes sont indexées par numéro HIP et non stockées dans le binaire : une traduction ou une
 translittération des noms (ADR-0002) remplace ce fichier sans régénérer `stars.bin`. Les noms sont
 les noms officiels IAU (WGSN) ; les désignations Bayer utilisent les lettres grecques Unicode.
+
+## Format `deepsky.json` (asteria-deepsky v1, #100)
+
+JSON compact (UTF-8), **une ligne de tableau par objet**, colonnes nommées une seule fois dans
+`fields`. 600 objets : 58 018 o brut, 18 273 o gzip -9 (budget 50 000 o gzip, contrôlé). Chargé à
+la demande (`loadDeepSkyCatalog` de `@asteria/catalog`), pas au démarrage. Sélection, source et
+contrôles : `docs/DATA_SOURCES.md`.
+
+```json
+{"format":"asteria-deepsky","version":1,"source":"OpenNGC v20260501 (commit 36cb178a0f69), …",
+ "selection":"…","fields":["id","type","ra","dec","v","b","maj","min","pa","con","designations","names"],
+ "objects":[["M31","galaxy",10.68479,41.26906,3.44,4.29,177.83,69.66,35.0,"And",["M 31","NGC 224"],["Andromeda Galaxy"]],…]}
+```
+
+| Champ          | Contenu                                                                        | Absent |
+| -------------- | ------------------------------------------------------------------------------ | ------ |
+| `id`           | identifiant stable, clé des noms localisés : `M31`, sinon nom OpenNGC sans zéros (`NGC869`, `IC2602`, `C41`, `ESO56-115`) | —      |
+| `type`         | `galaxy`, `galaxy-group`, `globular-cluster`, `open-cluster`, `cluster-nebula`, `association`, `planetary-nebula`, `emission-nebula`, `reflection-nebula`, `nebula`, `dark-nebula`, `supernova-remnant`, `double-star` (M40), `asterism` (M73) | — |
+| `ra`, `dec`    | α, δ J2000 (ICRS) en degrés, 10⁻⁵°                                             | —      |
+| `v`, `b`       | magnitudes totales V et B                                                       | `null` |
+| `maj`, `min`   | grand et petit axe (minutes d'arc)                                             | `null` |
+| `pa`           | angle de position du grand axe (degrés, du nord vers l'est)                    | `null` |
+| `con`          | constellation IAU (Roman 1987)                                                 | —      |
+| `designations` | Messier d'abord, puis nom OpenNGC, autres NGC/IC et doublons (`M 102` sur M101) | —      |
+| `names`        | noms usuels anglais d'OpenNGC ; les noms français sont dans `packages/content/fr/deepsky-names.json` | `[]` |
+
+Ordre : objets de Messier par numéro, puis par magnitude croissante. Le décodeur valide le format
+et expose `DeepSkyObject` (avec `mag` = V, sinon B, et `messier`) ; `deepSkyTarget(o)` donne la
+cible `{ kind: "deepsky", id }` à ajouter à `SearchTarget` (`apps/web/src/lib/search.ts`).

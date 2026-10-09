@@ -14,6 +14,7 @@
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
+ *   realisticDaylight, // #106: daylight hides the stars (off: drawn as at night; daylight.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -60,6 +61,7 @@ import { LabelLayout, type Rect } from "./labels";
 import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
+import { dayInkAlpha, daylightFactor, daylightStarLimit, physicalStarLimit } from "./daylight";
 import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import {
@@ -68,6 +70,7 @@ import {
   projectStereo,
   stereoScale,
   unprojectStereo,
+  viewAnimationProgress,
   viewMatrix,
   type ViewState,
 } from "./view";
@@ -85,6 +88,16 @@ import {
 } from "./pick";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
+import {
+  MARKER_GAP,
+  STAR_MARKER_RADIUS,
+  arrivalProgress,
+  drawArrival,
+  drawMarker,
+  figureStarRadius,
+  inkPattern,
+  selectionDim,
+} from "./highlight";
 
 export interface CatalogStar {
   hip: number;
@@ -166,6 +179,11 @@ export interface SkyLayers {
   seeThroughGround: boolean;
   /** Mini-globe in a corner of the sky view (#38): drawn by the app (MiniGlobe), not the map. */
   miniGlobe: boolean;
+  /**
+   * Realistic daytime sky (#106): daylight hides the stars and their names (#34). Off (default):
+   * by day they stay drawn as at night, with a stronger ink (see daylight.ts).
+   */
+  realisticDaylight: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -179,6 +197,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   ecliptic: false,
   seeThroughGround: true,
   miniGlobe: true,
+  realisticDaylight: false,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -306,9 +325,28 @@ export class SkyMap {
     abbr: string;
     segments: [Vec3, Vec3][];
     stars: Vec3[];
+    /** Catalogue indices of the figure's stars (enlarged when it is selected, #103). */
+    starIndices: number[];
     cap: Cap;
   }[] = [];
   private selectedConstellation: string | null = null;
+  /** Catalogue index of each HIP number (selection marker, #103). */
+  private readonly hipIndex: Map<number, number>;
+  /** Selected star, Sun, Moon or planet, marked by an engraved reticle (#103). */
+  private marked:
+    | { kind: "star"; index: number }
+    | { kind: "body"; body: BodyName }
+    | { kind: "planet"; planet: Planet }
+    | null = null;
+  /**
+   * Arrival animation of the marker (#103): pending until the view animation ends, then runs
+   * ARRIVAL_MS from `start`.
+   */
+  private arrival: { pending: boolean; start: number } | null = null;
+  /** Opacity of the veil over the rest of the sky (a constellation is selected), see highlight.ts. */
+  private dim = 0;
+  /** Current sky colour (CSS), for the veil. */
+  private skyColor = "#000";
   /** Constellation labels drawn in the last frame (CSS px), for picking. */
   private constellationLabelRects: { abbr: string; rect: Rect }[] = [];
   /** 1-bit checkerboard of the ink colour, for the selected figure's stroke. */
@@ -366,6 +404,8 @@ export class SkyMap {
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
+      uFigures: { value: 1 },
+      uHalfHeight: { value: 1 },
       uBodySize: { value: 32 },
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
@@ -376,6 +416,7 @@ export class SkyMap {
     this.starDirs = stars.map((): Vec3 => [0, 0, 0]);
     this.mags = Float32Array.from(stars, (s) => s.v);
     const indexOf = new Map(stars.map((s, i) => [s.hip, i]));
+    this.hipIndex = indexOf;
     const byHip = new Map(stars.map((s, i) => [s.hip, this.starDirs[i]!]));
 
     // Stars: epoch direction + proper motion, moved by the shader (aDir + uYears · aPm)
@@ -394,36 +435,68 @@ export class SkyMap {
     const starPoints = new THREE.Points(starGeo, this.material(starVert, starFrag, true));
     starPoints.frustumCulled = false;
 
-    // Constellation lines: each end follows its star (same aDir / aPm as the star)
+    // Constellation lines: each end follows its star (same aDir / aPm as the star). Each vertex
+    // also carries the other end and both magnitudes: the shader stops the line short of the
+    // stars (#104).
     const segs: number[] = [];
     const segPm: number[] = [];
+    const segOther: number[] = [];
+    const segOtherPm: number[] = [];
+    const segMag: number[] = [];
+    const segOtherMag: number[] = [];
+    const segEnd: number[] = [];
+    const member = new Float32Array(stars.length);
     const { dirs: d0, pm } = this.motion;
     for (const [abbr, polys] of Object.entries(lines)) {
       const figure: [Vec3, Vec3][] = [];
       const figureStars = new Set<Vec3>();
+      const starIndices = new Set<number>();
       for (const poly of polys) {
         for (let i = 0; i < poly.length - 1; i++) {
           const ia = indexOf.get(poly[i]!);
           const ib = indexOf.get(poly[i + 1]!);
           if (ia === undefined || ib === undefined) continue;
-          for (const j of [ia, ib]) {
+          for (const [end, j, k] of [
+            [0, ia, ib],
+            [1, ib, ia],
+          ] as const) {
             segs.push(d0[3 * j]!, d0[3 * j + 1]!, d0[3 * j + 2]!);
             segPm.push(pm[3 * j]!, pm[3 * j + 1]!, pm[3 * j + 2]!);
+            segOther.push(d0[3 * k]!, d0[3 * k + 1]!, d0[3 * k + 2]!);
+            segOtherPm.push(pm[3 * k]!, pm[3 * k + 1]!, pm[3 * k + 2]!);
+            segMag.push(stars[j]!.v);
+            segOtherMag.push(stars[k]!.v);
+            segEnd.push(end);
+            member[j] = 1;
           }
           const a = this.starDirs[ia]!;
           const b = this.starDirs[ib]!;
           figure.push([a, b]);
           figureStars.add(a).add(b);
+          starIndices.add(ia).add(ib);
         }
       }
       const cap: Cap = { centre: [0, 0, 0], cosRadius: -1 };
-      this.figures.push({ abbr, segments: figure, stars: [...figureStars], cap });
+      this.figures.push({
+        abbr,
+        segments: figure,
+        stars: [...figureStars],
+        starIndices: [...starIndices],
+        cap,
+      });
     }
     const lineGeo = new THREE.BufferGeometry();
     const segDirs = new THREE.Float32BufferAttribute(segs, 3);
     lineGeo.setAttribute("position", segDirs);
     lineGeo.setAttribute("aDir", segDirs);
     lineGeo.setAttribute("aPm", new THREE.Float32BufferAttribute(segPm, 3));
+    lineGeo.setAttribute("aOther", new THREE.Float32BufferAttribute(segOther, 3));
+    lineGeo.setAttribute("aOtherPm", new THREE.Float32BufferAttribute(segOtherPm, 3));
+    lineGeo.setAttribute("aMag", new THREE.Float32BufferAttribute(segMag, 1));
+    lineGeo.setAttribute("aOtherMag", new THREE.Float32BufferAttribute(segOtherMag, 1));
+    lineGeo.setAttribute("aEnd", new THREE.Float32BufferAttribute(segEnd, 1));
+    // Stars drawing a figure are reinforced while the lines are shown (uFigures).
+    starGeo.setAttribute("aMember", new THREE.BufferAttribute(member, 1));
     this.lineMesh = new THREE.LineSegments(lineGeo, this.material(lineVert, lineFrag, false));
     this.lineMesh.frustumCulled = false;
 
@@ -711,6 +784,35 @@ export class SkyMap {
   setSelectedConstellation(abbr: string | null): void {
     this.selectedConstellation = abbr;
     this.uniforms.uLineOpacity.value = abbr ? 0.3 : 0.45;
+    this.dim = selectionDim(abbr ? "constellation" : null);
+    this.dirty = true;
+  }
+
+  /**
+   * Highlights the selected object (#103): an engraved reticle around a star, planet, Sun or
+   * Moon; for a constellation, setSelectedConstellation (figure, stars and name stronger, the
+   * rest of the sky dimmed). null clears it (and stops an arrival animation).
+   */
+  setSelection(selection: SkySelection | null): void {
+    this.setSelectedConstellation(selection?.kind === "constellation" ? selection.abbr : null);
+    if (selection?.kind === "star") {
+      const index = this.hipIndex.get(selection.star.hip);
+      this.marked = index === undefined ? null : { kind: "star", index };
+    } else if (selection?.kind === "body") this.marked = { kind: "body", body: selection.body };
+    else if (selection?.kind === "planet")
+      this.marked = { kind: "planet", planet: selection.planet };
+    else this.marked = null;
+    if (!this.marked) this.arrival = null;
+  }
+
+  /**
+   * Plays the marker's arrival animation (converging rings, ARRIVAL_MS) once the view has
+   * finished turning (animateTo), e.g. after a search. The render loop runs only during it.
+   * Not called with prefers-reduced-motion: the marker is then static.
+   */
+  playArrival(): void {
+    if (!this.marked) return;
+    this.arrival = { pending: true, start: NaN };
     this.dirty = true;
   }
 
@@ -744,6 +846,7 @@ export class SkyMap {
     // Moon and planets only within the validated ephemeris range (see ephemeris-range.ts).
     const planets = l.planets && this.ephemerisOk;
     this.lineMesh.visible = l.constellationLines;
+    this.uniforms.uFigures.value = l.constellationLines ? 1 : 0;
     this.planetPoints.visible = planets && !!this.planets;
     this.selectedPathPoints.visible =
       planets && this.selectedPathPoints.geometry.drawRange.count > 0;
@@ -859,14 +962,13 @@ export class SkyMap {
     return (lines.material as THREE.ShaderMaterial).uniforms.uFrame!.value as THREE.Matrix3;
   }
 
-  /** Twilight model: stars fade out between astronomical twilight (−18°) and sunrise. */
+  /** Twilight model: the sky brightens between astronomical twilight (−18°) and sunrise. */
   private updateDaylight(): void {
     const sunAltitude = this.bodies
       ? (Math.asin(applyMat3(this.eq2hor, this.bodies.sun)[2]) * 180) / Math.PI
       : -90;
     this.sunAltitude = sunAltitude;
-    const k = Math.min(1, Math.max(0, (sunAltitude + 18) / 18));
-    this.daylight = k * k;
+    this.daylight = daylightFactor(sunAltitude);
     // Blend in sRGB (THREE.Color.lerp works in linear space and washes the blues out).
     const night = new THREE.Color(this.options.theme.sky).getRGB(
       new THREE.Color(),
@@ -877,14 +979,14 @@ export class SkyMap {
       THREE.SRGBColorSpace,
     );
     const t = this.daylight;
-    this.renderer.setClearColor(
-      new THREE.Color().setRGB(
-        night.r + (day.r - night.r) * t,
-        night.g + (day.g - night.g) * t,
-        night.b + (day.b - night.b) * t,
-        THREE.SRGBColorSpace,
-      ),
+    const sky = new THREE.Color().setRGB(
+      night.r + (day.r - night.r) * t,
+      night.g + (day.g - night.g) * t,
+      night.b + (day.b - night.b) * t,
+      THREE.SRGBColorSpace,
     );
+    this.renderer.setClearColor(sky);
+    this.skyColor = `#${sky.getHexString(THREE.SRGBColorSpace)}`;
   }
 
   private clampView(): void {
@@ -907,6 +1009,7 @@ export class SkyMap {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.fontKey = ""; // resizing the canvas resets its context state
     this.uniforms.uAspect.value = w / h;
+    this.uniforms.uHalfHeight.value = h / 2;
     this.clampView(); // the widest field depends on the aspect (portrait ↔ landscape)
     this.dirty = true;
   }
@@ -928,14 +1031,26 @@ export class SkyMap {
     }
     if (this.animation) {
       const { from, to, start, duration } = this.animation;
-      const t = Math.min(1, (performance.now() - start) / duration);
-      const e = 1 - (1 - t) ** 3; // ease-out cubic
+      const e = viewAnimationProgress(performance.now(), start, duration);
       this.view.azimuth = from.azimuth + (to.azimuth - from.azimuth) * e;
       this.view.altitude = from.altitude + (to.altitude - from.altitude) * e;
       this.view.fov = from.fov + (to.fov - from.fov) * e;
-      if (t >= 1) this.animation = null;
+      if (e >= 1) this.animation = null;
       this.clampView();
       this.dirty = true;
+    }
+    // Marker arrival (#103): starts when the view stops turning, draws only while it runs.
+    const arrival = this.arrival;
+    if (arrival) {
+      const now = performance.now();
+      if (arrival.pending && !this.animation) {
+        arrival.pending = false;
+        arrival.start = now;
+      }
+      if (!arrival.pending) {
+        if (arrivalProgress(now, arrival.start) >= 1) this.arrival = null; // one last clean frame
+        this.dirty = true;
+      }
     }
     // The reticle reused a cached target: draw once more when the throttle allows a new one.
     if (this.aimStale && this.pointing && this.aimThrottle.due(this.view, performance.now()))
@@ -971,11 +1086,19 @@ export class SkyMap {
     this.uniforms.uViewInv.value = toThreeMat3(transpose(view));
     this.uniforms.uScale.value = stereoScale(this.view.fov);
     this.uniforms.uBackZ.value = this.backZ();
-    // Daylight drowns the stars: at noon only magnitude ≲ −1 objects would remain.
-    this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov) - this.daylight * 7;
+    // Daylight drowns the stars (at noon only magnitude ≲ −1 objects would remain): drawn
+    // anyway unless the realistic layer is on (#106). Planets always follow the physical limit.
+    const fovLimit = limitingMagnitude(this.view.fov);
+    const realistic = this.layers.realisticDaylight;
+    this.uniforms.uLimitMag.value = daylightStarLimit(fovLimit, this.daylight, realistic);
     this.uniforms.uPlanetLimit.value = planetLimitingMagnitude(
-      this.uniforms.uLimitMag.value,
+      physicalStarLimit(fovLimit, this.daylight),
       this.sunAltitude,
+    );
+    // Stronger ink over the day blue (same base opacities as setSelectedConstellation).
+    this.uniforms.uLineOpacity.value = dayInkAlpha(
+      this.selectedConstellation ? 0.3 : 0.45,
+      this.dayInk(),
     );
     const below = belowHorizonLimits(this.view.fov);
     this.uniforms.uLimitMagBelow.value = below.stars;
@@ -1028,6 +1151,13 @@ export class SkyMap {
     const { ctx } = this;
     const { canvas, stars, cardinals, theme } = this.options;
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    if (this.dim > 0) {
+      // A constellation is selected (#103): the rest of the sky (WebGL below, labels after)
+      // fades under a veil of the sky colour; its figure is drawn above the veil.
+      ctx.globalAlpha = this.dim;
+      ctx.fillStyle = this.skyColor;
+      ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    }
     this.drawSelectedFigure();
     ctx.fillStyle = theme.ink;
     ctx.textBaseline = "middle";
@@ -1064,11 +1194,13 @@ export class SkyMap {
     }
 
     this.constellationLabelRects = [];
+    this.placeSelectedName(layout, m, isBelow);
+    this.drawSelectionMarker(m, layout);
     for (const below of passes) {
       // 2. Sun and Moon
       if (this.bodies && this.options.bodyNames) {
         this.setLabelFont("700 11px", "0.12em", labelAlpha(0.95, below));
-        const offset = this.uniforms.uBodySize.value / 2 + 6;
+        const disc = this.uniforms.uBodySize.value / 2 + 6;
         for (const [body, dir] of [
           ["Sun", this.bodies.sun],
           ["Moon", this.bodies.moon],
@@ -1076,8 +1208,11 @@ export class SkyMap {
           if (isBelow(dir) !== below || (body === "Moon" && !this.ephemerisOk)) continue;
           const p = this.toScreen(applyMat3(m, dir));
           if (!p) continue;
+          // The name clears the selection marker's ring (#103).
+          const marked = this.marked?.kind === "body" && this.marked.body === body;
+          const offset = disc + (marked ? MARKER_GAP + 4 : 0);
           // The disc itself is occupied: later labels (path dates…) must not cover it.
-          const half = offset - 6;
+          const half = disc - 6;
           layout.occupy({ x: p[0] - half, y: p[1] - half, w: 2 * half, h: 2 * half });
           const label = this.options.bodyNames[body].toUpperCase();
           const w = this.measure(label);
@@ -1100,7 +1235,10 @@ export class SkyMap {
           if (!pos) continue;
           const label = this.options.planetNames[p.name].toUpperCase();
           const w = this.measure(label);
-          const off = planetRadius(p) + 5;
+          const marked = this.marked?.kind === "planet" && this.marked.planet === p.name;
+          const off = marked
+            ? Math.max(STAR_MARKER_RADIUS, planetRadius(p) + MARKER_GAP) + 9 // clears the marker
+            : planetRadius(p) + 5;
           const [x, y] = pos;
           layout.occupy({ x: x - off + 5, y: y - off + 5, w: 2 * off - 10, h: 2 * off - 10 });
           const r = layout.place([
@@ -1114,14 +1252,14 @@ export class SkyMap {
       }
 
       // 4. Star names, brightest first (the catalogue is sorted by magnitude)
-      // Never name a star that daylight hides.
+      // Never name a star the shader hides (by day, only with realisticDaylight: #106).
       const visibleLimit =
         (below ? this.uniforms.uLimitMagBelow.value : this.uniforms.uLimitMag.value) - 1;
       const maxMag = Math.min(
         visibleLimit,
         this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5,
       );
-      this.setLabelFont("400 10px", "0.08em", labelAlpha(0.8, below));
+      this.setLabelFont("400 10px", "0.08em", labelAlpha(this.inkAlpha(0.8, below), below));
       // Sorted catalogue: stop at the first star too faint to be named (a few dozen visited
       // instead of the whole catalogue, twice with seeThroughGround).
       for (let i = 0; this.layers.starNames && i < stars.length; i++) {
@@ -1134,20 +1272,23 @@ export class SkyMap {
         if (!p) continue;
         const w = this.measure(s.name);
         const [x, y] = p;
+        // The selected star's name clears its marker ring (#103).
+        const o =
+          this.marked?.kind === "star" && this.marked.index === i ? 9 + STAR_MARKER_RADIUS : 0;
         const r = layout.place([
-          { x: x + 9, y: y - H / 2, w, h: H }, // right
-          { x: x - 9 - w, y: y - H / 2, w, h: H }, // left
-          { x: x - w / 2, y: y - 8 - H, w, h: H }, // above
-          { x: x - w / 2, y: y + 8, w, h: H }, // below
+          { x: x + 9 + o, y: y - H / 2, w, h: H }, // right
+          { x: x - 9 - o - w, y: y - H / 2, w, h: H }, // left
+          { x: x - w / 2, y: y - 8 - o - H, w, h: H }, // above
+          { x: x - w / 2, y: y + 8 + o, w, h: H }, // below
         ]);
         if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
       }
 
       // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
       if (this.layers.constellationNames) {
-        this.setLabelFont("500 10px", "0.18em", labelAlpha(0.55, below));
+        this.setLabelFont("500 10px", "0.18em", labelAlpha(this.inkAlpha(0.55, below), below));
         for (const { abbr, text, dir } of this.labels) {
-          if (isBelow(dir) !== below) continue;
+          if (abbr === this.selectedConstellation || isBelow(dir) !== below) continue;
           const p = this.toScreen(applyMat3(m, dir));
           if (!p) continue;
           const label = text.toUpperCase();
@@ -1158,7 +1299,6 @@ export class SkyMap {
           );
           if (!r) continue;
           this.constellationLabelRects.push({ abbr, rect: r });
-          ctx.globalAlpha = labelAlpha(abbr === this.selectedConstellation ? 1 : 0.55, below);
           ctx.fillText(label, r.x, r.y + H / 2);
         }
       }
@@ -1191,7 +1331,7 @@ export class SkyMap {
       const eqView = this.layers.equatorialGrid ? multiplyMat3(view, this.date2hor) : null;
       for (const below of passes) {
         this.graduationBelow = below;
-        this.ctx.globalAlpha = labelAlpha(0.55, below);
+        this.ctx.globalAlpha = labelAlpha(0.55, below) * (1 - this.dim);
         if (eqView) this.drawGridGraduations(layout, eqView, "ra", "dec");
         if (this.layers.azimuthalGrid && !below)
           this.drawGridGraduations(layout, view, "az", "alt");
@@ -1200,6 +1340,99 @@ export class SkyMap {
     }
     if (this.pointing) this.drawReticle();
     ctx.globalAlpha = 1;
+  }
+
+  /**
+   * The selected constellation's name (#103), placed before every other label (so it is never
+   * dropped), larger and at full strength above the veil, between two engraved hairlines.
+   */
+  private placeSelectedName(layout: LabelLayout, m: Mat3, isBelow: (d: Vec3) => boolean): void {
+    const abbr = this.selectedConstellation;
+    if (!abbr || !this.layers.constellationNames) return;
+    const label = this.labels.find((l) => l.abbr === abbr);
+    if (!label) return;
+    const below = isBelow(label.dir);
+    if (below && !this.layers.seeThroughGround) return;
+    const p = this.toScreen(applyMat3(m, label.dir));
+    if (!p) return;
+    const [x, y] = p;
+    const { ctx } = this;
+    this.setLabelFont("700 13px", "0.22em", 1);
+    const text = label.text.toUpperCase();
+    const w = this.measure(text);
+    const H = 16;
+    const rule = 14; // hairline on each side
+    const r = layout.place(
+      [0, -18, 18, -36, 36].map((dy) => ({
+        x: x - w / 2 - rule - 4,
+        y: y + dy - H / 2,
+        w: w + 2 * (rule + 4),
+        h: H,
+      })),
+    );
+    if (!r) return;
+    this.constellationLabelRects.push({ abbr, rect: r });
+    ctx.globalAlpha = labelAlpha(1, below);
+    // Cartouche: the figure's stroke does not run through the name.
+    ctx.fillStyle = this.skyColor;
+    ctx.fillRect(r.x + rule + 1, r.y, r.w - 2 * rule - 2, H);
+    ctx.fillStyle = this.options.theme.ink;
+    const cy = r.y + H / 2;
+    ctx.fillText(text, r.x + rule + 4, cy);
+    ctx.strokeStyle = this.options.theme.ink;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(r.x, cy);
+    ctx.lineTo(r.x + rule, cy);
+    ctx.moveTo(r.x + r.w - rule, cy);
+    ctx.lineTo(r.x + r.w, cy);
+    ctx.stroke();
+  }
+
+  /**
+   * Engraved reticle around the selected star, planet, Sun or Moon (#103), dimmed below the
+   * horizon like the rest (still drawn over an opaque ground: it shows where the object is),
+   * with the arrival rings while they run. Its area is kept free of labels. No projection
+   * allocates (projectXYZ); only the layout rectangle does, like every label.
+   */
+  private drawSelectionMarker(m: Mat3, layout: LabelLayout): void {
+    const marked = this.marked;
+    if (!marked) return;
+    let d: Vec3 | undefined;
+    let radius = STAR_MARKER_RADIUS;
+    if (marked.kind === "star") d = this.starDirs[marked.index];
+    else if (marked.kind === "body") {
+      if (!this.bodies || (marked.body === "Moon" && !this.ephemerisOk)) return;
+      d = marked.body === "Sun" ? this.bodies.sun : this.bodies.moon;
+      radius = this.uniforms.uBodySize.value / 2 + MARKER_GAP;
+    } else {
+      if (!this.planetsShown() || !this.planets) return;
+      const p = this.planets[PLANETS.indexOf(marked.planet)];
+      if (!p || p.magnitude >= 99) return;
+      d = p.dir;
+      radius = Math.max(STAR_MARKER_RADIUS, planetRadius(p) + MARKER_GAP);
+    }
+    if (!d) return;
+    const e = this.eq2hor;
+    const below = e[6] * d[0] + e[7] * d[1] + e[8] * d[2] <= 0;
+    const p = this.projectXYZ(
+      m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+      m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+      m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+      stereoScale(this.view.fov),
+    );
+    if (!p) return;
+    const [x, y] = p;
+    const { ctx } = this;
+    const ink = this.options.theme.ink;
+    this.figurePattern = inkPattern(ctx, ink, this.figurePattern);
+    const alpha = labelAlpha(1, below);
+    drawMarker(ctx, x, y, radius, alpha, ink, this.figurePattern.pattern);
+    const keep = radius + 4; // no label is written across the ring
+    layout.occupy({ x: x - keep, y: y - keep, w: 2 * keep, h: 2 * keep });
+    const arrival = this.arrival;
+    if (arrival && !arrival.pending)
+      drawArrival(ctx, x, y, radius, arrivalProgress(performance.now(), arrival.start), alpha, ink);
   }
 
   private graduation(kind: GraduationKind, value: number): string {
@@ -1373,6 +1606,16 @@ export class SkyMap {
     });
   }
 
+  /** Daylight felt by the ink (labels, lines): 0 with the realistic layer (#106). */
+  private dayInk(): number {
+    return this.layers.realisticDaylight ? 0 : this.daylight;
+  }
+
+  /** Opacity of a star or constellation name over the day sky (below the horizon it is night). */
+  private inkAlpha(base: number, below: boolean): number {
+    return below ? base : dayInkAlpha(base, this.dayInk());
+  }
+
   /** Same rule as planetVert (see planetLimitingMagnitude; night limit below the horizon). */
   private planetVisible(magnitude: number, below = false): boolean {
     const limit = below ? this.uniforms.uPlanetLimitBelow : this.uniforms.uPlanetLimit;
@@ -1394,7 +1637,8 @@ export class SkyMap {
       this.widths = widths;
     }
     this.ctx.textAlign = "left";
-    this.ctx.globalAlpha = alpha;
+    // Under the veil of a selected constellation, labels fade like the rest of the sky (#103).
+    this.ctx.globalAlpha = alpha * (1 - this.dim);
   }
 
   /** Width of a label in the current label font (cached). */
@@ -1453,23 +1697,56 @@ export class SkyMap {
     return shapes;
   }
 
-  /** The selected figure as an engraved stroke: a 1-bit checkerboard band around a solid core. */
+  /**
+   * The selected figure as an engraved stroke: a 1-bit checkerboard band around a solid core,
+   * then its stars, enlarged (#103). Drawn above the veil that dims the rest of the sky.
+   */
   private drawSelectedFigure(): void {
     const abbr = this.selectedConstellation;
-    if (!abbr || !this.layers.constellationLines) return;
-    const [shape] = this.projectFigures(abbr);
-    if (!shape) return;
+    if (!abbr) return;
     const { ctx } = this;
     const ink = this.options.theme.ink;
-    if (this.figurePattern?.ink !== ink) {
-      const tile = document.createElement("canvas");
-      tile.width = tile.height = 2;
-      const t = tile.getContext("2d")!;
-      t.fillStyle = ink;
-      t.fillRect(0, 0, 1, 1);
-      t.fillRect(1, 1, 1, 1);
-      this.figurePattern = { ink, pattern: ctx.createPattern(tile, "repeat") };
+    this.figurePattern = inkPattern(ctx, ink, this.figurePattern);
+    const [shape] = this.layers.constellationLines ? this.projectFigures(abbr) : [];
+    if (shape) this.strokeFigure(shape, ink, this.figurePattern.pattern);
+    const figure = this.figures.find((f) => f.abbr === abbr);
+    if (!figure) return;
+    const m = this.eqToView();
+    const e = this.eq2hor;
+    const scale = stereoScale(this.view.fov);
+    const seeThrough = this.layers.seeThroughGround;
+    const { stars } = this.options;
+    for (const i of figure.starIndices) {
+      const d = this.starDirs[i]!;
+      const below = e[6] * d[0] + e[7] * d[1] + e[8] * d[2] <= 0;
+      if (below && !seeThrough) continue;
+      const p = this.projectXYZ(
+        m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+        m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+        m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+        scale,
+      );
+      if (!p) continue;
+      const r = figureStarRadius(stars[i]!.v);
+      // Engraved node: the stroke is cleared around the star (sky colour), then the disc.
+      ctx.globalAlpha = labelAlpha(1, below);
+      ctx.fillStyle = this.skyColor;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r + 1.75, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = ink;
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fill();
     }
+  }
+
+  private strokeFigure(
+    shape: FigureShape & { belowFrom: number },
+    ink: string,
+    pattern: CanvasPattern | null,
+  ): void {
+    const { ctx } = this;
     ctx.save();
     ctx.lineCap = "round";
     // Above the horizon, then (seeThroughGround) the dimmed part below it.
@@ -1485,12 +1762,12 @@ export class SkyMap {
         ctx.moveTo(a[0], a[1]);
         ctx.lineTo(b[0], b[1]);
       }
-      ctx.globalAlpha = labelAlpha(0.8, below);
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = this.figurePattern.pattern ?? ink;
+      ctx.globalAlpha = labelAlpha(0.9, below);
+      ctx.lineWidth = 7;
+      ctx.strokeStyle = pattern ?? ink;
       ctx.stroke();
       ctx.globalAlpha = labelAlpha(1, below);
-      ctx.lineWidth = 1.25;
+      ctx.lineWidth = 1.75;
       ctx.strokeStyle = ink;
       ctx.stroke();
     }
