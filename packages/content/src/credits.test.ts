@@ -58,6 +58,8 @@ describe.each(CONTENT_LOCALES)("credits (%s)", (locale) => {
     expect(byId.get("stories")?.license).toBe("CC BY-SA 4.0");
     expect(byId.get("stellarium-western-figures")?.license).toContain("Art Libre 1.3");
     expect(byId.get("stellarium-western-figures")?.notice).toContain("Johan Meuris");
+    expect(byId.get("openngc")?.license).toBe("CC BY-SA 4.0");
+    expect(byId.get("openngc")?.notice).toContain("Mattia Verga");
     expect(byId.get("iau-wgsn")?.license).toBe("CC BY 4.0");
     expect(byId.get("hipparcos")?.notice).toContain("Credit: ESA");
     for (const id of ["blue-marble", "black-marble"])

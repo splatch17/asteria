@@ -15,7 +15,7 @@
 | Lignes de constellations | **Stellarium**, culture du ciel « modern » (`skycultures/modern/index.json`), tracés usuels proches des cartes Sky & Telescope / IAU, numéros HIP directs | Stellarium | **CC BY-SA 4.0** (attribution ; données dérivées sous CC BY-SA) | 88 figures — ✅ intégré (#43), remplace d3-celestial |
 | Appartenance aux constellations | astropy `get_constellation` (Roman 1987, CDS `VI/42`) | — | Libre | Champ `con` — ✅ intégré (#3) ; planètes à la volée via `Astronomy.Constellation` d’astronomy-engine (même table Roman 1987, `constellationOf`, #53) |
 | Planètes, Lune, Soleil | **JPL Horizons / DE440** (validation) + lib `astronomy-engine` (MIT) | NASA JPL | Libre | Positions temps réel |
-| Ciel profond | **OpenNGC** (CC BY-SA 4.0) + Messier | — | CC BY-SA | NGC/IC/Messier |
+| Ciel profond | **OpenNGC** (Mattia Verga, https://github.com/mattiaverga/OpenNGC), version **v20260501** (commit `36cb178a0f69`, 2026-04-16) : `database_files/NGC.csv` (NGC/IC) + `addendum.csv` (M40, M45 et objets hors NGC/IC), compilés depuis NED, HyperLEDA, SIMBAD, HEASARC et les notes de H. Corwin. Messier : colonne `M` d'OpenNGC | M. Verga et contributeurs | **CC BY-SA 4.0** (vérifiée : `LICENSES/CC-BY-SA-4.0.txt` et `.reuse/dep5` du dépôt, « Files: * … License: CC-BY-SA-4.0 ») ; attribution « OpenNGC, Mattia Verga » (page Crédits), le catalogue dérivé `deepsky.json` est diffusé sous CC BY-SA 4.0 | ✅ intégré (#100) : 600 objets (`build_deepsky.py`, voir ci-dessous), positions J2000, types, magnitudes V et B, axes et angle de position, noms usuels anglais. Noms français : `packages/content/fr/deepsky-names.json` |
 | Voie lactée | **Gaia DR3 sky map** / NASA SVS | ESA / NASA | Citation | Texture de fond |
 | Côtes (globe) | **Natural Earth** 1:50m coastline (`build_earth.py`) | Natural Earth | Domaine public | Vue Terre — ✅ intégré (#35) |
 | Relief (globe) | **NASA Blue Marble: Next Generation**, topographie + bathymétrie, déc. 2004 | NASA Visible Earth | Domaine public (crédit NASA) | Texture du globe — ✅ intégré (#35) |
@@ -42,6 +42,48 @@ Règle appliquée par `build_stars.py` (champs `dist`, `eDist` en années-lumiè
 3. pas de distance si σϖ > ϖ (67 étoiles).
 
 Arrondis : 3 chiffres significatifs pour la distance (≤ 0,5 %, sous les erreurs de parallaxe), 2 pour l'incertitude. L'app affiche « ≈ » (2 chiffres) au-delà de 5 % d'incertitude et rien au-delà de 50 %. Contrôles automatiques : Sirius 8,60 al (± 0,5 %), Rigel 860 al (± 10 %, Hipparcos), Bételgeuse 548 al (± 5 %, Joyce 2020), Deneb 2 600 al (± 10 %, Schiller & Przybilla 2008). Étoiles V ≤ 2 restant à plus de 10 % d'incertitude (affichées « ≈ ») : Bételgeuse, Antarès, Shaula, Alnilam, Alnitak, Wezen, Sargas — candidates à une distance publiée.
+
+## Catalogue du ciel profond (#100)
+
+`packages/sky-data/build_deepsky.py` télécharge les deux tables d'OpenNGC épinglées sur le commit
+de la version v20260501 (empreintes SHA-256 vérifiées : un fichier amont modifié fait échouer le
+build) dans `raw/openngc-<commit>/`, et écrit `out/deepsky.json` (format décrit dans
+`packages/sky-data/README.md`, décodé par `@asteria/catalog`, `loadDeepSkyCatalog`).
+
+**Sélection** (600 objets) :
+1. les 110 objets de Messier. OpenNGC tient M102 pour un doublon de M101 (identification de
+   Méchain) : « M 102 » est une désignation de l'entrée M101, d'où 109 entrées pour 110 numéros ;
+2. les autres objets dont la magnitude **V ou B est ≤ 10**, hors étoiles simples ou doubles,
+   objets inexistants, doublons et « Other ». Seuil : ~10 est la limite usuelle d'une paire de
+   jumelles ou d'une petite lunette sous un ciel de campagne, soit le public visé (Découverte et
+   Amateur) ; il donne 600 objets, dont 112 galaxies, pour 18 Ko gzip. Les deux bandes sont lues
+   car OpenNGC n'en donne parfois qu'une, et quelques magnitudes V de galaxies sont manifestement
+   trop faibles (NGC 253 : V 11,11 pour B 7,94 ; aussi NGC 4945, NGC 6822, NGC 4656) ;
+3. les amas et nébuleuses qu'OpenNGC nomme mais sans magnitude (la magnitude intégrée des grandes
+   nébuleuses est rarement mesurée) : Tête de Cheval, Boîte à bijoux, Pléiades du Sud, Hyades,
+   Sac à charbon… (21 objets). Les galaxies sans magnitude ne sont pas retenues.
+
+Constellation : astropy `get_constellation` (Roman 1987), comme pour les étoiles ; seule NGC 6946,
+sur la frontière Céphée/Cygne, diffère de la colonne d'OpenNGC (contrôle : < 2 % d'écarts, aucun
+objet de Messier). Positions : J2000 d'OpenNGC (NED/SIMBAD), arrondies à 10⁻⁵° (0,04″).
+
+**Contrôles automatiques** (le script échoue sinon) : 550 à 700 objets ; numéros M1 à M110 tous
+présents une seule fois ; aucune désignation ni identifiant en double ; bornes des positions,
+magnitudes (−1 à 16), axes (petit ≤ grand) et angles (0 à 180°) ; type, constellation et
+magnitude de M31, M42, M45, M13, M1, M57, ω Cen et du Grand Nuage de Magellan ; positions de
+**M31, M42, M1, M13 à ≤ 1′ des coordonnées SIMBAD** (constantes `SIMBAD_REFERENCES` du script,
+SIMBAD n'étant pas joignable depuis l'environnement de build ; écarts mesurés : 1,1″, 13,3″, 0,4″,
+0,1″). M45 : un amas de 2° n'a pas de centre net et les catalogues divergent de plusieurs minutes
+d'arc ; OpenNGC le centre sur Alcyone, contrôlée à ≤ 1′ de la position SIMBAD d'η Tau (6,5″) ;
+toutes les clés des noms français présentes dans le catalogue ; `deepsky.json` < 50 000 octets
+gzip. Tailles au 2026-10-09 : 58 018 o brut, 18 273 o gzip -9.
+
+**Noms français** (`packages/content/fr/deepsky-names.json`, 42 objets) : contenu éditorial, clé =
+identifiant du catalogue (`M31`, `NGC5139`, `C41`…). Seuls les objets célèbres qu'OpenNGC nomme
+déjà en anglais reçoivent un nom français d'usage courant (« Galaxie d'Andromède » pour
+« Andromeda Galaxy ») ; le script vérifie les deux conditions. Les autres objets s'affichent par
+leur désignation (M 13, NGC 869). Vérification contre les libellés français de Wikidata (CC0),
+comme pour les étoiles (#67) : à faire quand Wikidata sera joignable depuis le pipeline.
 
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.

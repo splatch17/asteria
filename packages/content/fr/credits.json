@@ -61,9 +61,19 @@
       "sourceUrl": "https://github.com/Stellarium/stellarium/tree/master/skycultures/modern"
     },
     {
+      "id": "openngc",
+      "name": "OpenNGC (version v20260501)",
+      "role": "Objets du ciel profond : les 110 objets de Messier et les galaxies, nébuleuses et amas NGC/IC les plus brillants (positions, types, magnitudes, dimensions, noms usuels anglais). Le catalogue de l'application (deepsky.json) en est dérivé et est diffusé sous la même licence.",
+      "author": "Mattia Verga et contributeurs d'OpenNGC",
+      "notice": "OpenNGC, Mattia Verga, https://github.com/mattiaverga/OpenNGC. Données compilées depuis NED (NASA/IPAC), HyperLEDA, SIMBAD (CDS), HEASARC et les notes NGC/IC de H. Corwin.",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sourceUrl": "https://github.com/mattiaverga/OpenNGC/tree/v20260501"
+    },
+    {
       "id": "roman-1987",
       "name": "Frontières des constellations (Delporte 1930, table de Roman 1987)",
-      "role": "Constellation à laquelle appartient chaque étoile ou planète.",
+      "role": "Constellation à laquelle appartient chaque étoile, objet du ciel profond ou planète.",
       "author": "N. G. Roman (1987), d'après E. Delporte (1930) pour l'UAI",
       "notice": "Roman, PASP 99, 695 (1987). Catalogue CDS VI/42.",
       "license": "Citation des auteurs (règles VizieR)",

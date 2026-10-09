@@ -6,6 +6,7 @@ export * from "./space-view";
 export * from "./space-style";
 export * from "./figure-pick";
 export * from "./limits";
+export * from "./daylight";
 export * from "./see-through";
 export * from "./pick";
 export * from "./ephemeris-range";

@@ -268,6 +268,7 @@ export class SpaceView {
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
       uYears: { value: 0 },
+      uFigures: { value: 1 },
     };
 
     // --- Celestial sphere (at infinity)
@@ -292,12 +293,14 @@ export class SpaceView {
     // Constellation lines: each end follows its star
     const segs: number[] = [];
     const segPm: number[] = [];
+    const member = new Float32Array(stars.length);
     for (const polys of Object.values(lines)) {
       for (const poly of polys) {
         for (let i = 0; i < poly.length - 1; i++) {
           const ia = indexOf.get(poly[i]!);
           const ib = indexOf.get(poly[i + 1]!);
           if (ia === undefined || ib === undefined) continue;
+          member[ia] = member[ib] = 1;
           for (const j of [ia, ib]) {
             segs.push(motion.dirs[3 * j]!, motion.dirs[3 * j + 1]!, motion.dirs[3 * j + 2]!);
             segPm.push(motion.pm[3 * j]!, motion.pm[3 * j + 1]!, motion.pm[3 * j + 2]!);
@@ -306,6 +309,8 @@ export class SpaceView {
       }
     }
     this.constellationLines = this.skyLines(segs, 0.28, segPm);
+    // Figure stars are reinforced while the lines are shown (uFigures, #104).
+    starGeo.setAttribute("aMember", new THREE.BufferAttribute(member, 1));
     const constellationLines = this.constellationLines;
 
     // Celestial equator and ecliptic (J2000 directions, precessed like the stars)
@@ -539,6 +544,7 @@ export class SpaceView {
       if (typeof value === "boolean" && key in this.layers) this.layers[key] = value;
     }
     this.constellationLines.visible = this.layers.constellationLines;
+    this.uniforms.uFigures.value = this.layers.constellationLines ? 1 : 0;
     this.eclipticLine.visible = this.layers.ecliptic;
     this.equatorialGrid.visible = this.layers.equatorialGrid;
     this.update();
