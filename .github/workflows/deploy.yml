@@ -31,7 +31,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: packages/sky-data/raw
-          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py') }}
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py', 'packages/sky-data/build_figures.py') }}
       - run: python packages/sky-data/build_stars.py
         env:
           PYTHONIOENCODING: utf-8
@@ -40,6 +40,12 @@ jobs:
           PYTHONIOENCODING: utf-8
       # Realistic-style textures: optional, the app falls back to procedural colours without them.
       - run: python packages/sky-data/build_space.py
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
+      # Constellation figures (#95), checked against the star catalogue built above: optional,
+      # the figures layer is simply unavailable without them.
+      - run: python packages/sky-data/build_figures.py
         continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8

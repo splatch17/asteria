@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "data:build": "python packages/sky-data/build_stars.py && python packages/sky-data/build_earth.py && python packages/sky-data/build_space.py",
+    "data:build": "python packages/sky-data/build_stars.py && python packages/sky-data/build_earth.py && python packages/sky-data/build_space.py && python packages/sky-data/build_figures.py",
     "data:sync": "node tools/sync-data.mjs",
     "icons": "node tools/build-icons.mjs"
   },
