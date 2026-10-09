@@ -15,6 +15,15 @@ atlas des planètes ; < 1,5 Mo au total, contrôlé par le script). `pnpm data:s
 dans `apps/web/public/data/`. Sans `out/space/`, le style réaliste utilise des couleurs
 procédurales.
 
+Figures illustrées (#95) : `python build_figures.py` (Stellarium « western », Johan Meuris,
+commit épinglé → `out/figures/stellarium-western.webp` + `.json`). Format commun à tous les jeux
+de figures (`asteria-figure-set` v1, décrit en tête du script et dans
+`sky-renderer/src/figures.ts`) : atlas de cellules en niveaux de gris (luminance = encre) et
+manifeste (constellation, rectangle dans l'atlas, 3 ancres `{hip, u, v}`). Contrôles : mention de
+licence inchangée, ancres distinctes et non alignées ; si le catalogue d'étoiles existe, ancres
+présentes dans le catalogue (sauf `KNOWN_MISSING`), non alignées sur le ciel, coins de l'image à
+moins de 75° du barycentre, ancres replacées à < 0,01″ par l'ajustement.
+
 `raw/` (téléchargements) et `out/` (générés) ne sont pas versionnés. Sources et licences : `docs/DATA_SOURCES.md`.
 
 ## Fichiers produits (`out/`)
