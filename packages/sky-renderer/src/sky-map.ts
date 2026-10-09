@@ -374,6 +374,8 @@ export class SkyMap {
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
+      uFigures: { value: 1 },
+      uHalfHeight: { value: 1 },
       uBodySize: { value: 32 },
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
@@ -402,9 +404,17 @@ export class SkyMap {
     const starPoints = new THREE.Points(starGeo, this.material(starVert, starFrag, true));
     starPoints.frustumCulled = false;
 
-    // Constellation lines: each end follows its star (same aDir / aPm as the star)
+    // Constellation lines: each end follows its star (same aDir / aPm as the star). Each vertex
+    // also carries the other end and both magnitudes: the shader stops the line short of the
+    // stars (#104).
     const segs: number[] = [];
     const segPm: number[] = [];
+    const segOther: number[] = [];
+    const segOtherPm: number[] = [];
+    const segMag: number[] = [];
+    const segOtherMag: number[] = [];
+    const segEnd: number[] = [];
+    const member = new Float32Array(stars.length);
     const { dirs: d0, pm } = this.motion;
     for (const [abbr, polys] of Object.entries(lines)) {
       const figure: [Vec3, Vec3][] = [];
@@ -414,9 +424,18 @@ export class SkyMap {
           const ia = indexOf.get(poly[i]!);
           const ib = indexOf.get(poly[i + 1]!);
           if (ia === undefined || ib === undefined) continue;
-          for (const j of [ia, ib]) {
+          for (const [end, j, k] of [
+            [0, ia, ib],
+            [1, ib, ia],
+          ] as const) {
             segs.push(d0[3 * j]!, d0[3 * j + 1]!, d0[3 * j + 2]!);
             segPm.push(pm[3 * j]!, pm[3 * j + 1]!, pm[3 * j + 2]!);
+            segOther.push(d0[3 * k]!, d0[3 * k + 1]!, d0[3 * k + 2]!);
+            segOtherPm.push(pm[3 * k]!, pm[3 * k + 1]!, pm[3 * k + 2]!);
+            segMag.push(stars[j]!.v);
+            segOtherMag.push(stars[k]!.v);
+            segEnd.push(end);
+            member[j] = 1;
           }
           const a = this.starDirs[ia]!;
           const b = this.starDirs[ib]!;
@@ -432,6 +451,13 @@ export class SkyMap {
     lineGeo.setAttribute("position", segDirs);
     lineGeo.setAttribute("aDir", segDirs);
     lineGeo.setAttribute("aPm", new THREE.Float32BufferAttribute(segPm, 3));
+    lineGeo.setAttribute("aOther", new THREE.Float32BufferAttribute(segOther, 3));
+    lineGeo.setAttribute("aOtherPm", new THREE.Float32BufferAttribute(segOtherPm, 3));
+    lineGeo.setAttribute("aMag", new THREE.Float32BufferAttribute(segMag, 1));
+    lineGeo.setAttribute("aOtherMag", new THREE.Float32BufferAttribute(segOtherMag, 1));
+    lineGeo.setAttribute("aEnd", new THREE.Float32BufferAttribute(segEnd, 1));
+    // Stars drawing a figure are reinforced while the lines are shown (uFigures).
+    starGeo.setAttribute("aMember", new THREE.BufferAttribute(member, 1));
     this.lineMesh = new THREE.LineSegments(lineGeo, this.material(lineVert, lineFrag, false));
     this.lineMesh.frustumCulled = false;
 
@@ -752,6 +778,7 @@ export class SkyMap {
     // Moon and planets only within the validated ephemeris range (see ephemeris-range.ts).
     const planets = l.planets && this.ephemerisOk;
     this.lineMesh.visible = l.constellationLines;
+    this.uniforms.uFigures.value = l.constellationLines ? 1 : 0;
     this.planetPoints.visible = planets && !!this.planets;
     this.selectedPathPoints.visible =
       planets && this.selectedPathPoints.geometry.drawRange.count > 0;
@@ -914,6 +941,7 @@ export class SkyMap {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.fontKey = ""; // resizing the canvas resets its context state
     this.uniforms.uAspect.value = w / h;
+    this.uniforms.uHalfHeight.value = h / 2;
     this.clampView(); // the widest field depends on the aspect (portrait ↔ landscape)
     this.dirty = true;
   }

@@ -3,12 +3,14 @@
  * picked, and the search avoids projecting the whole catalogue.
  */
 import type { Vec3 } from "@asteria/astro-core";
+import { STAR_STYLE } from "./star-style";
 
 /**
  * starVert hides a star when its flux relative to the limit, rel = 10^(−0.4 (v − limit)), falls
- * below 0.35: a star is drawn while v ≤ limit + 2.5·log10(1 / 0.35) ≈ limit + 1.14.
+ * below STAR_STYLE.HIDE_BELOW_REL (0.35): a star is drawn while
+ * v ≤ limit + 2.5·log10(1 / 0.35) ≈ limit + 1.14.
  */
-export const STAR_SHOWN_MARGIN = 2.5 * Math.log10(1 / 0.35);
+export const STAR_SHOWN_MARGIN = 2.5 * Math.log10(1 / STAR_STYLE.HIDE_BELOW_REL);
 
 /**
  * Faintest magnitude a tap may pick: the field-of-view limit (as before #73), but never a star the

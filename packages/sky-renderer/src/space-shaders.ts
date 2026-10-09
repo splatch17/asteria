@@ -1,5 +1,6 @@
 // GLSL for the space view (globe + celestial sphere at infinity). World frame: equator of date.
 import { dither, properMotion } from "./shaders";
+import { STAR_SPRITE_GLSL, STAR_STYLE, STAR_STYLE_GLSL } from "./star-style";
 
 /** Directions at infinity: rotate with the camera only and sit on the far plane. */
 const atInfinity = /* glsl */ `
@@ -9,31 +10,39 @@ const atInfinity = /* glsl */ `
   }
 `;
 
+/** Stars at infinity: same point-of-light law as the sky map (STAR_STYLE, #104). */
 export const skyStarVert = /* glsl */ `
   ${atInfinity}
   ${properMotion}
+  ${STAR_STYLE_GLSL}
   uniform mat3 uPrec;
   uniform float uDpr;
   uniform float uLimitMag;
+  uniform float uFigures;
   attribute vec3 aDir;
   attribute float aMag;
-  varying float vAlpha;
+  attribute float aMember;
+  varying vec4 vStyle;
+  varying float vSpike;
   void main() {
-    float rel = pow(10.0, -0.4 * (aMag - uLimitMag));
-    vAlpha = clamp(0.3 + rel * 0.8, 0.0, 1.0);
-    if (rel < 0.4) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    vStyle = starStyle(aMag, uLimitMag, aMember * uFigures);
+    vSpike = aMag < ${STAR_STYLE.SPIKE_MAG.toFixed(2)} ? 1.0 : 0.0;
+    if (vStyle.x <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectDirection(uPrec * starDirection(aDir));
-    gl_PointSize = clamp(1.6 * sqrt(rel), 1.4, 9.0) * uDpr;
+    gl_PointSize = vStyle.w * uDpr;
   }
 `;
 
 export const skyStarFrag = /* glsl */ `
   precision highp float;
   uniform vec3 uInk;
-  varying float vAlpha;
+  uniform float uDpr;
+  varying vec4 vStyle;
+  varying float vSpike;
+  ${STAR_SPRITE_GLSL}
   void main() {
-    float r = length(gl_PointCoord * 2.0 - 1.0);
-    float a = max(smoothstep(0.5, 0.2, r), exp(-r * r * 6.0) * 0.4) * vAlpha;
+    vec2 p = gl_PointCoord * 2.0 - 1.0;
+    float a = starSprite(p, vStyle.w, vStyle.x, vStyle.y, vStyle.z, vSpike, 0.5 / uDpr);
     if (a < 0.02) discard;
     gl_FragColor = vec4(uInk, a);
   }
