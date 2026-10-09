@@ -19,6 +19,7 @@
     onpoint,
     onstyle,
     onsearch,
+    onrecentre,
     searchOpen,
     searchButton = $bindable(),
     element = $bindable(),
@@ -42,6 +43,8 @@
     onstyle: () => void;
     /** Opens the search (#99), sky map only. */
     onsearch: () => void;
+    /** Earth view: back to its starting view (#107). */
+    onrecentre: () => void;
     searchOpen: boolean;
     searchButton?: HTMLButtonElement | undefined;
     element?: HTMLElement | undefined;
@@ -133,6 +136,14 @@
       <Icon name="aim" size={ICON} />
     </button>
   {:else}
+    <button
+      class="dial"
+      onclick={onrecentre}
+      aria-label={$_("gestures.recentre")}
+      title={$_("gestures.recentre")}
+    >
+      <Icon name="recentre" size={ICON} />
+    </button>
     <button
       class="dial"
       onclick={onstyle}

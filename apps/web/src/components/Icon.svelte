@@ -124,6 +124,11 @@
     />
   {:else if name === "moon"}
     <path d="M9 2 A6 6 0 1 0 14 10.5 A5 5 0 0 1 9 2 Z" class="fill" />
+  {:else if name === "recentre"}
+    <!-- A sight: back to the view's starting point (#107). -->
+    <circle cx="8" cy="8" r="4.5" />
+    <path d="M8 1 V4.5 M8 11.5 V15 M1 8 H4.5 M11.5 8 H15" />
+    <circle cx="8" cy="8" r="1.2" class="fill" />
   {/if}
 </svg>
 

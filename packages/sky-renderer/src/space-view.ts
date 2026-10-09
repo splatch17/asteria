@@ -57,6 +57,15 @@ import {
   type HorizonBasis,
 } from "./flight";
 import type { ViewState } from "./view";
+import { GestureInput } from "./gesture-input";
+import {
+  earthPanLimit,
+  easeOut,
+  panScale,
+  raySphere,
+  wrapDegrees,
+  zoomAnchorShift,
+} from "./gestures";
 
 export type { SpaceTextureName } from "./space-realistic";
 
@@ -124,6 +133,19 @@ const DEG = Math.PI / 180;
 const OBLIQUITY = 23.4392911 * DEG;
 const DIST_MIN = 1.6;
 const DIST_MAX = 40;
+/** Duration of the recentring and reset tweens, ms. */
+const RECENTRE_MS = 600;
+
+/** Orbit camera of the Earth view: angles (degrees), distance and pan of the target (radii). */
+interface EarthOrbit {
+  lon: number;
+  lat: number;
+  dist: number;
+  /** Pan of the point looked at, world frame, Earth radii (#107); 0 = the Earth's centre. */
+  tx: number;
+  ty: number;
+  tz: number;
+}
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
@@ -153,7 +175,11 @@ export class SpaceView {
   private readonly observerMarker = new THREE.Group();
   /** Earth's axis (to 1.5 radii): hidden near the ground, where it would stand in the sky. */
   private readonly axis: THREE.LineSegments;
-  private orbit = { lon: 0, lat: 30, dist: 4 }; // camera, in world (equatorial) coordinates
+  /** Camera, in world (equatorial) coordinates, round the target point (pan). */
+  private orbit: EarthOrbit = { lon: 0, lat: 30, dist: 4, tx: 0, ty: 0, tz: 0 };
+  /** Animated move of the orbit (recentre, reset); null when none. */
+  private camTween: { from: EarthOrbit; to: EarthOrbit; start: number } | null = null;
+  private lastFrame = 0;
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
   private bodies: { sun: Vec3; moon: Vec3 } | null = null;
@@ -183,9 +209,7 @@ export class SpaceView {
   private hudExclusions: readonly Rect[] = [];
   /** Moon and planet positions are within the validated range (see ephemeris-range.ts). */
   private ephemerisOk = true;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
-  private velocity = { lon: 0, lat: 0 };
-  private moved = 0;
+  private readonly input: GestureInput;
   private readonly resizeObserver: ResizeObserver;
   // --- realistic style (#55), built on first use
   private style: SpaceStyle = "engraving";
@@ -219,6 +243,7 @@ export class SpaceView {
     pole: new THREE.Vector3(0, 0, 1),
     point: [0, 0] as [number, number],
     size: new THREE.Vector2(),
+    shift: { x: 0, y: 0 },
   };
   // --- Sky <-> Earth flight (#37)
   private readonly flightPath = new FlightPath();
@@ -445,7 +470,7 @@ export class SpaceView {
         this.update();
       },
     });
-    this.bindInput(canvas);
+    this.input = new GestureInput(canvas, this.gestures(), this.listeners.signal);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
@@ -591,16 +616,27 @@ export class SpaceView {
     Object.assign(this.orbit, orbit);
     this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat));
     this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.orbit.dist));
-    this.velocity = { lon: 0, lat: 0 };
+    this.clampPan();
+    this.input.stopInertia();
+    this.camTween = null;
     this.dirty = true;
   }
 
   /** Points the camera at the observer's place, at the given distance (Earth radii). */
   focusObserver(dist = 4): void {
-    const gst = greenwichMeanSiderealTime(this.date);
-    this.orbit = { lon: this.observer.longitude + gst, lat: this.observer.latitude, dist };
-    this.velocity = { lon: 0, lat: 0 };
+    this.input.stopInertia();
+    this.camTween = null;
+    this.orbit = this.observerOrbit(dist);
     this.dirty = true;
+  }
+
+  /**
+   * Back to the view the Earth view opens on (above the observer, at the orbit radius, no pan),
+   * animated unless `instant` (#107: the recentre button and a double tap beside the globe).
+   */
+  resetView(instant = false): void {
+    if (this.flight) return;
+    this.moveTo(this.observerOrbit(ORBIT_RADIUS), instant);
   }
 
   /**
@@ -628,8 +664,10 @@ export class SpaceView {
       fov: LANDING_VIEW.fov,
       roll: 0,
     };
+    // From where the camera is (a pan moves it off the orbit's sphere).
+    const dist = this.camera.position.length();
     const dir = this.camera.position.clone().normalize();
-    this.flightPath.setup(this.horizon, view, dir, this.orbit.dist);
+    this.flightPath.setup(this.horizon, view, dir, dist);
     this.beginFlight("in", options);
     return view;
   }
@@ -692,6 +730,130 @@ export class SpaceView {
   }
 
   // --- internals
+
+  private observerOrbit(dist: number): EarthOrbit {
+    const gst = greenwichMeanSiderealTime(this.date);
+    const { longitude, latitude } = this.observer;
+    return { lon: longitude + gst, lat: latitude, dist, tx: 0, ty: 0, tz: 0 };
+  }
+
+  private moveTo(to: EarthOrbit, instant: boolean): void {
+    this.input.stopInertia();
+    const from = { ...this.orbit };
+    to.lon = from.lon + wrapDegrees(to.lon - from.lon); // shortest way round
+    if (instant) {
+      this.orbit = to;
+      this.camTween = null;
+    } else this.camTween = { from, to, start: performance.now() };
+    this.dirty = true;
+  }
+
+  /** Orbit at time `now` of the recentring tween. */
+  private stepCamTween(now: number): void {
+    const tw = this.camTween;
+    if (!tw) return;
+    const k = easeOut((now - tw.start) / RECENTRE_MS);
+    const { from: a, to: b } = tw;
+    const o = this.orbit;
+    o.lon = a.lon + (b.lon - a.lon) * k;
+    o.lat = a.lat + (b.lat - a.lat) * k;
+    o.dist = a.dist * (b.dist / a.dist) ** k;
+    o.tx = a.tx + (b.tx - a.tx) * k;
+    o.ty = a.ty + (b.ty - a.ty) * k;
+    o.tz = a.tz + (b.tz - a.tz) * k;
+    if (k >= 1) this.camTween = null;
+    this.dirty = true;
+  }
+
+  /** Keeps the pan within reach: the Earth's centre stays well inside the screen. */
+  private clampPan(): void {
+    const o = this.orbit;
+    const max = earthPanLimit(o.dist, ORBIT_FOV, this.camera.aspect);
+    const n = Math.hypot(o.tx, o.ty, o.tz);
+    if (n <= max) return;
+    const k = max / n;
+    o.tx *= k;
+    o.ty *= k;
+    o.tz *= k;
+  }
+
+  /** Moves the target along the camera's right and up axes (world units). */
+  private shiftTarget(right: number, up: number): void {
+    const e = this.camera.matrixWorld.elements; // columns: right, up, back
+    const o = this.orbit;
+    o.tx += right * e[0]! + up * e[4]!;
+    o.ty += right * e[1]! + up * e[5]!;
+    o.tz += right * e[2]! + up * e[6]!;
+    this.clampPan();
+    this.dirty = true;
+  }
+
+  /**
+   * Gesture intents (CSS px) mapped onto the orbit. North stays up (no twist): the Earth view
+   * keeps the celestial pole up, as the flight to and from the sky map and the pole label expect.
+   */
+  private gestures() {
+    const canvas = this.options.canvas;
+    const focal = () => 1 / Math.tan((ORBIT_FOV * DEG) / 2);
+    return {
+      enabled: () => !this.flight,
+      grab: () => {
+        this.camTween = null;
+      },
+      orbit: (dx: number, dy: number) => {
+        // Dragging turns the globe under the finger (the camera orbits the other way).
+        const k = (60 / Math.max(1, canvas.clientHeight)) * (this.orbit.dist / 4);
+        this.orbit.lon -= dx * k;
+        this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + dy * k));
+        this.dirty = true;
+      },
+      pan: (dx: number, dy: number) => {
+        const k = panScale(this.orbit.dist, focal(), canvas.clientHeight);
+        this.shiftTarget(-dx * k, dy * k);
+      },
+      zoom: (factor: number, x: number, y: number) => {
+        const d = this.orbit.dist;
+        this.zoom(factor);
+        if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
+        // Towards the point between the fingers (or under the cursor).
+        const { clientWidth: w, clientHeight: h } = canvas;
+        const shift = zoomAnchorShift(
+          (2 * x) / Math.max(1, w) - 1,
+          1 - (2 * y) / Math.max(1, h),
+          this.camera.aspect,
+          d,
+          focal(),
+          this.orbit.dist / d,
+          this.frameTmp.shift,
+        );
+        this.shiftTarget(shift.x, shift.y);
+      },
+      tap: (x: number, y: number) => this.options.onSelect?.(this.pick(x, y)),
+      doubleTap: (x: number, y: number) => this.centreAt(x, y),
+      changed: () => (this.dirty = true),
+    };
+  }
+
+  /** Double tap: the place of the globe under (x, y) turns to face the camera; beside it, reset. */
+  private centreAt(x: number, y: number): void {
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const { a: dir } = this.frameTmp;
+    const o = this.camera.position;
+    dir
+      .set((2 * x) / Math.max(1, w) - 1, 1 - (2 * y) / Math.max(1, h), 0.5)
+      .unproject(this.camera)
+      .sub(o)
+      .normalize();
+    const t = raySphere(o.x, o.y, o.z, dir.x, dir.y, dir.z);
+    if (t < 0) {
+      this.resetView();
+      return;
+    }
+    dir.multiplyScalar(t).add(o); // the point of the globe, on the unit sphere
+    const lon = Math.atan2(dir.y, dir.x) / DEG;
+    const lat = Math.asin(Math.max(-1, Math.min(1, dir.z))) / DEG;
+    this.moveTo({ lon, lat, dist: this.orbit.dist, tx: 0, ty: 0, tz: 0 }, false);
+  }
 
   private buildRealistic(): void {
     const u = this.uniforms;
@@ -799,8 +961,8 @@ export class SpaceView {
 
   private beginFlight(direction: "out" | "in", options: FlightOptions): void {
     this.cancelFlight();
-    this.pointers.clear();
-    this.velocity = { lon: 0, lat: 0 };
+    this.input.cancel();
+    this.camTween = null;
     this.overZoom.reset();
     this.flight = {
       direction,
@@ -823,29 +985,25 @@ export class SpaceView {
     this.flight = null;
     if (f.direction === "out") {
       // Hand over to the orbit camera exactly where the flight ends.
-      const gst = greenwichMeanSiderealTime(this.date);
-      this.orbit = {
-        lon: this.observer.longitude + gst,
-        lat: this.observer.latitude,
-        dist: ORBIT_RADIUS,
-      };
+      this.orbit = this.observerOrbit(ORBIT_RADIUS);
     }
-    this.velocity = { lon: 0, lat: 0 };
     this.dirty = true;
     f.options.onDone?.();
   }
 
-  /** Orbit camera: position from (lon, lat, dist), looking at the Earth's centre, north up. */
+  /** Orbit camera: position from (lon, lat, dist) round the target, looking at it, north up. */
   private placeCamera(): void {
-    const { lon, lat, dist } = this.orbit;
-    const [l, b] = [lon * DEG, lat * DEG];
+    const { lon, lat, dist, tx, ty, tz } = this.orbit;
+    const l = lon * DEG;
+    const b = lat * DEG;
     this.camera.position.set(
-      dist * Math.cos(b) * Math.cos(l),
-      dist * Math.cos(b) * Math.sin(l),
-      dist * Math.sin(b),
+      tx + dist * Math.cos(b) * Math.cos(l),
+      ty + dist * Math.cos(b) * Math.sin(l),
+      tz + dist * Math.sin(b),
     );
-    this.camera.lookAt(0, 0, 0);
+    this.camera.lookAt(tx, ty, tz);
     this.setFov(ORBIT_FOV);
+    this.camera.updateMatrixWorld();
   }
 
   private setFov(fov: number): void {
@@ -1003,15 +1161,13 @@ export class SpaceView {
     if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
     if (this.contextLost) return;
-    if (
-      !this.pointers.size &&
-      (Math.abs(this.velocity.lon) > 0.01 || Math.abs(this.velocity.lat) > 0.01)
-    ) {
-      this.orbit.lon += this.velocity.lon;
-      this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
-      this.velocity.lon *= 0.9;
-      this.velocity.lat *= 0.9;
-      this.dirty = true;
+    const now = performance.now();
+    const dt = now - this.lastFrame;
+    this.lastFrame = now;
+    // Inertia of the orbit (calls the orbit gesture), then the recentring tween.
+    if (!this.flight) {
+      this.input.step(dt);
+      this.stepCamTween(now);
     }
     if (this.stale) this.refresh();
     if (this.flight) {
@@ -1230,69 +1386,6 @@ export class SpaceView {
       });
     }
     return best;
-  }
-
-  private bindInput(canvas: HTMLCanvasElement): void {
-    const signal = this.listeners.signal;
-    canvas.style.touchAction = "none";
-    let pinch = 0;
-    const distance = () => {
-      const [a, b] = [...this.pointers.values()];
-      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
-    };
-    canvas.addEventListener(
-      "pointerdown",
-      (e) => {
-        if (this.flight) return; // the flight owns the camera
-        canvas.setPointerCapture(e.pointerId);
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.velocity = { lon: 0, lat: 0 };
-        this.moved = 0;
-        if (this.pointers.size === 2) pinch = distance();
-      },
-      { signal },
-    );
-    canvas.addEventListener(
-      "pointermove",
-      (e) => {
-        const prev = this.pointers.get(e.pointerId);
-        if (!prev) return;
-        const [dx, dy] = [e.clientX - prev.x, e.clientY - prev.y];
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.moved += Math.abs(dx) + Math.abs(dy);
-        if (this.pointers.size === 1) {
-          // Dragging turns the globe under the finger (the camera orbits the other way).
-          const k = (60 / canvas.clientHeight) * (this.orbit.dist / 4);
-          this.velocity = { lon: -dx * k, lat: dy * k };
-          this.orbit.lon += this.velocity.lon;
-          this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
-        } else if (this.pointers.size === 2) {
-          const d = distance();
-          if (pinch > 0) this.zoom(pinch / d);
-          pinch = d;
-        }
-        this.dirty = true;
-      },
-      { signal },
-    );
-    const end = (e: PointerEvent) => {
-      if (!this.pointers.delete(e.pointerId)) return;
-      if (this.pointers.size === 0 && this.moved < 6 && e.type === "pointerup") {
-        const rect = canvas.getBoundingClientRect();
-        this.options.onSelect?.(this.pick(e.clientX - rect.left, e.clientY - rect.top));
-      }
-      pinch = 0;
-    };
-    canvas.addEventListener("pointerup", end, { signal });
-    canvas.addEventListener("pointercancel", end, { signal });
-    canvas.addEventListener(
-      "wheel",
-      (e) => {
-        e.preventDefault();
-        if (!this.flight) this.zoom(Math.exp(e.deltaY * 0.0012));
-      },
-      { passive: false, signal },
-    );
   }
 
   private zoom(factor: number): void {
