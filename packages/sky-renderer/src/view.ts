@@ -95,3 +95,12 @@ export function backCutoff(fovDeg: number, aspect: number): number {
   const angle = Math.min(BACK_MAX_DEG, cornerAngle(fovDeg, aspect) + BACK_MARGIN_DEG);
   return Math.min(-0.6, Math.cos(angle * RAD));
 }
+
+/**
+ * Eased progress (ease-out cubic, 0 → 1) of a view animation started at `start` (ms) lasting
+ * `duration` ms; a duration of 0 or less ends at once (reduced motion) instead of giving NaN.
+ */
+export function viewAnimationProgress(now: number, start: number, duration: number): number {
+  const t = duration > 0 ? Math.min(1, Math.max(0, (now - start) / duration)) : 1;
+  return 1 - (1 - t) ** 3;
+}
