@@ -14,11 +14,14 @@ import {
 } from "./pick";
 import { limitingMagnitude } from "./limits";
 import { starVert } from "./shaders";
+import { STAR_STYLE } from "./star-style";
 import { projectStereo, stereoScale } from "./view";
 
 describe("star pick limit (same rule as the shader)", () => {
   it("mirrors starVert's cut-off", () => {
-    expect(starVert).toContain("rel < 0.35");
+    expect(STAR_STYLE.HIDE_BELOW_REL).toBe(0.35);
+    expect(starVert).toContain("starStyle(aMag, limit");
+    expect(starVert).toContain(`rel < ${STAR_STYLE.HIDE_BELOW_REL.toFixed(4)}`);
     expect(STAR_SHOWN_MARGIN).toBeCloseTo(1.14, 2);
   });
 
