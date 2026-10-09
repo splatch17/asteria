@@ -106,6 +106,8 @@
   "layers.section.guides": "Repères",
   "layers.constellationLines": "Lignes des constellations",
   "layers.constellationNames": "Noms des constellations",
+  "layers.constellationFigures": "Figures des constellations",
+  "layers.constellationFigures.hint": "Les personnages et animaux dessinés autour des étoiles",
   "layers.starNames": "Noms des étoiles",
   "layers.planets": "Planètes",
   "layers.allPaths": "Toutes les trajectoires",

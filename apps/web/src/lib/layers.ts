@@ -5,7 +5,12 @@
  * Adding a layer (Milky Way, Messier, ISS, boundaries…) = a renderer key in SkyLayers, then one
  * entry here (section, icon, i18n keys `layers.<key>` and optionally `layers.<key>.hint`).
  */
-import type { GraduationKind, SkyLayers } from "@asteria/sky-renderer";
+import {
+  DEFAULT_SKY_LAYERS,
+  type FigureLevel,
+  type GraduationKind,
+  type SkyLayers,
+} from "@asteria/sky-renderer";
 import type { IconName } from "./icons";
 
 export type LayerKey = keyof SkyLayers;
@@ -36,6 +41,7 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
     entries: [
       { key: "constellationLines", icon: "lines", views: BOTH },
       { key: "constellationNames", icon: "conNames", views: SKY },
+      { key: "constellationFigures", icon: "figures", hint: true, views: SKY },
       { key: "starNames", icon: "starNames", views: SKY },
       { key: "seeThroughGround", icon: "seeThrough", hint: true, views: SKY },
     ],
@@ -64,6 +70,19 @@ export function sectionsFor(view: LayerView): LayerSection[] {
     ...s,
     entries: s.entries.filter((e) => e.views.includes(view)),
   })).filter((s) => s.entries.length > 0);
+}
+
+/** Public level, shared with the 3D view (setting `asteria.level`). */
+export const LEVEL_STORAGE_KEY = "asteria.level";
+export const isLevel = (v: unknown): v is FigureLevel =>
+  v === "discovery" || v === "amateur" || v === "expert";
+
+/**
+ * Sky-map defaults for a level: the illustrated figures (#96) are on by default in Découverte
+ * only (the other levels keep the data first; the switch is remembered either way).
+ */
+export function skyDefaults(level: FigureLevel): SkyLayers {
+  return { ...DEFAULT_SKY_LAYERS, constellationFigures: level === "discovery" };
 }
 
 export const LAYERS_STORAGE_KEY: Record<LayerView, string> = {
