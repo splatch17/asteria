@@ -101,7 +101,7 @@ describe("GestureInput", () => {
     tick(150);
     ev("pointerdown", 2, 55, 52);
     ev("pointerup", 2, 55, 52);
-    expect(calls.taps).toBe(2);
+    expect(calls.taps).toBe(1); // the second tap is the double tap's own
     expect(calls.doubleTaps).toBe(1);
     expect(calls.orbitCalls).toBe(0);
   });

@@ -461,6 +461,29 @@ export function zoomOrbit(
 }
 
 /**
+ * Rolls the view by the fingers' clockwise rotation `rad` about the point between them, (rx, ry)
+ * CSS px from the image centre (y down): the roll turns the image about its centre, and a pan
+ * brings the point under the fingers back under them. `camRot`: the rotation before the roll.
+ */
+export function rollOrbitAbout(
+  orbit: OrbitState,
+  camRot: Mat3,
+  rad: number,
+  rx: number,
+  ry: number,
+  unitsPerPx: number,
+  limit: number,
+): void {
+  orbit.roll = (orbit.roll ?? 0) - rad / RAD; // clockwise on screen: negative roll
+  // The pan, in the screen frame before the roll, that shows as r − R·r after it: R⁻¹·r − r.
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  const qx = c * rx + s * ry;
+  const qy = -s * rx + c * ry;
+  panOrbit(orbit, camRot, qx - rx, qy - ry, unitsPerPx, limit);
+}
+
+/**
  * Everything the projection needs for one frame. The view morphs from the sky map's projection
  * (stereographic, from the Earth: `stereoRot`, `stereoScale`) to a perspective camera
  * (`camPos`, `camRot`, `focal` = 1 / tan(vertical fov / 2)) as `morph` goes 0 → 1.

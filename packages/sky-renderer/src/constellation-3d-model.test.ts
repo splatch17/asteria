@@ -20,6 +20,7 @@ import {
   panOrbit,
   planTransition,
   poseAt,
+  rollOrbitAbout,
   projectPose,
   scaleRings,
   slerpRotation,
@@ -476,6 +477,35 @@ describe("gestures on the 3D orbit (#107)", () => {
     expect(b.x).toBeCloseTo(centre.x, 6);
     expect(b.y).toBeLessThan(centre.y);
     expect(centre.y - b.y).toBeCloseTo(a.x - centre.x, 6);
+  });
+
+  it("twists about the point between the fingers", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    const c = pivotPlus(orbit);
+    // A point of the target plane, under the fingers.
+    const p = [0, 1, 2].map((k) => c[k]! + 25 * camRot[k]! + 15 * camRot[3 + k]!) as Vec3;
+    const fingers = px(orbit, p);
+    const centre = px(orbit, c);
+    const rad = 0.6; // clockwise
+    rollOrbitAbout(
+      orbit,
+      camRot,
+      rad,
+      fingers.x - centre.x,
+      fingers.y - centre.y,
+      panScale(orbit.distance, plan.focal, h),
+      1e9,
+    );
+    expect(orbit.roll).toBeCloseTo(-0.6 / (Math.PI / 180), 9);
+    const after = px(orbit, p);
+    expect(after.x).toBeCloseTo(fingers.x, 6);
+    expect(after.y).toBeCloseTo(fingers.y, 6);
+    // And the image turned clockwise: a point right of the fingers is now below-right of them.
+    const q = [0, 1, 2].map((k) => p[k]! + 10 * camRot[k]!) as Vec3;
+    const qa = px(orbit, q);
+    expect(qa.y).toBeGreaterThan(after.y);
+    expect(qa.x).toBeGreaterThan(after.x);
   });
 
   it("orbits along the drag's screen direction whatever the roll", () => {

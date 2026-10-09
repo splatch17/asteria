@@ -27,11 +27,14 @@ export interface GestureHandlers {
   pan(dx: number, dy: number): void;
   /** Multiply the camera distance by `factor` (< 1: closer), anchored at (x, y) CSS px. */
   zoom(factor: number, x: number, y: number): void;
-  /** Roll by a clockwise screen rotation of the fingers, radians. Absent: no twist. */
-  roll?: (rad: number) => void;
+  /**
+   * Roll by a clockwise screen rotation of the fingers (radians) about the point between them,
+   * (x, y) CSS px. Absent: no twist.
+   */
+  roll?: (rad: number, x: number, y: number) => void;
   /** Single tap at (x, y), CSS px. */
   tap(x: number, y: number): void;
-  /** Second tap of a double tap at (x, y), CSS px (after its own tap()). */
+  /** Second tap of a double tap at (x, y), CSS px (instead of a second tap()). */
   doubleTap(x: number, y: number): void;
   /** Something changed that needs a frame (inertia started, gesture ended). */
   changed(): void;
@@ -165,7 +168,7 @@ export class GestureInput {
     const d = this.two.move(this.pointers.a, this.pointers.b, this.delta);
     if (d.dx !== 0 || d.dy !== 0) h.pan(d.dx, d.dy);
     if (d.scale !== 1) h.zoom(1 / d.scale, d.cx, d.cy);
-    if (d.rotation !== 0) h.roll?.(d.rotation);
+    if (d.rotation !== 0) h.roll?.(d.rotation, d.cx, d.cy);
   };
 
   private readonly up = (e: PointerEvent): void => {
@@ -185,8 +188,10 @@ export class GestureInput {
       e.type === "pointerup" &&
       this.handlers.enabled();
     if (tap) {
-      this.handlers.tap(x, y);
+      // The second tap of a double tap is not a tap of its own: what the first one selected
+      // stays selected (the view may have reframed in between).
       if (this.doubleTap.tap(x, y, e.timeStamp)) this.handlers.doubleTap(x, y);
+      else this.handlers.tap(x, y);
     } else this.doubleTap.reset();
     this.velocity.release(e.timeStamp);
     this.handlers.changed();

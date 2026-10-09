@@ -173,7 +173,10 @@
     observer.observe(footer);
     // Captures: ?t3d= freezes the transition, ?orbit3d=yaw,pitch,zoom, ?sel3d=HIP.
     const frozen = Number(params.get("t3d") ?? NaN);
-    const [yaw, pitch, zoom] = (params.get("orbit3d") ?? "").split(",").map(Number);
+    // An empty field is not 0: without the parameter the view keeps its default angles.
+    const [yaw, pitch, zoom] = (params.get("orbit3d") ?? "")
+      .split(",")
+      .map((v) => (v.trim() === "" ? NaN : Number(v)));
     if (Number.isFinite(yaw) || Number.isFinite(pitch) || Number.isFinite(zoom))
       view.setOrbit({
         ...(Number.isFinite(yaw) && { yaw }),

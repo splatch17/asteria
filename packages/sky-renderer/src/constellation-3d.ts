@@ -20,6 +20,7 @@ import {
   orbitPose,
   panOrbit,
   planTransition,
+  rollOrbitAbout,
   poseAt,
   projectPose,
   scaleRings,
@@ -445,9 +446,12 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
         );
         this.requestRender();
       },
-      roll: (rad: number) => {
-        // Fingers turning clockwise turn the scene clockwise: negative roll.
-        this.orbit.roll = (this.orbit.roll ?? 0) - rad / RAD;
+      roll: (rad: number, x: number, y: number) => {
+        // About the point between the fingers; the image centre is shifted into the free band.
+        const { w, h } = this.size;
+        const k = panScale(this.orbit.distance, this.plan.focal, h);
+        const cy = ((1 - this.plan.shiftY) / 2) * h;
+        rollOrbitAbout(this.orbit, this.pose.camRot, rad, x - w / 2, y - cy, k, this.panLimit());
         this.requestRender();
       },
       tap: (x: number, y: number) => {
@@ -456,10 +460,11 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
         this.options.onSelect?.(hit);
         this.requestRender();
       },
-      doubleTap: (x: number, y: number) => {
-        const hit = this.pick(x, y);
-        if (hit === null) this.resetView();
-        else this.centreOn(hit);
+      // The first tap has selected the star (or nothing): selecting can resize the legend
+      // and reframe the scene, so the second tap may no longer be over the same star.
+      doubleTap: () => {
+        if (this.selected === null) this.resetView();
+        else this.centreOn(this.selected);
       },
       changed: () => this.requestRender(),
     };
