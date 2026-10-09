@@ -381,6 +381,8 @@
   const urlFlightMs = Number(new URLSearchParams(location.search).get("flightMs"));
   const flightDuration = () =>
     reducedMotion.matches ? 0 : urlFlightMs > 0 ? urlFlightMs : FLIGHT_MS;
+  /** Map turns (north, search, constellation framing): instant with reduced motion. */
+  const viewTurnMs = () => (reducedMotion.matches ? 0 : 600);
   /** Nothing in the way of leaving the sky (re-read after awaiting the Earth view). */
   const canLeaveSky = () => !flying && mode === "sky" && map !== undefined;
 
@@ -459,7 +461,7 @@
 
   function faceNorth() {
     if (pointer.state === "on") return;
-    map?.animateTo({ azimuth: 0 });
+    map?.animateTo({ azimuth: 0 }, viewTurnMs());
   }
 
   function locate() {
@@ -655,7 +657,7 @@
       const placement = placeFigure(dirs, date, place);
       const view =
         placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-      if (view) map.animateTo(view);
+      if (view) map.animateTo(view, viewTurnMs());
     }
     // Converging rings once the map has turned; a static marker with reduced motion.
     if (!reducedMotion.matches) map.playArrival();
@@ -673,7 +675,7 @@
     );
     if (!placement || placement.visibility === "down") return;
     const next = frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-    if (next) map.animateTo(next);
+    if (next) map.animateTo(next, viewTurnMs());
   }
   const constellationInfo = $derived.by(() => {
     if (!selectedConstellation || !catalog) return null;

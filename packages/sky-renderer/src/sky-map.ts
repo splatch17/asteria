@@ -70,6 +70,7 @@ import {
   projectStereo,
   stereoScale,
   unprojectStereo,
+  viewAnimationProgress,
   viewMatrix,
   type ViewState,
 } from "./view";
@@ -1030,12 +1031,11 @@ export class SkyMap {
     }
     if (this.animation) {
       const { from, to, start, duration } = this.animation;
-      const t = Math.min(1, (performance.now() - start) / duration);
-      const e = 1 - (1 - t) ** 3; // ease-out cubic
+      const e = viewAnimationProgress(performance.now(), start, duration);
       this.view.azimuth = from.azimuth + (to.azimuth - from.azimuth) * e;
       this.view.altitude = from.altitude + (to.altitude - from.altitude) * e;
       this.view.fov = from.fov + (to.fov - from.fov) * e;
-      if (t >= 1) this.animation = null;
+      if (e >= 1) this.animation = null;
       this.clampView();
       this.dirty = true;
     }
