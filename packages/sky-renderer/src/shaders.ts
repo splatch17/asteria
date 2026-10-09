@@ -2,7 +2,7 @@
 // (precession → horizontal → view → stereographic) runs on the GPU.
 import { STAR_SPRITE_GLSL, STAR_STYLE, STAR_STYLE_GLSL } from "./star-style";
 
-const projection = /* glsl */ `
+export const projection = /* glsl */ `
   uniform mat3 uEq2Hor;
   uniform mat3 uView;
   uniform float uScale;

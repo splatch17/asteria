@@ -11,7 +11,6 @@
     type SpaceStyle,
     type ViewState,
     isSpaceStyle,
-    DEFAULT_SKY_LAYERS,
     DEFAULT_SPACE_LAYERS,
     ephemerisReliable,
     skyOpacity,
@@ -64,11 +63,14 @@
   import { altitudeOf } from "./lib/horizon";
   import {
     LAYERS_STORAGE_KEY,
+    LEVEL_STORAGE_KEY,
     graduationFormatter,
+    isLevel,
     isRecord,
     layersFromUrl,
     restoreLayers,
     serializeLayers,
+    skyDefaults,
     type LayerKey,
     type LayerView,
   } from "./lib/layers";
@@ -117,8 +119,10 @@
   // the layers panel and remembered between sessions. `?layers=` (captures) takes precedence and
   // is then not saved.
   const urlLayers = new URLSearchParams(location.search).get("layers");
+  // Public level (chosen in the 3D view): the figures are shown by default in Découverte (#96).
+  const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
   function initialLayers(view: LayerView): SkyLayers {
-    const defaults = view === "sky" ? DEFAULT_SKY_LAYERS : DEFAULT_SPACE_LAYERS;
+    const defaults = view === "sky" ? skyDefaults(level) : DEFAULT_SPACE_LAYERS;
     const fromUrl = layersFromUrl(urlLayers, defaults);
     if (fromUrl) return fromUrl;
     const saved = readSetting<unknown>(LAYERS_STORAGE_KEY[view], null, isRecord);
@@ -515,6 +519,8 @@
         cardinals: $_("map.cardinals").split(","),
         formatGraduation: graduationFormatter($_),
         theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+        // Illustrated figures (#95): loaded the first time the layer is switched on.
+        figureSet: `${base}data/figures/stellarium-western.json`,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
@@ -541,6 +547,7 @@
       return false;
     }
     map.setObserver(place);
+    map.figureLayer.setLevel(level);
     status = "ready";
     return true;
   }
