@@ -1,7 +1,7 @@
 // GLSL for the sky map. Positions are J2000 unit vectors; the whole projection
 // (precession → horizontal → view → stereographic) runs on the GPU.
 
-const projection = /* glsl */ `
+export const projection = /* glsl */ `
   uniform mat3 uEq2Hor;
   uniform mat3 uView;
   uniform float uScale;

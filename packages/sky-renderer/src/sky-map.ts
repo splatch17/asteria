@@ -14,6 +14,7 @@
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
+ *   constellationFigures, // #96: illustrated figures under the stars (figures.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -85,6 +86,7 @@ import {
 } from "./pick";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
+import { FigureLayer } from "./figures";
 
 export interface CatalogStar {
   hip: number;
@@ -166,6 +168,8 @@ export interface SkyLayers {
   seeThroughGround: boolean;
   /** Mini-globe in a corner of the sky view (#38): drawn by the app (MiniGlobe), not the map. */
   miniGlobe: boolean;
+  /** Illustrated constellation figures (#96), loaded on demand (options.figureSet). */
+  constellationFigures: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -179,6 +183,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   ecliptic: false,
   seeThroughGround: true,
   miniGlobe: true,
+  constellationFigures: false,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -231,6 +236,8 @@ export interface SkyMapOptions {
   formatGraduation?: (kind: GraduationKind, value: number) => string;
   /** Initial layers (default: DEFAULT_SKY_LAYERS). */
   layers?: Partial<SkyLayers>;
+  /** URL of the figure set manifest (#96); without it the figures layer stays empty. */
+  figureSet?: string;
 }
 
 const FOV_MIN = 2;
@@ -343,6 +350,8 @@ export class SkyMap {
   /** Canvas size in CSS px, kept by resize(): read for every projected label, it avoids layout reads. */
   private size = { w: 1, h: 1 };
   private readonly backZCache = { fov: NaN, aspect: NaN, z: -0.6 };
+  /** Illustrated figures (#96): level and selection are driven through it. */
+  readonly figureLayer: FigureLayer;
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -496,7 +505,14 @@ export class SkyMap {
       dash: 3,
     });
 
+    this.figureLayer = new FigureLayer({
+      uniforms: this.uniforms,
+      url: options.figureSet,
+      starDirection: (hip) => byHip.get(hip),
+      requestFrame: () => (this.dirty = true),
+    });
     this.scene.add(
+      this.figureLayer.object,
       this.azimuthalGrid,
       this.equatorialGrid,
       this.eclipticLine,
@@ -711,6 +727,7 @@ export class SkyMap {
   setSelectedConstellation(abbr: string | null): void {
     this.selectedConstellation = abbr;
     this.uniforms.uLineOpacity.value = abbr ? 0.3 : 0.45;
+    this.figureLayer.setSelected(abbr);
     this.dirty = true;
   }
 
@@ -756,6 +773,7 @@ export class SkyMap {
     this.eclipticLine.visible = l.ecliptic;
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
+    this.figureLayer.setEnabled(l.constellationFigures);
     this.dirty = true;
   }
 
@@ -803,6 +821,7 @@ export class SkyMap {
   /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
   dispose(): void {
     this.stop();
+    this.figureLayer.dispose();
     this.listeners.abort();
     this.resizeObserver.disconnect();
     disposeObjects(this.scene);
@@ -997,6 +1016,9 @@ export class SkyMap {
       const [tx, ty] = applyMat3(m, tangent);
       this.uniforms.uSunAngle.value = Math.atan2(ty, tx);
     }
+    // Figures: reveal animation and proper motion of their anchors (another frame while revealing).
+    if (this.figureLayer.update(performance.now(), this.view.fov, this.motionYears))
+      this.dirty = true;
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
   }
