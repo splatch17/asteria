@@ -24,6 +24,7 @@
  *   (view.ts): forward = right × up.
  */
 import { applyMat3, propagateStar, unitVector, type Mat3, type Vec3 } from "@asteria/astro-core";
+import { zoomAnchorShift } from "./gestures";
 import type { CatalogStar } from "./sky-map";
 import { stereoScale, viewMatrix, type ViewState } from "./view";
 
@@ -297,11 +298,18 @@ export function lookRotation(forward: Vec3, up: Vec3): Mat3 {
   return [r[0], r[1], r[2], u[0], u[1], u[2], f[0], f[1], f[2]];
 }
 
-/** Orbit around the figure: angles in degrees, distance in ly. yaw = pitch = 0: from the Earth. */
+/**
+ * Orbit around the figure: angles in degrees, distance in ly. yaw = pitch = 0: from the Earth.
+ * Gestures (#107) add a roll round the line of sight (degrees, positive: the scene turns
+ * counter-clockwise on screen) and a pan of the target point, an offset from the frame's pivot
+ * (ly, model frame).
+ */
 export interface OrbitState {
   yaw: number;
   pitch: number;
   distance: number;
+  roll?: number;
+  target?: Vec3;
 }
 
 /** Orbit frame: pivot C on the figure's line of sight, forward f = direction of C, up U ⟂ f. */
@@ -342,7 +350,11 @@ export function orbitCamera(
 ): { position: Vec3; rotation: Mat3 } {
   const y = orbit.yaw * RAD;
   const p = orbit.pitch * RAD;
-  const { pivot, forward: f, up: u, right: r } = frame;
+  const { forward: f, up: u, right: r } = frame;
+  const t = orbit.target;
+  const pivot: Vec3 = t
+    ? [frame.pivot[0] + t[0], frame.pivot[1] + t[1], frame.pivot[2] + t[2]]
+    : frame.pivot;
   // Unit offset from the pivot to the camera: −f at (0, 0), towards +right with yaw, +up with pitch.
   const o: Vec3 = [0, 1, 2].map(
     (k) =>
@@ -354,7 +366,121 @@ export function orbitCamera(
   const screenUp: Vec3 = [0, 1, 2].map(
     (k) => Math.cos(p) * u[k]! + Math.sin(p) * (Math.cos(y) * f[k]! - Math.sin(y) * r[k]!),
   ) as Vec3;
-  return { position, rotation: lookRotation([-o[0], -o[1], -o[2]], screenUp) };
+  const rotation = lookRotation([-o[0], -o[1], -o[2]], screenUp);
+  return { position, rotation: orbit.roll ? rollRotation(rotation, orbit.roll) : rotation };
+}
+
+/**
+ * A camera rotation (rows right, up, forward) rolled by `deg` round its forward axis: positive
+ * turns the image counter-clockwise (a point on the right of the screen goes up).
+ */
+export function rollRotation(m: Mat3, deg: number): Mat3 {
+  const c = Math.cos(deg * RAD);
+  const s = Math.sin(deg * RAD);
+  return [
+    c * m[0] - s * m[3], c * m[1] - s * m[4], c * m[2] - s * m[5],
+    s * m[0] + c * m[3], s * m[1] + c * m[4], s * m[2] + c * m[5],
+    m[6], m[7], m[8],
+  ]; // prettier-ignore
+}
+
+// --- Gestures (#107): orbit, pan and zoom of the 3D view, in screen terms
+
+const ZOOM_SHIFT = { x: 0, y: 0 };
+
+/** Orbit angles from a one-finger drag (CSS px, y down), whatever the camera's roll. */
+export function dragOrbit(
+  orbit: OrbitState,
+  dx: number,
+  dy: number,
+  degPerPx: number,
+  pitchLimit: number,
+): void {
+  // The drag in the unrolled screen frame: dragging right always turns the scene to the right.
+  const r = (orbit.roll ?? 0) * RAD;
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  const ux = c * dx - s * dy;
+  const uy = s * dx + c * dy;
+  orbit.yaw -= ux * degPerPx;
+  orbit.pitch = Math.max(-pitchLimit, Math.min(pitchLimit, orbit.pitch + uy * degPerPx));
+}
+
+/** Moves the target by `units` along the camera's right and up rows (rotation `m`). */
+function shiftTarget(orbit: OrbitState, m: Mat3, right: number, up: number, limit: number) {
+  const t = (orbit.target ??= [0, 0, 0]);
+  t[0] += right * m[0] + up * m[3];
+  t[1] += right * m[1] + up * m[4];
+  t[2] += right * m[2] + up * m[5];
+  const n = Math.hypot(t[0], t[1], t[2]);
+  if (n > limit) {
+    const k = limit / n;
+    t[0] *= k;
+    t[1] *= k;
+    t[2] *= k;
+  }
+}
+
+/**
+ * Pans the target parallel to the screen by a drag of (dx, dy) CSS px: the plane of the target
+ * follows the fingers. `camRot`: the camera's rotation (rows right, up, forward); `unitsPerPx`:
+ * see panScale (gestures.ts); the target stays within `limit` ly of the pivot.
+ */
+export function panOrbit(
+  orbit: OrbitState,
+  camRot: Mat3,
+  dx: number,
+  dy: number,
+  unitsPerPx: number,
+  limit: number,
+): void {
+  shiftTarget(orbit, camRot, -dx * unitsPerPx, dy * unitsPerPx, limit);
+}
+
+/**
+ * Zooms (distance × factor, kept in [min, max]) towards a point of the screen: the point of the
+ * target plane under the anchor (NDC relative to the image centre, x right, y up) stays put.
+ */
+export function zoomOrbit(
+  orbit: OrbitState,
+  camRot: Mat3,
+  factor: number,
+  ndcX: number,
+  ndcY: number,
+  aspect: number,
+  focal: number,
+  min: number,
+  max: number,
+  limit: number,
+): void {
+  const d = orbit.distance;
+  const next = Math.min(max, Math.max(min, d * factor));
+  const shift = zoomAnchorShift(ndcX, ndcY, aspect, d, focal, next / d, ZOOM_SHIFT);
+  orbit.distance = next;
+  shiftTarget(orbit, camRot, shift.x, shift.y, limit);
+}
+
+/**
+ * Rolls the view by the fingers' clockwise rotation `rad` about the point between them, (rx, ry)
+ * CSS px from the image centre (y down): the roll turns the image about its centre, and a pan
+ * brings the point under the fingers back under them. `camRot`: the rotation before the roll.
+ */
+export function rollOrbitAbout(
+  orbit: OrbitState,
+  camRot: Mat3,
+  rad: number,
+  rx: number,
+  ry: number,
+  unitsPerPx: number,
+  limit: number,
+): void {
+  orbit.roll = (orbit.roll ?? 0) - rad / RAD; // clockwise on screen: negative roll
+  // The pan, in the screen frame before the roll, that shows as r − R·r after it: R⁻¹·r − r.
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  const qx = c * rx + s * ry;
+  const qy = -s * rx + c * ry;
+  panOrbit(orbit, camRot, qx - rx, qy - ry, unitsPerPx, limit);
 }
 
 /**
@@ -572,6 +698,11 @@ export function poseAt(plan: TransitionPlan, t: number, target: OrbitState): Pos
     distance: e.distance * (target.distance / e.distance) ** r,
     yaw: target.yaw * u,
     pitch: target.pitch * u,
+    // Roll and pan (#107) unwind with the turn: from the Earth the figure is centred, zenith up.
+    roll: (target.roll ?? 0) * u,
+    ...(target.target && {
+      target: [target.target[0] * u, target.target[1] * u, target.target[2] * u] as Vec3,
+    }),
   };
   const cam = orbitCamera(plan.frame, orbit);
   // Perspective focal: matches the centred stereographic scale at the Earth, then the 3D fov.

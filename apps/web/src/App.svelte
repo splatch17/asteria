@@ -57,6 +57,7 @@
   import DialsColumn from "./components/DialsColumn.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import SearchPanel from "./components/SearchPanel.svelte";
+  import GestureTip from "./components/GestureTip.svelte";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
@@ -1100,6 +1101,7 @@
   onpoint={() => pointer.toggle()}
   onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
   onsearch={openSearch}
+  onrecentre={() => space?.resetView()}
   {searchOpen}
   bind:searchButton
 />
@@ -1160,6 +1162,8 @@
     </div>
   </div>
 {/if}
+
+<GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
 
 {#if status !== "ready"}
   <div class="status" role={status === "error" ? "alert" : "status"}>

@@ -197,7 +197,7 @@
   "c3d.level": "Niveau de détail",
   "c3d.fromEarth": "Vue depuis la Terre",
   "c3d.to3d": "Vue en 3D",
-  "c3d.hint": "Glisser pour tourner · pincer ou molette pour zoomer · toucher une étoile",
+  "c3d.hint": "Glisser pour tourner · deux doigts ou clic droit pour déplacer · pincer ou molette pour zoomer · toucher une étoile",
   "c3d.lesson": "Vues de la Terre, ces étoiles semblent toutes à la même distance. En réalité, {near} est à {nearDist} et {far} à {farDist}.",
   "c3d.lessonFlat": "Vues de la Terre, ces étoiles semblent toutes à la même distance : la 3D montre leurs vraies distances.",
   "c3d.origin": "Soleil · Terre",
@@ -232,5 +232,12 @@
   "search.kind.constellation": "Constellation",
   "search.kind.planet": "Planète",
   "search.kind.Sun": "Notre étoile",
-  "search.kind.Moon": "Satellite de la Terre"
+  "search.kind.Moon": "Satellite de la Terre",
+  "gestures.recentre": "Recentrer la vue",
+  "gestures.tip.title": "Gestes",
+  "gestures.tip.c3d.touch": "1 doigt : tourner · 2 doigts : déplacer, pincer pour zoomer, tourner pour pivoter · double toucher : centrer sur une étoile, ou revenir à la vue de départ",
+  "gestures.tip.c3d.mouse": "Glisser : tourner · clic droit ou Maj + glisser : déplacer · molette : zoomer · double clic : centrer sur une étoile, ou revenir à la vue de départ",
+  "gestures.tip.earth.touch": "1 doigt : tourner autour de la Terre · 2 doigts : déplacer, pincer pour zoomer · double toucher : centrer sur un lieu",
+  "gestures.tip.earth.mouse": "Glisser : tourner autour de la Terre · clic droit ou Maj + glisser : déplacer · molette : zoomer · double clic : centrer sur un lieu",
+  "gestures.tip.dismiss": "Compris"
 }

@@ -1,7 +1,8 @@
 /**
  * Constellation 3D view (#8): the figure's stars at their real distances, the Earth at the
- * origin, distance rings in light-years; orbit by dragging, zoom by pinching or with the wheel,
- * inertia, render on demand. Opens with an animated transition from the sky map's own view
+ * origin, distance rings in light-years; render on demand. Gestures (#107, gesture-input.ts):
+ * one finger orbits round the target point with inertia, two fingers pan it, pinch-zoom towards
+ * the point between them and roll the view; double tap centres a star (or resets the view). Opens with an animated transition from the sky map's own view
  * (same stereographic projection, same orientation) that unfolds the depth, and closes with the
  * reverse.
  *
@@ -13,10 +14,13 @@ import * as THREE from "three";
 import type { Mat3, Vec3 } from "@asteria/astro-core";
 import {
   PHASES,
+  dragOrbit,
   ease,
   fitOrbitDistance,
   orbitPose,
+  panOrbit,
   planTransition,
+  rollOrbitAbout,
   poseAt,
   projectPose,
   scaleRings,
@@ -27,7 +31,10 @@ import {
   type ScreenBand,
   type Star3D,
   type TransitionPlan,
+  zoomOrbit,
 } from "./constellation-3d-model";
+import { GestureInput } from "./gesture-input";
+import { easeOut, panScale, wrapDegrees } from "./gestures";
 import { star3dFrag, star3dVert } from "./constellation-3d-shaders";
 import { LabelLayout, type Rect } from "./labels";
 import { disposeObjects, watchContext } from "./lifecycle";
@@ -75,12 +82,13 @@ export interface Constellation3DOptions<S extends CatalogStar> {
 /** Final angles of the transition: seen from above and to the side, so depth reads at once. */
 export const DEFAULT_ORBIT_ANGLES = { yaw: 38, pitch: 48 } as const;
 const PITCH_LIMIT = 85;
-const FRICTION = 0.92;
 /** Zoom range around the fitted distance. */
-const ZOOM_MIN = 0.3;
+const ZOOM_MIN = 0.15;
 const ZOOM_MAX = 4;
-/** A tap (not a drag) moves less than this, CSS px. */
-const TAP_SLOP = 6;
+/** The target may be panned this far from the pivot, in scene radii (the Earth is one away). */
+const PAN_LIMIT = 1.2;
+/** Duration of the recentring and reset tweens, ms. */
+const RECENTRE_MS = 450;
 const PICK_RADIUS = 28;
 const NAME_FONT = "600 11px";
 const DISTANCE_FONT = "400 10px";
@@ -131,9 +139,13 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
   private contextLost = false;
   private readonly listeners = new AbortController();
   private readonly resizeObserver: ResizeObserver;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
-  private velocity = { yaw: 0, pitch: 0 };
-  private moved = 0;
+  private input!: GestureInput;
+  /** Animated move of the orbit (recentre, reset), eased; null when none. */
+  private camTween: { from: Required<OrbitState>; to: Required<OrbitState>; start: number } | null =
+    null;
+  /** Largest distance of a drawn point (stars, the Earth) from the pivot, ly. */
+  private sceneRadius = 1;
+  private lastFrame = 0;
   /** Screen positions of the stars in the last frame (CSS px), null when not drawn. */
   private screen: ({ x: number; y: number } | null)[];
   private readonly rings: number[];
@@ -221,7 +233,7 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
     this.resize();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
-    this.bindInput(canvas);
+    this.input = new GestureInput(canvas, this.gestures(), this.listeners.signal);
     watchContext(canvas, this.listeners.signal, {
       lost: () => (this.contextLost = true),
       restored: () => {
@@ -247,17 +259,13 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
   /** Plays the reverse transition back to the sky map's view; resolves at its end. */
   close(): Promise<void> {
     this.selected = null;
-    this.velocity = { yaw: 0, pitch: 0 };
-    this.orbit.yaw = ((((this.orbit.yaw + 180) % 360) + 360) % 360) - 180;
+    this.settle();
     return this.animateTo(0);
   }
 
   /** Back to the figure as seen from the Earth (centred), or forward to the 3D view. */
   fromEarth(on: boolean): Promise<void> {
-    if (on) {
-      this.velocity = { yaw: 0, pitch: 0 };
-      this.orbit.yaw = ((((this.orbit.yaw + 180) % 360) + 360) % 360) - 180;
-    }
+    if (on) this.settle();
     return this.animateTo(on ? PHASES.centre : 1);
   }
 
@@ -280,6 +288,29 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
       this.orbit.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
     if (zoom !== undefined) this.orbit.distance = this.fitted * zoom;
     this.requestRender();
+  }
+
+  /**
+   * Back to the view the transition ended on (angles, fitted distance, no pan nor roll),
+   * animated unless `instant`.
+   */
+  resetView(instant = false): void {
+    const { yaw, pitch } = DEFAULT_ORBIT_ANGLES;
+    this.moveTo({ yaw, pitch, distance: this.fitted, roll: 0, target: [0, 0, 0] }, instant);
+  }
+
+  /** Centres the view on a star of the figure (pans to it), angles and distance kept. */
+  centreOn(index: number, instant = false): void {
+    const s = this.model.stars[index];
+    if (!s) return;
+    const p = this.plan.frame.pivot;
+    this.moveTo(
+      {
+        ...this.fullOrbit(),
+        target: [s.position[0] - p[0], s.position[1] - p[1], s.position[2] - p[2]],
+      },
+      instant,
+    );
   }
 
   setTheme(theme: Constellation3DTheme, monochrome: boolean): void {
@@ -331,6 +362,118 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
 
   // --- internals
 
+  /** Stops every motion and wraps the angles, before a transition unwinds them. */
+  private settle(): void {
+    this.input.stopInertia();
+    this.camTween = null;
+    this.orbit.yaw = wrapDegrees(this.orbit.yaw);
+    this.orbit.roll = wrapDegrees(this.orbit.roll ?? 0);
+  }
+
+  private fullOrbit(): Required<OrbitState> {
+    const o = this.orbit;
+    return {
+      yaw: o.yaw,
+      pitch: o.pitch,
+      distance: o.distance,
+      roll: o.roll ?? 0,
+      target: o.target ? [o.target[0], o.target[1], o.target[2]] : [0, 0, 0],
+    };
+  }
+
+  private moveTo(to: Required<OrbitState>, instant: boolean): void {
+    this.input.stopInertia();
+    const from = this.fullOrbit();
+    // Shortest way round.
+    to.yaw = from.yaw + wrapDegrees(to.yaw - from.yaw);
+    to.roll = from.roll + wrapDegrees(to.roll - from.roll);
+    if (instant || this.options.duration === 0 || this.t < 1) {
+      this.orbit = to;
+      this.camTween = null;
+    } else this.camTween = { from, to, start: performance.now() };
+    this.requestRender();
+  }
+
+  /** Orbit at time `now` of the recentring tween; true while it runs. */
+  private stepCamTween(now: number): boolean {
+    const tw = this.camTween;
+    if (!tw) return false;
+    const k = easeOut((now - tw.start) / RECENTRE_MS);
+    const { from: a, to: b } = tw;
+    const o = this.orbit;
+    const t = (o.target ??= [0, 0, 0]);
+    o.yaw = a.yaw + (b.yaw - a.yaw) * k;
+    o.pitch = a.pitch + (b.pitch - a.pitch) * k;
+    o.roll = a.roll + (b.roll - a.roll) * k;
+    o.distance = a.distance * (b.distance / a.distance) ** k;
+    for (let i = 0; i < 3; i++) t[i] = a.target[i]! + (b.target[i]! - a.target[i]!) * k;
+    this.dirty = true;
+    if (k >= 1) this.camTween = null;
+    return k < 1;
+  }
+
+  /** Gesture intents (CSS px) mapped onto the orbit. */
+  private gestures() {
+    const interactive = () => this.t >= 1 && !this.tween;
+    return {
+      enabled: interactive,
+      grab: () => {
+        this.camTween = null;
+      },
+      orbit: (dx: number, dy: number) => {
+        // Grab the scene: dragging right turns it to the right (the camera goes left).
+        dragOrbit(this.orbit, dx, dy, 180 / Math.max(320, this.size.w), PITCH_LIMIT);
+        this.requestRender();
+      },
+      pan: (dx: number, dy: number) => {
+        const k = panScale(this.orbit.distance, this.plan.focal, this.size.h);
+        panOrbit(this.orbit, this.pose.camRot, dx, dy, k, this.panLimit());
+        this.requestRender();
+      },
+      zoom: (factor: number, x: number, y: number) => {
+        const { w, h } = this.size;
+        zoomOrbit(
+          this.orbit,
+          this.pose.camRot,
+          factor,
+          (2 * x) / w - 1,
+          1 - (2 * y) / h - this.plan.shiftY,
+          w / h,
+          this.plan.focal,
+          this.fitted * ZOOM_MIN,
+          this.fitted * ZOOM_MAX,
+          this.panLimit(),
+        );
+        this.requestRender();
+      },
+      roll: (rad: number, x: number, y: number) => {
+        // About the point between the fingers; the image centre is shifted into the free band.
+        const { w, h } = this.size;
+        const k = panScale(this.orbit.distance, this.plan.focal, h);
+        const cy = ((1 - this.plan.shiftY) / 2) * h;
+        rollOrbitAbout(this.orbit, this.pose.camRot, rad, x - w / 2, y - cy, k, this.panLimit());
+        this.requestRender();
+      },
+      tap: (x: number, y: number) => {
+        const hit = this.pick(x, y);
+        this.selected = hit;
+        this.options.onSelect?.(hit);
+        this.requestRender();
+      },
+      // The first tap has selected the star (or nothing): selecting can resize the legend
+      // and reframe the scene, so the second tap may no longer be over the same star.
+      doubleTap: () => {
+        if (this.selected === null) this.resetView();
+        else this.centreOn(this.selected);
+      },
+      changed: () => this.requestRender(),
+    };
+  }
+
+  private panLimit(): number {
+    return PAN_LIMIT * this.sceneRadius;
+  }
+
   private applyTheme(): void {
     this.uniforms.uInk.value.copy(srgb(this.theme.ink));
     // B−V colours: discreet, never at night nor in Découverte (ART_DIRECTION §2).
@@ -379,6 +522,11 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
     const points: Vec3[] = [[0, 0, 0], ...this.model.stars.map((s) => s.position)];
     const { yaw, pitch } = DEFAULT_ORBIT_ANGLES;
     this.fitted = fitOrbitDistance(this.plan, points, yaw, pitch, aspect);
+    const pivot = this.plan.frame.pivot;
+    this.sceneRadius = Math.max(
+      1,
+      ...points.map((p) => Math.hypot(p[0] - pivot[0], p[1] - pivot[1], p[2] - pivot[2])),
+    );
     if (first) this.orbit = { yaw, pitch, distance: this.fitted };
     else this.orbit.distance = this.fitted * zoom;
     this.requestRender();
@@ -403,27 +551,17 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
       } else more = true;
       this.dirty = true;
     }
-    if (
-      !this.pointers.size &&
-      (Math.abs(this.velocity.yaw) > 0.01 || Math.abs(this.velocity.pitch) > 0.01)
-    ) {
-      this.rotate(this.velocity.yaw, this.velocity.pitch);
-      this.velocity.yaw *= FRICTION;
-      this.velocity.pitch *= FRICTION;
-      more = true;
-    }
+    const dt = now - this.lastFrame;
+    this.lastFrame = now;
+    // Inertia of the orbit (calls the orbit gesture), then the recentring tween.
+    if (this.input.step(dt)) more = true;
+    if (this.stepCamTween(now)) more = true;
     if (this.dirty && !this.contextLost) {
       this.dirty = false;
       this.render();
     }
     if (more) this.raf = requestAnimationFrame(this.frame);
   };
-
-  private rotate(dyaw: number, dpitch: number): void {
-    this.orbit.yaw += dyaw;
-    this.orbit.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.orbit.pitch + dpitch));
-    this.dirty = true;
-  }
 
   /** Opacity of the 3D context (rings, sight lines, the Earth, distances): unfolds with depth. */
   private unfold(): number {
@@ -829,82 +967,5 @@ export class Constellation3DView<S extends CatalogStar = CatalogStar> {
       }
     });
     return best;
-  }
-
-  private bindInput(canvas: HTMLCanvasElement): void {
-    const signal = this.listeners.signal;
-    canvas.style.touchAction = "none";
-    let pinch = 0;
-    const interactive = () => this.t >= 1 && !this.tween;
-    const pinchDistance = () => {
-      const [a, b] = [...this.pointers.values()];
-      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
-    };
-    const zoom = (factor: number) => {
-      this.orbit.distance = Math.min(
-        this.fitted * ZOOM_MAX,
-        Math.max(this.fitted * ZOOM_MIN, this.orbit.distance * factor),
-      );
-      this.requestRender();
-    };
-
-    canvas.addEventListener(
-      "pointerdown",
-      (e) => {
-        canvas.setPointerCapture(e.pointerId);
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.velocity = { yaw: 0, pitch: 0 };
-        this.moved = 0;
-        if (this.pointers.size === 2) pinch = pinchDistance();
-      },
-      { signal },
-    );
-    canvas.addEventListener(
-      "pointermove",
-      (e) => {
-        const prev = this.pointers.get(e.pointerId);
-        if (!prev) return;
-        const dx = e.clientX - prev.x;
-        const dy = e.clientY - prev.y;
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.moved += Math.abs(dx) + Math.abs(dy);
-        if (!interactive()) return;
-        if (this.pointers.size === 1) {
-          // Grab the scene: dragging right turns it to the right (the camera goes left).
-          const k = 180 / Math.max(320, this.size.w);
-          this.velocity = { yaw: -dx * k, pitch: dy * k };
-          this.rotate(this.velocity.yaw, this.velocity.pitch);
-          this.requestRender();
-        } else if (this.pointers.size === 2) {
-          const d = pinchDistance();
-          if (pinch > 0 && d > 0) zoom(pinch / d);
-          pinch = d;
-        }
-      },
-      { signal },
-    );
-    const end = (e: PointerEvent) => {
-      if (!this.pointers.delete(e.pointerId)) return;
-      pinch = 0;
-      if (this.pointers.size === 0) {
-        if (this.moved < TAP_SLOP && interactive()) {
-          const rect = canvas.getBoundingClientRect();
-          const hit = this.pick(e.clientX - rect.left, e.clientY - rect.top);
-          this.selected = hit;
-          this.options.onSelect?.(hit);
-        }
-        this.requestRender(); // starts the inertia
-      }
-    };
-    canvas.addEventListener("pointerup", end, { signal });
-    canvas.addEventListener("pointercancel", end, { signal });
-    canvas.addEventListener(
-      "wheel",
-      (e) => {
-        e.preventDefault();
-        if (interactive()) zoom(Math.exp(e.deltaY * 0.0012));
-      },
-      { passive: false, signal },
-    );
   }
 }
