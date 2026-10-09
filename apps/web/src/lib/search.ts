@@ -125,7 +125,8 @@ export function buildSearchIndex(src: SearchSources): SearchIndex {
     entries.push({
       target: { kind: "constellation", abbr },
       label: name,
-      details: [latin, abbr],
+      // Distinct only: "Leo" is both the Latin name and the abbreviation (keyed list in the UI).
+      details: [...new Set([latin, abbr])].filter((d) => d !== name),
       // Between the first-magnitude stars and the others.
       weight: 1,
       ...keysOf(name, latin, abbr),
