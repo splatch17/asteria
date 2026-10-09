@@ -13,3 +13,4 @@ export * from "./ephemeris-range";
 export * from "./flight";
 export * from "./mini-globe";
 export * from "./figures";
+export * from "./highlight";

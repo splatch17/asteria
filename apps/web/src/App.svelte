@@ -385,6 +385,8 @@
   const urlFlightMs = Number(new URLSearchParams(location.search).get("flightMs"));
   const flightDuration = () =>
     reducedMotion.matches ? 0 : urlFlightMs > 0 ? urlFlightMs : FLIGHT_MS;
+  /** Map turns (north, search, constellation framing): instant with reduced motion. */
+  const viewTurnMs = () => (reducedMotion.matches ? 0 : 600);
   /** Nothing in the way of leaving the sky (re-read after awaiting the Earth view). */
   const canLeaveSky = () => !flying && mode === "sky" && map !== undefined;
 
@@ -463,7 +465,7 @@
 
   function faceNorth() {
     if (pointer.state === "on") return;
-    map?.animateTo({ azimuth: 0 });
+    map?.animateTo({ azimuth: 0 }, viewTurnMs());
   }
 
   function locate() {
@@ -655,11 +657,17 @@
       dirs = [unitVector(b.ra, b.dec)];
     }
     selection = next;
-    if (!map || pointer.state !== "off") return;
-    const placement = placeFigure(dirs, date, place);
-    const view =
-      placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-    if (view) map.animateTo(view);
+    if (!map) return;
+    // Marker now (the selection effect runs later), so that its arrival can be queued (#103).
+    map.setSelection(next);
+    if (pointer.state === "off") {
+      const placement = placeFigure(dirs, date, place);
+      const view =
+        placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
+      if (view) map.animateTo(view, viewTurnMs());
+    }
+    // Converging rings once the map has turned; a static marker with reduced motion.
+    if (!reducedMotion.matches) map.playArrival();
   }
 
   // --- Constellation sheet (#61)
@@ -674,7 +682,7 @@
     );
     if (!placement || placement.visibility === "down") return;
     const next = frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-    if (next) map.animateTo(next);
+    if (next) map.animateTo(next, viewTurnMs());
   }
   const constellationInfo = $derived.by(() => {
     if (!selectedConstellation || !catalog) return null;
@@ -696,7 +704,8 @@
   });
   $effect(() => {
     if (status !== "ready") return;
-    map?.setSelectedConstellation(selectedConstellation);
+    // Marker around the selected object, or the constellation highlighted (#103).
+    map?.setSelection(selection);
   });
 
   // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).
