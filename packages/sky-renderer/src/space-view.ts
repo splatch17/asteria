@@ -17,6 +17,7 @@ import { LabelLayout, type Rect } from "./labels";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
 import { fillPathBuffers } from "./paths";
+import { MARKER_GAP, STAR_MARKER_RADIUS, drawMarker, inkPattern } from "./highlight";
 import {
   constellationLineVert,
   globeFrag,
@@ -202,6 +203,10 @@ export class SpaceView {
   private sunwardAt = { time: NaN, lat: NaN, lon: NaN };
   /** Selected Moon (0) or planet (1 … 7) for the enlarged realistic view; −1: none. */
   private selectedBody = -1;
+  /** Selected star (catalogue index), Sun, Moon or planet (PLANETS index), marked (#103). */
+  private marked: { kind: "star" | "sun" | "moon" | "planet"; index: number } | null = null;
+  /** 1-bit checkerboard of the ink colour, for the marker's band. */
+  private markerPattern: { ink: string; pattern: CanvasPattern | null } | null = null;
   private readonly tmp = {
     dir: new THREE.Vector3(),
     light: new THREE.Vector3(),
@@ -216,6 +221,7 @@ export class SpaceView {
     sun: new THREE.Vector3(),
     moon: new THREE.Vector3(),
     here: new THREE.Vector3(),
+    marker: new THREE.Vector3(),
     pole: new THREE.Vector3(0, 0, 1),
     point: [0, 0] as [number, number],
     size: new THREE.Vector2(),
@@ -486,6 +492,14 @@ export class SpaceView {
           ? 0
           : -1;
     this.real?.setSelected(this.selectedBody);
+    if (selection?.kind === "star") {
+      const index = this.options.stars.findIndex((s) => s.hip === selection.star.hip);
+      this.marked = index < 0 ? null : { kind: "star", index };
+    } else if (selection?.kind === "body")
+      this.marked = { kind: selection.body === "Sun" ? "sun" : "moon", index: 0 };
+    else if (selection?.kind === "planet")
+      this.marked = { kind: "planet", index: PLANETS.indexOf(selection.planet) };
+    else this.marked = null;
     this.dirty = true;
   }
 
@@ -1189,6 +1203,49 @@ export class SpaceView {
       }
       ctx.globalAlpha = 1;
     }
+    this.drawSelectionMarker();
+  }
+
+  /**
+   * Engraved reticle around the selected star, Sun, Moon or planet (#103), as on the sky map;
+   * none when the object is hidden behind the globe or not drawn. Allocation-free.
+   */
+  private drawSelectionMarker(): void {
+    const marked = this.marked;
+    if (!marked) return;
+    const dir = this.frameTmp.marker;
+    let radius = STAR_MARKER_RADIUS;
+    if (marked.kind === "star") {
+      // As the stars' shader: catalogue direction + uYears · proper motion, then precession.
+      const { dirs, pm } = this.motion;
+      const i = 3 * marked.index;
+      const years = this.uniforms.uYears.value;
+      dir
+        .set(
+          dirs[i]! + years * pm[i]!,
+          dirs[i + 1]! + years * pm[i + 1]!,
+          dirs[i + 2]! + years * pm[i + 2]!,
+        )
+        .normalize()
+        .applyMatrix3(this.precession);
+    } else if (marked.kind === "planet") {
+      if (!this.planetsShown() || !this.planets?.[marked.index]) return;
+      const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+      dir.fromBufferAttribute(dirs, marked.index);
+      radius = this.labelOffset(marked.index + 1, STAR_MARKER_RADIUS + 2) - 2;
+    } else {
+      if (!this.bodies || (marked.kind === "moon" && !this.ephemerisOk)) return;
+      this.dirAt(marked.kind === "sun" ? 0 : 1, dir);
+      const disc = this.uniforms.uBodySize.value / 2 + MARKER_GAP;
+      radius = marked.kind === "sun" ? disc : this.labelOffset(0, disc + 2) - 2;
+    }
+    if (this.hiddenByEarth(dir, true)) return;
+    const s = this.screenOf(dir, true);
+    if (!s) return;
+    const ink = this.options.theme.ink;
+    this.markerPattern = inkPattern(this.ctx, ink, this.markerPattern);
+    drawMarker(this.ctx, s[0], s[1], radius, 1, ink, this.markerPattern.pattern);
+    this.ctx.globalAlpha = 1;
   }
 
   /** Label offset (CSS px) beside the Moon (0) or a planet (1 … 7): clears enlarged sprites. */
