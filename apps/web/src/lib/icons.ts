@@ -23,4 +23,8 @@ export type IconName =
   | "locate"
   | "aim"
   | "expand"
-  | "collapse";
+  | "collapse"
+  | "search"
+  | "star"
+  | "sun"
+  | "moon";

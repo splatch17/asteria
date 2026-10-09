@@ -100,6 +100,13 @@ describe("frameAbove", () => {
     f.stars.push(hor(-10, 180));
     expect(frameAbove(f, view, aspect)).toBeNull();
   });
+
+  it("frames a figure entirely below the horizon (search, #99)", () => {
+    const next = frameAbove(figure(-30, 90), view, aspect)!;
+    expect(next.azimuth).toBe(90);
+    expect(next.altitude).toBeLessThan(-30);
+    expect(frameAbove(figure(-30, 90), { ...view, ...next }, aspect)).toBeNull();
+  });
 });
 
 describe("figureDirections with proper motion (#78)", () => {

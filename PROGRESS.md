@@ -8,7 +8,8 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| #99 | Barre de recherche | Claude | `feat/99-search` | 2026-10-08 |
+| #98 | Décalage de la visée capteurs (S23) | Claude (en attente de mesures porteur) | `fix/98-pointing-offset` | 2026-10-08 |
 
 ## ⛔ Blocages / décisions en attente
 - Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
@@ -23,6 +24,7 @@
 6. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-08 — #99 Recherche (branche `feat/99-search`, PR à ouvrir) : bouton loupe en tête de la colonne de cadrans, panneau plein écran (combobox + liste, flèches/Entrée/Échap, nuit rouge) ; index en mémoire (`lib/search.ts`) des étoiles nommées (noms français + IAU), désignations Bayer (« α Ori », « alpha Ori », « α¹ Cen ») et Flamsteed (« 58 Ori »), « HIP n » exact, 88 constellations (français, latin, abréviation), Soleil, Lune, 7 planètes ; insensible casse/accents, classement exact > préfixe > début de mot > sous-chaîne > une faute (Damerau-Levenshtein ≤ 1 dès 4 caractères), puis éclat ; ≈ 0,6 ms par frappe sur PC pour 9 000 étoiles. Sélection → fiche ouverte et carte tournée vers l'objet, même sous l'horizon ; en mode visée, sélection seule. Reste : flèche de guidage en visée, génitifs latins (« alpha Orionis », pas de source de données), ciel profond (#100).
 - 2026-10-02 — #37 Transition continue Ciel ↔ Terre : un seul trajet de caméra (`flight.ts`), dézoom au-delà de 200° → espace, zoom sur « vous êtes ici » → carte, même animation pour le bouton ; vue Terre préchargée et préparée (shaders/textures). #38 Mini-globe (canvas 2D tramé, terminateur à la date, toucher → vol, calque `miniGlobe`). #80 Bandeau pédagogique au-dessus de la bulle du curseur (PR #85). Suivi : #87.
 - 2026-10-02 — #8 Vue 3D d'une constellation : bouton dans la fiche, transition depuis la projection de la carte, distances réelles (#82 prioritaire, sinon parallaxe ±1σ), incertitudes signalées, barres ±1σ en Expert, niveaux Découverte/Amateur/Expert, nuit rouge, chunk à part 12 Ko gzip (PR #84). Suivi lisibilité : #86.
 - 2026-10-02 — #75 Distances de référence (Gaia DR3 corrigé du point zéro si G > 6 et RUWE < 1,4 ; publiées pour Deneb et Bételgeuse, documentées) et #79 vitesses radiales (Gaia DR3 / BSC5) dans le catalogue ASTS v2 ; noms IAU décodés en UTF-8 (338 noms) (PR #82). Correctif déploiement NumPy 2 (PR #83).

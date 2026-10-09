@@ -23,6 +23,7 @@
     constellationOf,
     moonPhase,
     propagateStar,
+    unitVector,
     yearsSinceHipparcos,
     type Planet,
   } from "@asteria/astro-core";
@@ -55,6 +56,8 @@
   import SkyHeader from "./components/SkyHeader.svelte";
   import DialsColumn from "./components/DialsColumn.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
+  import SearchPanel from "./components/SearchPanel.svelte";
+  import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
   import {
@@ -496,6 +499,7 @@
         load("star-strings.json").then((r) => r.json()),
         load("constellation-lines.json").then((r) => r.json()),
       ]);
+      iauNames = strings.name; // official names, searchable next to the French ones (#99)
       const stars = decodeStarCatalog(catalogBuffer, localizeStarStrings("fr", strings));
       catalog = { stars, lines: constellationLines };
       map = new SkyMap({
@@ -582,6 +586,72 @@
 
   async function retrySky() {
     if (await loadSky()) startSession();
+  }
+
+  // --- Search (#99): index built on first use, from the loaded catalogue and the UI names.
+  let searchOpen = $state(false);
+  let searchButton = $state<HTMLButtonElement>();
+  let searchIndex = $state.raw<SearchIndex | null>(null);
+  let iauNames: Record<string, string> = {};
+  function openSearch() {
+    if (!catalog) return;
+    searchIndex ??= buildSearchIndex({
+      stars: catalog.stars,
+      iauNames,
+      constellations: Object.entries(CONSTELLATION_LATIN).map(([abbr, latin]) => ({
+        abbr,
+        latin,
+        name: names[abbr] ?? abbr,
+      })),
+      bodies: (["Sun", "Moon"] as const).map((body) => ({ body, name: $_(`body.${body}`) })),
+      planets: PLANETS.map((planet) => ({ planet, name: planetName(planet) })),
+      hipLabel,
+    });
+    layersOpen = false;
+    searchOpen = true;
+  }
+  function closeSearch() {
+    searchOpen = false;
+    searchButton?.focus();
+  }
+  /**
+   * Selects a search result, so its sheet opens, and turns the map towards it (even below the
+   * horizon), above the sheet. In sensor pointing the map follows the phone: selection only.
+   */
+  function goTo(target: SearchTarget) {
+    closeSearch();
+    if (!catalog) return;
+    const years = yearsSinceHipparcos(date);
+    let next: SkySelection;
+    let dirs: ReturnType<typeof figureDirections>;
+    if (target.kind === "constellation") {
+      next = { kind: "constellation", abbr: target.abbr };
+      dirs = figureDirections(catalog.stars, catalog.lines, target.abbr, years);
+    } else if (target.kind === "star") {
+      const star = catalog.stars.find((s) => s.hip === target.hip);
+      if (!star) return;
+      next = { kind: "star", star };
+      const p = propagateStar(star, years);
+      dirs = [unitVector(p.ra, p.dec)];
+    } else {
+      // Sun, Moon, planets: astrometric J2000 positions; none beyond the ephemeris range (#78).
+      const b =
+        target.kind === "planet"
+          ? planets?.find((q) => q.name === target.planet)
+          : target.body === "Sun"
+            ? bodies.sun
+            : bodies.moon;
+      if (!b) return;
+      if (target.kind === "planet") viewLayers.sky.planets = true; // else its sheet would close
+      next = target.kind === "planet" ? target : { kind: "body", body: target.body };
+      dirs = [unitVector(b.ra, b.dec)];
+    }
+    selection = next;
+    if (!map || pointer.state !== "off") return;
+    const placement = placeFigure(dirs, date, place);
+    const view =
+      placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
+    if (view) map.animateTo(view);
   }
 
   // --- Constellation sheet (#61)
@@ -1000,7 +1070,14 @@
   onnorth={faceNorth}
   onpoint={() => pointer.toggle()}
   onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
+  onsearch={openSearch}
+  {searchOpen}
+  bind:searchButton
 />
+
+{#if searchOpen}
+  <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
+{/if}
 
 {#if globeLayer}
   <MiniGlobe

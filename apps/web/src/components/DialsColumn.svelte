@@ -18,6 +18,9 @@
     onnorth,
     onpoint,
     onstyle,
+    onsearch,
+    searchOpen,
+    searchButton = $bindable(),
     element = $bindable(),
     height = $bindable(148),
   }: {
@@ -37,6 +40,10 @@
     onnorth: () => void;
     onpoint: () => void;
     onstyle: () => void;
+    /** Opens the search (#99), sky map only. */
+    onsearch: () => void;
+    searchOpen: boolean;
+    searchButton?: HTMLButtonElement | undefined;
     element?: HTMLElement | undefined;
     height?: number;
   } = $props();
@@ -45,6 +52,19 @@
 </script>
 
 <div class="dials" bind:this={element} bind:clientHeight={height}>
+  {#if mode === "sky"}
+    <button
+      class="dial"
+      bind:this={searchButton}
+      onclick={onsearch}
+      aria-haspopup="dialog"
+      aria-expanded={searchOpen}
+      aria-label={$_("search.open")}
+      title={$_("search.open")}
+    >
+      <Icon name="search" size={ICON} />
+    </button>
+  {/if}
   {#if fullscreen !== null}
     {@const label = fullscreen ? $_("fullscreen.exit") : $_("fullscreen.enter")}
     <button
@@ -147,6 +167,11 @@
     backdrop-filter: blur(4px);
     color: var(--ast-fg);
     cursor: pointer;
+  }
+  /* Themed focus ring: the browser's default colour would break night vision. */
+  .dial:focus-visible {
+    outline: 2px solid var(--ast-fg);
+    outline-offset: 2px;
   }
   .dial[aria-pressed="true"] {
     background: var(--ast-fg);
