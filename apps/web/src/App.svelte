@@ -15,6 +15,7 @@
     DEFAULT_SPACE_LAYERS,
     ephemerisReliable,
     skyOpacity,
+    starsHiddenByDaylight,
     FLIGHT_MS,
   } from "@asteria/sky-renderer";
   import {
@@ -1011,7 +1012,19 @@
     "1y": "time.hint.year",
     "26ky": "time.hint.precession",
   };
-  const hint = $derived(playing ? $_(HINTS[range]) : "");
+  /**
+   * By day the map still draws the stars daylight hides (#106): say so, unless the realistic
+   * daytime sky layer is on (hidden while the layers panel needs the room). Playback hints take
+   * precedence.
+   */
+  const daylightHint = $derived(
+    mode === "sky" &&
+      status === "ready" &&
+      !viewLayers.sky.realisticDaylight &&
+      !layersOpen &&
+      starsHiddenByDaylight(bodies.sun.altitude),
+  );
+  const hint = $derived(playing ? $_(HINTS[range]) : daylightHint ? $_("map.daylightHint") : "");
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
     if (selectedNow) return altitudeOf(selectedNow.ra, selectedNow.dec, date, place) < 0;
@@ -1277,7 +1290,9 @@
   {/if}
   <div class="controls" bind:clientHeight={controlsHeight}>
     <!-- Shown during playback, when the scrubber's bubble rises above it: kept clear (#80). -->
-    {#if hint}<p class="hint" style:margin-bottom={`${BUBBLE_RISE - 8}px`}>{hint}</p>{/if}
+    {#if hint}<p class="hint" class:quiet={!playing} style:margin-bottom={`${BUBBLE_RISE - 8}px`}>
+        {hint}
+      </p>{/if}
     <TimeScrubber
       {range}
       {offset}
@@ -1490,6 +1505,12 @@
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
     font: 11px/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
+  }
+  /* Standing hint (daytime sky, #106): lighter than the playback hints. */
+  .hint.quiet {
+    padding: 4px 10px;
+    font-size: 10px;
+    border-color: transparent;
   }
   .dim {
     display: flex;

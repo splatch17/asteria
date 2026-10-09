@@ -1,5 +1,6 @@
 // GLSL for the sky map. Positions are J2000 unit vectors; the whole projection
 // (precession → horizontal → view → stereographic) runs on the GPU.
+import { STAR_SPRITE_GLSL, STAR_STYLE, STAR_STYLE_GLSL } from "./star-style";
 
 const projection = /* glsl */ `
   uniform mat3 uEq2Hor;
@@ -40,15 +41,22 @@ export const dither = /* glsl */ `
   float bayer8(vec2 a) { return bayer4(0.5 * a) * 0.25 + bayer2(a); }
 `;
 
+/**
+ * Stars: size, opacity and halo follow STAR_STYLE (star-style.ts, #104). aMember = 1 for the stars
+ * of a constellation figure, reinforced while uFigures = 1 (constellation lines shown).
+ */
 export const starVert = /* glsl */ `
   ${projection}
   ${properMotion}
+  ${STAR_STYLE_GLSL}
   uniform float uDpr;
   uniform float uLimitMag;
   uniform float uLimitMagBelow; // below the horizon: night sky whatever the Sun (#65)
+  uniform float uFigures;
   attribute vec3 aDir;
   attribute float aMag;
-  varying float vAlpha;
+  attribute float aMember;
+  varying vec4 vStyle; // core (CSS px), alpha, halo, sprite (CSS px)
   varying float vSpike;
 
   void main() {
@@ -56,52 +64,75 @@ export const starVert = /* glsl */ `
     vec3 v = uView * h;
     float fade = horizonFade(h.z);
     float limit = h.z < 0.0 ? uLimitMagBelow : uLimitMag;
-    float rel = pow(10.0, -0.4 * (aMag - limit)); // flux relative to the faintest shown star
-    float size = clamp(2.3 * sqrt(rel), 0.0, 26.0);
-    vAlpha = clamp(0.35 + rel * 0.9, 0.0, 1.0) * fade;
-    vSpike = aMag < 1.6 ? 1.0 : 0.0;
-    if (v.z < uBackZ || fade <= 0.0 || rel < 0.35) {
+    vStyle = starStyle(aMag, limit, aMember * uFigures);
+    vStyle.yz *= fade;
+    vSpike = aMag < ${STAR_STYLE.SPIKE_MAG.toFixed(2)} ? 1.0 : 0.0;
+    if (v.z < uBackZ || fade <= 0.0 || vStyle.x <= 0.0) {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
     }
     gl_Position = projectView(v);
-    gl_PointSize = max(size, 2.2) * uDpr;
+    gl_PointSize = vStyle.w * uDpr;
   }
 `;
 
 export const starFrag = /* glsl */ `
   precision highp float;
   uniform vec3 uInk;
-  varying float vAlpha;
+  uniform float uDpr;
+  varying vec4 vStyle;
   varying float vSpike;
+  ${STAR_SPRITE_GLSL}
 
   void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
-    float r = length(p);
-    float core = smoothstep(0.5, 0.22, r);
-    float spikes = pow(abs(cos(atan(p.y, p.x) * 3.0)), 60.0) * smoothstep(1.0, 0.15, r) * vSpike;
-    float halo = exp(-r * r * 6.0) * 0.45;
-    float a = max(core, max(spikes, halo)) * vAlpha;
+    float a = starSprite(p, vStyle.w, vStyle.x, vStyle.y, vStyle.z, vSpike, 0.5 / uDpr);
     if (a < 0.02) discard;
     gl_FragColor = vec4(uInk, a);
   }
 `;
 
-/** Constellation lines: each end follows its star's proper motion. */
+/**
+ * Constellation lines: each end follows its star's proper motion. Every vertex also knows the
+ * other end of its segment (aOther, aOtherPm) and both magnitudes, so the line can stop short of
+ * each star (STAR_STYLE.LINE_GAP beyond its core, #104): the points stand out of the figure.
+ * vAlong runs 0 → vLen (CSS px) from end 0 to end 1, linear in screen space (projectView: w = 1).
+ */
 export const lineVert = /* glsl */ `
   ${projection}
   ${properMotion}
+  ${STAR_STYLE_GLSL}
+  uniform float uLimitMag;
+  uniform float uLimitMagBelow;
+  uniform float uHalfHeight; // canvas half height, CSS px
   attribute vec3 aDir;
+  attribute vec3 aOther;
+  attribute vec3 aOtherPm;
+  attribute float aMag;
+  attribute float aOtherMag;
+  attribute float aEnd; // 0 or 1: which end of the segment this vertex is
   varying float vVisible;
   varying float vUp;
+  varying float vAlong;
+  varying float vLen;
+  varying vec2 vGaps; // gaps at end 0 and end 1, CSS px
 
   void main() {
     vec3 h = uEq2Hor * starDirection(aDir);
     vec3 v = uView * h;
+    vec3 ho = uEq2Hor * normalize(aOther + uYears * aOtherPm);
+    vec4 p = projectView(v);
+    vec4 po = projectView(uView * ho);
+    vec2 px = vec2(uAspect, 1.0) * uHalfHeight;
+    vLen = length((po.xy - p.xy) * px);
+    vAlong = aEnd * vLen;
+    float gapSelf = starLineGap(aMag, h.z < 0.0 ? uLimitMagBelow : uLimitMag);
+    float gapOther = starLineGap(aOtherMag, ho.z < 0.0 ? uLimitMagBelow : uLimitMag);
+    vGaps = aEnd < 0.5 ? vec2(gapSelf, gapOther) : vec2(gapOther, gapSelf);
     vVisible = v.z > uBackZ ? 1.0 : 0.0;
     vUp = h.z;
-    gl_Position = projectView(v);
+    gl_Position = p;
   }
 `;
 
@@ -112,9 +143,13 @@ export const lineFrag = /* glsl */ `
   uniform float uBelowAlpha;
   varying float vVisible;
   varying float vUp;
+  varying float vAlong;
+  varying float vLen;
+  varying vec2 vGaps;
 
   void main() {
     if (vVisible < 0.999) discard; // segment touches the back hemisphere
+    if (vAlong < vGaps.x || vLen - vAlong < vGaps.y) discard; // clear of the stars (#104)
     float fade = vUp < 0.0 ? uBelowAlpha : 1.0;
     if (fade <= 0.0) discard;
     gl_FragColor = vec4(uInk, uLineOpacity * fade);

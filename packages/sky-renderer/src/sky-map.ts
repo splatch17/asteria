@@ -14,6 +14,7 @@
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
+ *   realisticDaylight, // #106: daylight hides the stars (off: drawn as at night; daylight.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -60,6 +61,7 @@ import { LabelLayout, type Rect } from "./labels";
 import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
+import { dayInkAlpha, daylightFactor, daylightStarLimit, physicalStarLimit } from "./daylight";
 import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import {
@@ -176,6 +178,11 @@ export interface SkyLayers {
   seeThroughGround: boolean;
   /** Mini-globe in a corner of the sky view (#38): drawn by the app (MiniGlobe), not the map. */
   miniGlobe: boolean;
+  /**
+   * Realistic daytime sky (#106): daylight hides the stars and their names (#34). Off (default):
+   * by day they stay drawn as at night, with a stronger ink (see daylight.ts).
+   */
+  realisticDaylight: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -189,6 +196,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   ecliptic: false,
   seeThroughGround: true,
   miniGlobe: true,
+  realisticDaylight: false,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -395,6 +403,8 @@ export class SkyMap {
       uInk: { value: new THREE.Color() },
       uGround: { value: new THREE.Color() },
       uLineOpacity: { value: 0.45 },
+      uFigures: { value: 1 },
+      uHalfHeight: { value: 1 },
       uBodySize: { value: 32 },
       uMoonT: { value: 0 },
       uSunAngle: { value: 0 },
@@ -424,9 +434,17 @@ export class SkyMap {
     const starPoints = new THREE.Points(starGeo, this.material(starVert, starFrag, true));
     starPoints.frustumCulled = false;
 
-    // Constellation lines: each end follows its star (same aDir / aPm as the star)
+    // Constellation lines: each end follows its star (same aDir / aPm as the star). Each vertex
+    // also carries the other end and both magnitudes: the shader stops the line short of the
+    // stars (#104).
     const segs: number[] = [];
     const segPm: number[] = [];
+    const segOther: number[] = [];
+    const segOtherPm: number[] = [];
+    const segMag: number[] = [];
+    const segOtherMag: number[] = [];
+    const segEnd: number[] = [];
+    const member = new Float32Array(stars.length);
     const { dirs: d0, pm } = this.motion;
     for (const [abbr, polys] of Object.entries(lines)) {
       const figure: [Vec3, Vec3][] = [];
@@ -437,9 +455,18 @@ export class SkyMap {
           const ia = indexOf.get(poly[i]!);
           const ib = indexOf.get(poly[i + 1]!);
           if (ia === undefined || ib === undefined) continue;
-          for (const j of [ia, ib]) {
+          for (const [end, j, k] of [
+            [0, ia, ib],
+            [1, ib, ia],
+          ] as const) {
             segs.push(d0[3 * j]!, d0[3 * j + 1]!, d0[3 * j + 2]!);
             segPm.push(pm[3 * j]!, pm[3 * j + 1]!, pm[3 * j + 2]!);
+            segOther.push(d0[3 * k]!, d0[3 * k + 1]!, d0[3 * k + 2]!);
+            segOtherPm.push(pm[3 * k]!, pm[3 * k + 1]!, pm[3 * k + 2]!);
+            segMag.push(stars[j]!.v);
+            segOtherMag.push(stars[k]!.v);
+            segEnd.push(end);
+            member[j] = 1;
           }
           const a = this.starDirs[ia]!;
           const b = this.starDirs[ib]!;
@@ -462,6 +489,13 @@ export class SkyMap {
     lineGeo.setAttribute("position", segDirs);
     lineGeo.setAttribute("aDir", segDirs);
     lineGeo.setAttribute("aPm", new THREE.Float32BufferAttribute(segPm, 3));
+    lineGeo.setAttribute("aOther", new THREE.Float32BufferAttribute(segOther, 3));
+    lineGeo.setAttribute("aOtherPm", new THREE.Float32BufferAttribute(segOtherPm, 3));
+    lineGeo.setAttribute("aMag", new THREE.Float32BufferAttribute(segMag, 1));
+    lineGeo.setAttribute("aOtherMag", new THREE.Float32BufferAttribute(segOtherMag, 1));
+    lineGeo.setAttribute("aEnd", new THREE.Float32BufferAttribute(segEnd, 1));
+    // Stars drawing a figure are reinforced while the lines are shown (uFigures).
+    starGeo.setAttribute("aMember", new THREE.BufferAttribute(member, 1));
     this.lineMesh = new THREE.LineSegments(lineGeo, this.material(lineVert, lineFrag, false));
     this.lineMesh.frustumCulled = false;
 
@@ -811,6 +845,7 @@ export class SkyMap {
     // Moon and planets only within the validated ephemeris range (see ephemeris-range.ts).
     const planets = l.planets && this.ephemerisOk;
     this.lineMesh.visible = l.constellationLines;
+    this.uniforms.uFigures.value = l.constellationLines ? 1 : 0;
     this.planetPoints.visible = planets && !!this.planets;
     this.selectedPathPoints.visible =
       planets && this.selectedPathPoints.geometry.drawRange.count > 0;
@@ -926,14 +961,13 @@ export class SkyMap {
     return (lines.material as THREE.ShaderMaterial).uniforms.uFrame!.value as THREE.Matrix3;
   }
 
-  /** Twilight model: stars fade out between astronomical twilight (−18°) and sunrise. */
+  /** Twilight model: the sky brightens between astronomical twilight (−18°) and sunrise. */
   private updateDaylight(): void {
     const sunAltitude = this.bodies
       ? (Math.asin(applyMat3(this.eq2hor, this.bodies.sun)[2]) * 180) / Math.PI
       : -90;
     this.sunAltitude = sunAltitude;
-    const k = Math.min(1, Math.max(0, (sunAltitude + 18) / 18));
-    this.daylight = k * k;
+    this.daylight = daylightFactor(sunAltitude);
     // Blend in sRGB (THREE.Color.lerp works in linear space and washes the blues out).
     const night = new THREE.Color(this.options.theme.sky).getRGB(
       new THREE.Color(),
@@ -974,6 +1008,7 @@ export class SkyMap {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.fontKey = ""; // resizing the canvas resets its context state
     this.uniforms.uAspect.value = w / h;
+    this.uniforms.uHalfHeight.value = h / 2;
     this.clampView(); // the widest field depends on the aspect (portrait ↔ landscape)
     this.dirty = true;
   }
@@ -1051,11 +1086,19 @@ export class SkyMap {
     this.uniforms.uViewInv.value = toThreeMat3(transpose(view));
     this.uniforms.uScale.value = stereoScale(this.view.fov);
     this.uniforms.uBackZ.value = this.backZ();
-    // Daylight drowns the stars: at noon only magnitude ≲ −1 objects would remain.
-    this.uniforms.uLimitMag.value = limitingMagnitude(this.view.fov) - this.daylight * 7;
+    // Daylight drowns the stars (at noon only magnitude ≲ −1 objects would remain): drawn
+    // anyway unless the realistic layer is on (#106). Planets always follow the physical limit.
+    const fovLimit = limitingMagnitude(this.view.fov);
+    const realistic = this.layers.realisticDaylight;
+    this.uniforms.uLimitMag.value = daylightStarLimit(fovLimit, this.daylight, realistic);
     this.uniforms.uPlanetLimit.value = planetLimitingMagnitude(
-      this.uniforms.uLimitMag.value,
+      physicalStarLimit(fovLimit, this.daylight),
       this.sunAltitude,
+    );
+    // Stronger ink over the day blue (same base opacities as setSelectedConstellation).
+    this.uniforms.uLineOpacity.value = dayInkAlpha(
+      this.selectedConstellation ? 0.3 : 0.45,
+      this.dayInk(),
     );
     const below = belowHorizonLimits(this.view.fov);
     this.uniforms.uLimitMagBelow.value = below.stars;
@@ -1209,14 +1252,14 @@ export class SkyMap {
       }
 
       // 4. Star names, brightest first (the catalogue is sorted by magnitude)
-      // Never name a star that daylight hides.
+      // Never name a star the shader hides (by day, only with realisticDaylight: #106).
       const visibleLimit =
         (below ? this.uniforms.uLimitMagBelow.value : this.uniforms.uLimitMag.value) - 1;
       const maxMag = Math.min(
         visibleLimit,
         this.view.fov > 90 ? 1.2 : this.view.fov > 45 ? 2.2 : 3.5,
       );
-      this.setLabelFont("400 10px", "0.08em", labelAlpha(0.8, below));
+      this.setLabelFont("400 10px", "0.08em", labelAlpha(this.inkAlpha(0.8, below), below));
       // Sorted catalogue: stop at the first star too faint to be named (a few dozen visited
       // instead of the whole catalogue, twice with seeThroughGround).
       for (let i = 0; this.layers.starNames && i < stars.length; i++) {
@@ -1243,7 +1286,7 @@ export class SkyMap {
 
       // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
       if (this.layers.constellationNames) {
-        this.setLabelFont("500 10px", "0.18em", labelAlpha(0.55, below));
+        this.setLabelFont("500 10px", "0.18em", labelAlpha(this.inkAlpha(0.55, below), below));
         for (const { abbr, text, dir } of this.labels) {
           if (abbr === this.selectedConstellation || isBelow(dir) !== below) continue;
           const p = this.toScreen(applyMat3(m, dir));
@@ -1561,6 +1604,16 @@ export class SkyMap {
         return p ? Math.hypot(p[0] - x, p[1] - y) : NaN;
       },
     });
+  }
+
+  /** Daylight felt by the ink (labels, lines): 0 with the realistic layer (#106). */
+  private dayInk(): number {
+    return this.layers.realisticDaylight ? 0 : this.daylight;
+  }
+
+  /** Opacity of a star or constellation name over the day sky (below the horizon it is night). */
+  private inkAlpha(base: number, below: boolean): number {
+    return below ? base : dayInkAlpha(base, this.dayInk());
   }
 
   /** Same rule as planetVert (see planetLimitingMagnitude; night limit below the horizon). */

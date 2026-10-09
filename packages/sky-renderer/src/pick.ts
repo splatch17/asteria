@@ -3,17 +3,19 @@
  * picked, and the search avoids projecting the whole catalogue.
  */
 import type { Vec3 } from "@asteria/astro-core";
+import { STAR_STYLE } from "./star-style";
 
 /**
  * starVert hides a star when its flux relative to the limit, rel = 10^(−0.4 (v − limit)), falls
- * below 0.35: a star is drawn while v ≤ limit + 2.5·log10(1 / 0.35) ≈ limit + 1.14.
+ * below STAR_STYLE.HIDE_BELOW_REL (0.35): a star is drawn while
+ * v ≤ limit + 2.5·log10(1 / 0.35) ≈ limit + 1.14.
  */
-export const STAR_SHOWN_MARGIN = 2.5 * Math.log10(1 / 0.35);
+export const STAR_SHOWN_MARGIN = 2.5 * Math.log10(1 / STAR_STYLE.HIDE_BELOW_REL);
 
 /**
  * Faintest magnitude a tap may pick: the field-of-view limit (as before #73), but never a star the
  * shader does not draw (`shaderLimit`: uLimitMag above the horizon, which daylight lowers by up to
- * 7 magnitudes; uLimitMagBelow below it, where it is always night).
+ * 7 magnitudes with the realisticDaylight layer, #106; uLimitMagBelow below it, always night).
  */
 export function starPickLimit(fovLimit: number, shaderLimit: number): number {
   return Math.min(fovLimit, shaderLimit + STAR_SHOWN_MARGIN);

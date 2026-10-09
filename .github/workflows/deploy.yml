@@ -31,8 +31,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: packages/sky-data/raw
-          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py') }}
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_deepsky.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py') }}
       - run: python packages/sky-data/build_stars.py
+        env:
+          PYTHONIOENCODING: utf-8
+      # Deep-sky objects (OpenNGC pinned release, #100); -I: the downloaded tables are untrusted data.
+      - run: python -I packages/sky-data/build_deepsky.py
         env:
           PYTHONIOENCODING: utf-8
       - run: python packages/sky-data/build_earth.py
