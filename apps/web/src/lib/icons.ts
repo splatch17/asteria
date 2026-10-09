@@ -17,6 +17,7 @@ export type IconName =
   | "azGrid"
   | "ecliptic"
   | "seeThrough"
+  | "figures"
   | "fullscreen"
   | "fullscreenExit"
   | "realistic"

@@ -81,6 +81,11 @@
     <path d="M3 7.5 A5 5 0 0 0 13 7.5" class="thin" stroke-dasharray="1.2 1.1" />
     <circle cx="8" cy="4" r="1.4" class="fill" />
     <circle cx="8" cy="10.6" r="1.1" class="thin" />
+  {:else if name === "figures"}
+    <!-- An engraved figure among the stars: the illustrated constellations (#96). -->
+    <circle cx="6" cy="4" r="1.8" />
+    <path d="M6 5.8 V10.5 M2.8 7.6 L6 6.8 L9.2 8.6 M6 10.5 L4 14 M6 10.5 L8.2 13.6" />
+    <path d={sparkle(12.5, 4, 2.2)} class="fill" />
   {:else if name === "fullscreen"}
     <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
   {:else if name === "fullscreenExit"}
