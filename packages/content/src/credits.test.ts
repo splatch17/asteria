@@ -56,6 +56,8 @@ describe.each(CONTENT_LOCALES)("credits (%s)", (locale) => {
     const byId = new Map(all.map((e) => [e.id, e]));
     expect(byId.get("stellarium-modern")?.license).toBe("CC BY-SA 4.0");
     expect(byId.get("stories")?.license).toBe("CC BY-SA 4.0");
+    expect(byId.get("openngc")?.license).toBe("CC BY-SA 4.0");
+    expect(byId.get("openngc")?.notice).toContain("Mattia Verga");
     expect(byId.get("iau-wgsn")?.license).toBe("CC BY 4.0");
     expect(byId.get("hipparcos")?.notice).toContain("Credit: ESA");
     for (const id of ["blue-marble", "black-marble"])
