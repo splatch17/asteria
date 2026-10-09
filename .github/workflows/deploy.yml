@@ -32,6 +32,9 @@ jobs:
         with:
           path: packages/sky-data/raw
           key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_deepsky.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py') }}
+          # A new key (any data script changed) still starts from the last downloads: re-querying
+          # Gaia takes long and its archive can fail (#115). Raw files are named after their source.
+          restore-keys: sky-raw-
       - run: python packages/sky-data/build_stars.py
         env:
           PYTHONIOENCODING: utf-8
