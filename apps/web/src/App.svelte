@@ -648,11 +648,17 @@
       dirs = [unitVector(b.ra, b.dec)];
     }
     selection = next;
-    if (!map || pointer.state !== "off") return;
-    const placement = placeFigure(dirs, date, place);
-    const view =
-      placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-    if (view) map.animateTo(view);
+    if (!map) return;
+    // Marker now (the selection effect runs later), so that its arrival can be queued (#103).
+    map.setSelection(next);
+    if (pointer.state === "off") {
+      const placement = placeFigure(dirs, date, place);
+      const view =
+        placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
+      if (view) map.animateTo(view);
+    }
+    // Converging rings once the map has turned; a static marker with reduced motion.
+    if (!reducedMotion.matches) map.playArrival();
   }
 
   // --- Constellation sheet (#61)
@@ -689,7 +695,8 @@
   });
   $effect(() => {
     if (status !== "ready") return;
-    map?.setSelectedConstellation(selectedConstellation);
+    // Marker around the selected object, or the constellation highlighted (#103).
+    map?.setSelection(selection);
   });
 
   // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).

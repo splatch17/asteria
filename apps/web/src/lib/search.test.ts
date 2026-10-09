@@ -33,6 +33,7 @@ const SOURCES: SearchSources = {
     { abbr: "Lyr", name: "Lyre", latin: "Lyra" },
     { abbr: "CMa", name: "Grand Chien", latin: "Canis Major" },
     { abbr: "Boo", name: "Bouvier", latin: "Boötes" },
+    { abbr: "Leo", name: "Lion", latin: "Leo" },
   ],
   bodies: [
     { body: "Sun", name: "Soleil" },
@@ -100,6 +101,11 @@ describe("matchTier", () => {
 });
 
 describe("search", () => {
+  it("lists each detail once (the UI keys them)", () => {
+    for (const r of search(index, "l"))
+      expect(new Set(r.entry.details).size, r.entry.label).toBe(r.entry.details.length);
+  });
+
   it("finds a star whatever the case and accents", () => {
     expect(labels("betelgeuse")[0]).toBe("Bételgeuse");
     expect(labels("VEGA")[0]).toBe("Véga");
