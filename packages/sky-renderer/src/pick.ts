@@ -13,7 +13,7 @@ export const STAR_SHOWN_MARGIN = 2.5 * Math.log10(1 / 0.35);
 /**
  * Faintest magnitude a tap may pick: the field-of-view limit (as before #73), but never a star the
  * shader does not draw (`shaderLimit`: uLimitMag above the horizon, which daylight lowers by up to
- * 7 magnitudes; uLimitMagBelow below it, where it is always night).
+ * 7 magnitudes with the realisticDaylight layer, #106; uLimitMagBelow below it, always night).
  */
 export function starPickLimit(fovLimit: number, shaderLimit: number): number {
   return Math.min(fovLimit, shaderLimit + STAR_SHOWN_MARGIN);
