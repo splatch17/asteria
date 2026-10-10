@@ -12,6 +12,9 @@
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+/** Mean Gregorian month: 365.2425 / 12 days. */
+const MONTH = (365.2425 / 12) * DAY;
 
 export type TimeRange = "48h" | "1y" | "26ky";
 
@@ -45,7 +48,9 @@ export const RANGES: Record<TimeRange, RangeSpec> = {
     speeds: [
       { value: HOUR, key: "time.speed.1h" },
       { value: DAY, key: "time.speed.1d", quantum: DAY },
+      { value: WEEK, key: "time.speed.1w", quantum: DAY },
       { value: 10 * DAY, key: "time.speed.10d", quantum: DAY },
+      { value: MONTH, key: "time.speed.1mo", quantum: DAY },
     ],
   },
   "26ky": {
@@ -130,3 +135,21 @@ export function offsetParts(
     minutes: Math.floor((a % HOUR) / MINUTE),
   };
 }
+
+/**
+ * Demonstration of each point of view of the Earth view (#128): the range and the speed played
+ * on entering it, so that its phenomenon shows within seconds (the Earth's rotation at 1 s = 1 h,
+ * the seasons at 1 s = 1 week, the planets at 1 s = 1 month). None for « Visiter un astre ».
+ */
+export const POINT_OF_VIEW_DEMOS: Readonly<
+  Record<string, { range: TimeRange; speed: string } | undefined>
+> = Object.freeze({
+  stars: { range: "48h", speed: "time.speed.1h" },
+  earth: { range: "48h", speed: "time.speed.1h" },
+  ecliptic: { range: "1y", speed: "time.speed.1w" },
+  heliocentric: { range: "1y", speed: "time.speed.1mo" },
+});
+
+/** Index of a speed (by its key) in a range's speeds, or −1. */
+export const speedIndexOf = (range: TimeRange, key: string): number =>
+  RANGES[range].speeds.findIndex((s) => s.key === key);

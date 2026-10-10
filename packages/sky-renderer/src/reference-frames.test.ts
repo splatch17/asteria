@@ -8,11 +8,13 @@ import {
   frameOf,
   isAvailableFrame,
   isReferenceFrameId,
+  isSunCentred,
   orbitInFrame,
   orbitPose,
   type FrameOrbit,
 } from "./reference-frames";
 import { ORBIT_FOV } from "./flight";
+import { SEASONS_SCALE } from "./points-of-view";
 
 const DEG = Math.PI / 180;
 const ARCSEC = DEG / 3600;
@@ -28,7 +30,7 @@ const raDec = (v: THREE.Vector3) => ({
 });
 
 describe("reference frame list", () => {
-  it("offers four entries in the selector, star-fixed first; two are not available yet", () => {
+  it("offers the five points of view, star-fixed first, all available (#128)", () => {
     expect(REFERENCE_FRAMES.map((f) => f.id)).toEqual([
       "stars",
       "earth",
@@ -36,16 +38,31 @@ describe("reference frame list", () => {
       "heliocentric",
       "body",
     ]);
-    expect(REFERENCE_FRAMES.filter((f) => f.available).map((f) => f.id)).toEqual([
-      "stars",
-      "earth",
-      "ecliptic",
-    ]);
+    expect(REFERENCE_FRAMES.every((f) => f.available)).toBe(true);
     expect(isReferenceFrameId("body")).toBe(true);
-    expect(isAvailableFrame("body")).toBe(false);
-    expect(isAvailableFrame("earth")).toBe(true);
+    expect(isAvailableFrame("heliocentric")).toBe(true);
     expect(isAvailableFrame("galactic")).toBe(false);
-    expect(frameOf("heliocentric").id).toBe("stars");
+    expect(frameOf("heliocentric").id).toBe("heliocentric");
+    expect(frameOf("body").id).toBe("stars");
+    expect(isSunCentred("ecliptic") && isSunCentred("heliocentric")).toBe(true);
+    expect(isSunCentred("stars") || isSunCentred("body")).toBe(false);
+  });
+});
+
+describe("sun-centred frames (#128)", () => {
+  it("orbit the Sun drawn by their diagram, the Earth at the origin", () => {
+    const date = new Date("2026-10-10T00:00:00Z");
+    const seasons = FRAMES.ecliptic.target(date, new THREE.Vector3());
+    const solar = FRAMES.heliocentric.target(date, new THREE.Vector3());
+    // 1 au = SEASONS_SCALE Earth radii in « Les saisons »; ≈ 12.4 in the compressed solar system.
+    expect(seasons.length()).toBeGreaterThan(SEASONS_SCALE * 0.98);
+    expect(seasons.length()).toBeLessThan(SEASONS_SCALE * 1.02);
+    expect(solar.length()).toBeGreaterThan(12);
+    expect(solar.length()).toBeLessThan(12.8);
+    expect(seasons.angleTo(solar)).toBeLessThan(1e-7);
+    // Both have the ecliptic pole up, as the ecliptic frame.
+    const q = FRAMES.heliocentric.orientation(date, new THREE.Quaternion());
+    expect(q.angleTo(orientation("ecliptic", date))).toBeLessThan(1e-7); // acos rounding
   });
 });
 

@@ -83,13 +83,15 @@ export const skyBodyVert = /* glsl */ `
   ${atInfinity}
   uniform float uDpr;
   uniform float uBodySize;
+  uniform float uGlyphs; // weight of the points of view that show the Sun and Moon here (#128)
   attribute vec3 aDir;
   attribute float aKind;
   varying float vKind;
-  varying float vFade; // shared fragment shaders fade below the horizon (#69): never here
+  varying float vFade; // the shared fragment shaders' fade (#69): here, the view's weight
   void main() {
     vKind = aKind;
-    vFade = 1.0;
+    vFade = uGlyphs;
+    if (uGlyphs <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectDirection(aDir);
     gl_PointSize = uBodySize * (aKind < 0.5 ? 1.25 : 1.0) * uDpr;
   }
@@ -99,15 +101,16 @@ export const skyBodyVert = /* glsl */ `
 export const skyPlanetVert = /* glsl */ `
   ${atInfinity}
   uniform float uDpr;
+  uniform float uPlanetGlyphs; // weight of the points of view that show the planets here
   attribute vec3 aDir;
   attribute float aMag;
   attribute float aKind;
   varying float vKind;
-  varying float vFade; // shared fragment shaders fade below the horizon (#69): never here
+  varying float vFade; // the shared fragment shaders' fade (#69): here, the view's weight
   void main() {
     vKind = aKind;
-    vFade = 1.0;
-    if (aMag > 50.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    vFade = uPlanetGlyphs;
+    if (aMag > 50.0 || uPlanetGlyphs <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
     gl_Position = projectDirection(aDir);
     float saturn = 1.0 - step(0.5, abs(aKind - 4.0));
     gl_PointSize = clamp(9.0 - aMag * 1.3, 6.0, 16.0) * mix(1.0, 1.6, saturn) * uDpr;
@@ -119,15 +122,36 @@ export const skyPathVert = /* glsl */ `
   ${atInfinity}
   uniform mat3 uPrec;
   uniform float uDpr;
+  uniform float uPlanetGlyphs;
   attribute vec3 aDir;
   attribute float aMark;
   varying float vMark;
   varying float vFade;
   void main() {
     vMark = aMark;
-    vFade = 1.0;
+    vFade = uPlanetGlyphs;
     gl_Position = projectDirection(uPrec * aDir);
     gl_PointSize = (aMark > 0.5 ? 5.0 : 2.2) * uDpr;
+  }
+`;
+
+/**
+ * Sun and Moon glyphs at finite positions (points of view, #128): the sky map's engraved
+ * glyphs (bodyFrag), each with its size and fade.
+ */
+export const localBodyVert = /* glsl */ `
+  uniform float uDpr;
+  attribute float aKind;
+  attribute float aSize;
+  attribute float aFade;
+  varying float vKind;
+  varying float vFade;
+  void main() {
+    vKind = aKind;
+    vFade = aFade;
+    if (aFade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * uDpr;
   }
 `;
 

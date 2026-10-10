@@ -120,3 +120,51 @@ export function bodyPath(
 export function constellationOf(ra: number, dec: number): string {
   return Astronomy.Constellation((((ra % 360) + 360) % 360) / 15, dec).symbol;
 }
+
+/** Speed of light, au per day (IAU 2012: c = 299 792 458 m/s, au = 149 597 870 700 m). */
+const C_AU_PER_DAY = 173.1446326846693;
+
+/** Geocentric position of a body, J2000 mean equator (EQJ, as astronomy-engine), km. */
+export interface GeocentricPosition {
+  x: number;
+  y: number;
+  z: number;
+  /** Distance from the Earth's centre, km. */
+  distanceKm: number;
+  /** Light time from the body to the Earth's centre, seconds. */
+  lightTimeS: number;
+}
+
+/**
+ * Astrometric geocentric position of the Sun, the Moon or a planet at `date`: where the body was
+ * when the light now reaching the Earth's centre left it (light-time corrected, no aberration,
+ * no nutation), J2000 mean equator, km. Same quantity as JPL Horizons' astrometric RA/Dec
+ * (quantity 1) seen from the geocentre (500@399).
+ *
+ * astronomy-engine's GeoVector corrects the planets and the Sun for light time but returns the
+ * Moon's geometric position: the Moon is backdated here (≈ 1.3 s, a shift of about 0.7″).
+ * Writes into `out` when given.
+ */
+export function geocentricPosition(
+  body: SolarSystemBody,
+  date: Date,
+  out: GeocentricPosition = { x: 0, y: 0, z: 0, distanceKm: 0, lightTimeS: 0 },
+): GeocentricPosition {
+  let v: Astronomy.Vector;
+  if (body === "Moon") {
+    const t = Astronomy.MakeTime(date);
+    v = Astronomy.GeoMoon(t);
+    // Two iterations: the light time then changes by far less than a microsecond.
+    for (let i = 0; i < 2; i++) v = Astronomy.GeoMoon(t.AddDays(-v.Length() / C_AU_PER_DAY));
+  } else {
+    v = Astronomy.GeoVector(Astronomy.Body[body], date, false);
+  }
+  const au = Astronomy.KM_PER_AU;
+  const length = v.Length();
+  out.x = v.x * au;
+  out.y = v.y * au;
+  out.z = v.z * au;
+  out.distanceKm = length * au;
+  out.lightTimeS = (length / C_AU_PER_DAY) * 86_400;
+  return out;
+}

@@ -9,7 +9,7 @@ import {
   centroid,
   clampLength,
   decay,
-  earthPanLimit,
+  panLimit,
   panScale,
   raySphere,
   rotateScreen,
@@ -249,7 +249,7 @@ describe("camera transforms", () => {
       [4, 1.8],
       [40, 0.46],
     ] as const) {
-      const max = earthPanLimit(dist, 40, aspect);
+      const max = panLimit(dist, 40, aspect);
       // Worst case: the pan perpendicular to the line of sight. The Earth's centre is then at
       // max/dist·focal from the image centre (NDC), inside the shorter half-extent.
       const ndc = max / dist / Math.tan(20 * DEG);
