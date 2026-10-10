@@ -27,4 +27,5 @@ export type IconName =
   | "search"
   | "star"
   | "sun"
-  | "moon";
+  | "moon"
+  | "deepsky";

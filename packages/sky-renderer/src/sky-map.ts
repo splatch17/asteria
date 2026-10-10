@@ -15,6 +15,7 @@
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
  *   realisticDaylight, // #106: daylight hides the stars (off: drawn as at night; daylight.ts)
+ *   deepSky,         // #101: Messier and bright NGC/IC objects (data from setDeepSky; deepsky.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
@@ -87,6 +88,7 @@ import {
 } from "./pick";
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
+import { DeepSkyLayer, type DeepSkyFrame, type DeepSkyMapObject } from "./deepsky";
 import {
   MARKER_GAP,
   STAR_MARKER_RADIUS,
@@ -155,7 +157,9 @@ export type SkySelection =
   | { kind: "body"; body: BodyName }
   | { kind: "planet"; planet: Planet }
   /** Picked by its name label, or by a tap inside its figure away from any star (#61). */
-  | { kind: "constellation"; abbr: string };
+  | { kind: "constellation"; abbr: string }
+  /** A deep-sky object of setDeepSky, by its catalogue id (#101). */
+  | { kind: "deepsky"; id: string };
 
 /** Switchable layers of the sky map (see the file header). */
 export interface SkyLayers {
@@ -183,6 +187,11 @@ export interface SkyLayers {
    * by day they stay drawn as at night, with a stronger ink (see daylight.ts).
    */
   realisticDaylight: boolean;
+  /**
+   * Deep-sky objects (#101): engraved glyphs and names of the objects given to setDeepSky, more of
+   * them as the field narrows (deepsky-style.ts).
+   */
+  deepSky: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -197,6 +206,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   seeThroughGround: true,
   miniGlobe: true,
   realisticDaylight: false,
+  deepSky: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -252,6 +262,11 @@ export interface SkyMapOptions {
 }
 
 const FOV_MIN = 2;
+/** Label fonts: data in monospace, deep-sky names in the serif italic of old atlases (#101). */
+const MONO = "'JetBrains Mono', monospace";
+const SERIF = "Cormorant, 'EB Garamond', serif";
+/** Deep-sky objects are named by their common name below this field (degrees), else "M 42". */
+const DEEP_SKY_NAMES_FOV = 80;
 const FRICTION = 0.9;
 
 const toThreeMat3 = (m: Mat3) => new THREE.Matrix3().set(...m);
@@ -336,6 +351,7 @@ export class SkyMap {
     | { kind: "star"; index: number }
     | { kind: "body"; body: BodyName }
     | { kind: "planet"; planet: Planet }
+    | { kind: "deepsky"; index: number }
     | null = null;
   /**
    * Arrival animation of the marker (#103): pending until the view animation ends, then runs
@@ -346,6 +362,20 @@ export class SkyMap {
   private dim = 0;
   /** Current sky colour (CSS), for the veil. */
   private skyColor = "#000";
+  /** Deep-sky glyphs and their CPU side (labels, picking), see deepsky.ts (#101). */
+  private readonly deepSky: DeepSkyLayer;
+  /** Deep-sky names drawn in the last frame (`abbr` holds the object id), for picking. */
+  private deepSkyLabelRects: { abbr: string; rect: Rect }[] = [];
+  /** Projection state handed to the deep-sky layer, updated in place (see deepSkyFrame). */
+  private readonly dsFrame: DeepSkyFrame = {
+    m: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+    up: [0, 0, 1],
+    scale: 1,
+    halfHeight: 1,
+    limitAbove: 0,
+    limitBelow: null,
+    project: (x, y, z) => this.projectXYZ(x, y, z, this.dsFrame.scale),
+  };
   /** Constellation labels drawn in the last frame (CSS px), for picking. */
   private constellationLabelRects: { abbr: string; rect: Rect }[] = [];
   /** 1-bit checkerboard of the ink colour, for the selected figure's stroke. */
@@ -411,6 +441,7 @@ export class SkyMap {
       uYears: { value: 0 },
     };
 
+    this.deepSky = new DeepSkyLayer(this.uniforms);
     this.motion = starMotion(stars);
     this.starDirs = stars.map((): Vec3 => [0, 0, 0]);
     this.mags = Float32Array.from(stars, (s) => s.v);
@@ -578,6 +609,7 @@ export class SkyMap {
       starPoints,
       this.planetPoints,
       this.bodyPoints,
+      this.deepSky.mesh,
       ground,
     );
 
@@ -801,7 +833,36 @@ export class SkyMap {
     else if (selection?.kind === "planet")
       this.marked = { kind: "planet", planet: selection.planet };
     else this.marked = null;
+    this.deepSky.setSelected(selection?.kind === "deepsky" ? selection.id : null);
+    this.markDeepSky();
+  }
+
+  /** Marks the selected deep-sky object, once the layer knows it (#101). */
+  private markDeepSky(): void {
+    const index = this.deepSky.selectedIndex;
+    if (index >= 0) this.marked = { kind: "deepsky", index };
+    else if (this.marked?.kind === "deepsky") this.marked = null;
     if (!this.marked) this.arrival = null;
+    this.dirty = true;
+  }
+
+  /**
+   * Deep-sky objects (#101), drawn while the deepSky layer is on (null clears them). Called once,
+   * when the catalogue has loaded: the glyph buffers are rebuilt; a selection made by id before
+   * is kept.
+   */
+  setDeepSky(objects: readonly DeepSkyMapObject[] | null): void {
+    this.deepSky.setObjects(objects);
+    this.markDeepSky();
+    this.updateVisibility();
+    // Deep-sky names use the serif italic: load it now (canvas text does not wait for it).
+    void document.fonts?.load(`italic 500 12px ${SERIF}`).catch(() => undefined);
+  }
+
+  /** Découverte level: only the Messier objects among the deep-sky objects (#101). */
+  setDeepSkyMessierOnly(on: boolean): void {
+    this.deepSky.setMessierOnly(on);
+    this.dirty = true;
   }
 
   /**
@@ -856,6 +917,7 @@ export class SkyMap {
     this.equatorialGrid.visible = l.equatorialGrid;
     this.azimuthalGrid.visible = l.azimuthalGrid;
     this.eclipticLine.visible = l.ecliptic;
+    this.deepSky.mesh.visible = l.deepSky && this.deepSky.count > 0;
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
     this.dirty = true;
@@ -1103,6 +1165,7 @@ export class SkyMap {
     const below = belowHorizonLimits(this.view.fov);
     this.uniforms.uLimitMagBelow.value = below.stars;
     this.uniforms.uPlanetLimitBelow.value = below.planets;
+    this.deepSky.setFrame(this.view.fov, this.daylight, realistic, this.dayInk());
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
@@ -1196,7 +1259,11 @@ export class SkyMap {
     this.constellationLabelRects = [];
     this.placeSelectedName(layout, m, isBelow);
     this.drawSelectionMarker(m, layout);
+    this.deepSkyLabelRects = [];
+    const deepSky = this.deepSkyFrame(m);
     for (const below of passes) {
+      // 1b. The selected deep-sky object's name first (#101): it is the subject
+      if (deepSky) this.drawDeepSkyLabels(layout, deepSky, below, true);
       // 2. Sun and Moon
       if (this.bodies && this.options.bodyNames) {
         this.setLabelFont("700 11px", "0.12em", labelAlpha(0.95, below));
@@ -1302,6 +1369,8 @@ export class SkyMap {
           ctx.fillText(label, r.x, r.y + H / 2);
         }
       }
+      // 5b. Deep-sky objects (#101), after the star and constellation names
+      if (deepSky) this.drawDeepSkyLabels(layout, deepSky, below, false);
       // 6. Dates of the monthly marks on the selected planet's path (lowest priority)
       if (this.selectedPathPoints.visible && this.pathMarks.length) {
         this.setLabelFont("400 9px", "0.06em", labelAlpha(0.6, below));
@@ -1405,6 +1474,15 @@ export class SkyMap {
       if (!this.bodies || (marked.body === "Moon" && !this.ephemerisOk)) return;
       d = marked.body === "Sun" ? this.bodies.sun : this.bodies.moon;
       radius = this.uniforms.uBodySize.value / 2 + MARKER_GAP;
+    } else if (marked.kind === "deepsky") {
+      if (!this.layers.deepSky) return;
+      d = this.deepSky.direction(marked.index);
+      if (!d) return;
+      // Around the glyph, whatever its size on screen (#101).
+      const z = m[6] * d[0] + m[7] * d[1] + m[8] * d[2];
+      radius =
+        this.deepSky.radius(marked.index, z, stereoScale(this.view.fov), this.size.h / 2) +
+        MARKER_GAP;
     } else {
       if (!this.planetsShown() || !this.planets) return;
       const p = this.planets[PLANETS.indexOf(marked.planet)];
@@ -1433,6 +1511,65 @@ export class SkyMap {
     const arrival = this.arrival;
     if (arrival && !arrival.pending)
       drawArrival(ctx, x, y, radius, arrivalProgress(performance.now(), arrival.start), alpha, ink);
+  }
+
+  /** The deep-sky layer's view of this frame (`m`: J2000 → view); null while it is off. */
+  private deepSkyFrame(m: Mat3): DeepSkyFrame | null {
+    if (!this.layers.deepSky || !this.deepSky.count) return null;
+    const f = this.dsFrame;
+    const e = this.eq2hor;
+    f.m = m;
+    f.up[0] = e[6];
+    f.up[1] = e[7];
+    f.up[2] = e[8];
+    f.scale = stereoScale(this.view.fov);
+    f.halfHeight = this.size.h / 2;
+    const limits = this.deepSky.limits();
+    f.limitAbove = limits.above;
+    f.limitBelow = this.layers.seeThroughGround ? limits.below : null;
+    return f;
+  }
+
+  /**
+   * Names of the deep-sky objects (#101) in the serif italic of old atlases, next to their glyph:
+   * the common name in narrow fields when there is room, else the designation ("M 42"). Only the
+   * selected object (placed first, clear of its marker), or all the others (after the star and
+   * constellation names). Rectangles are kept for picking.
+   */
+  private drawDeepSkyLabels(
+    layout: LabelLayout,
+    f: DeepSkyFrame,
+    below: boolean,
+    selected: boolean,
+  ): void {
+    const named = this.view.fov < DEEP_SKY_NAMES_FOV;
+    const alpha = labelAlpha(this.inkAlpha(selected ? 1 : 0.72, below), below);
+    this.setLabelFont("italic 500 12px", "0.02em", alpha, SERIF);
+    const H = 12;
+    if (!selected)
+      // The small glyphs are kept clear of names (a name never runs across another object).
+      this.deepSky.forEachGlyph(f, below, "drawn", (_, g) => {
+        if (g.a <= 60) layout.occupy({ x: g.x - g.a, y: g.y - g.a, w: 2 * g.a, h: 2 * g.a });
+      });
+    this.deepSky.forEachGlyph(f, below, selected ? "selected" : "labelled", (o, g) => {
+      // Big glyphs are named inside, under their centre; small ones around their outline.
+      const gap = g.a > 60 ? 0 : g.a + 3 + (selected ? MARKER_GAP + 4 : 0);
+      const texts = named && o.name ? [o.name, o.label] : [o.label];
+      const candidates: Rect[] = [];
+      for (const text of texts) {
+        const w = this.measure(text);
+        candidates.push(
+          { x: g.x - w / 2, y: g.y + Math.max(gap, 8), w, h: H }, // below
+          { x: g.x + gap + 2, y: g.y - H / 2, w, h: H }, // right
+          { x: g.x - gap - 2 - w, y: g.y - H / 2, w, h: H }, // left
+          { x: g.x - w / 2, y: g.y - Math.max(gap, 8) - H, w, h: H }, // above
+        );
+      }
+      const r = layout.place(candidates);
+      if (!r) return;
+      this.ctx.fillText(texts[Math.floor(candidates.indexOf(r) / 4)]!, r.x, r.y + H / 2);
+      this.deepSkyLabelRects.push({ abbr: o.id, rect: r });
+    });
   }
 
   private graduation(kind: GraduationKind, value: number): string {
@@ -1626,11 +1763,11 @@ export class SkyMap {
    * Sets the label font. Assigning ctx.font / letterSpacing re-parses the font even when unchanged,
    * so the current one is remembered; text widths are cached per font (labels repeat every frame).
    */
-  private setLabelFont(weightSize: string, spacing: string, alpha: number): void {
-    const key = `${weightSize}|${spacing}`;
+  private setLabelFont(weightSize: string, spacing: string, alpha: number, family = MONO): void {
+    const key = `${weightSize}|${spacing}|${family}`;
     if (key !== this.fontKey) {
       this.fontKey = key;
-      this.ctx.font = `${weightSize} 'JetBrains Mono', monospace`;
+      this.ctx.font = `${weightSize} ${family}`;
       this.ctx.letterSpacing = spacing;
       let widths = this.textWidths.get(key);
       if (!widths) this.textWidths.set(key, (widths = new Map()));
@@ -1818,6 +1955,16 @@ export class SkyMap {
           [found, bestDist] = [pl.name, d];
       }
       if (found) return { kind: "planet", planet: found };
+    }
+    // Deep-sky objects (#101): their name, or their glyph; a star right under the finger wins.
+    const deepSky = this.deepSkyFrame(m);
+    const id =
+      pickLabel([x, y], this.deepSkyLabelRects) ??
+      (deepSky ? this.deepSky.object(this.deepSky.pick(x, y, deepSky))?.id : undefined);
+    if (id) {
+      const i = this.findStar(x, y, m, seeThrough, STAR_OVER_LABEL_RADIUS);
+      const star = i >= 0 ? this.options.stars[i] : undefined;
+      return star ? { kind: "star", star } : { kind: "deepsky", id };
     }
 
     const { h } = this.size;

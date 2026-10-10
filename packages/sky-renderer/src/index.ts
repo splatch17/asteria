@@ -13,3 +13,5 @@ export * from "./ephemeris-range";
 export * from "./flight";
 export * from "./mini-globe";
 export * from "./highlight";
+export * from "./deepsky-style";
+export * from "./deepsky";

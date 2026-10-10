@@ -16,6 +16,8 @@
     ephemerisReliable,
     skyOpacity,
     starsHiddenByDaylight,
+    deepSkyFieldFor,
+    deepSkyRank,
     FLIGHT_MS,
   } from "@asteria/sky-renderer";
   import {
@@ -28,11 +30,19 @@
     yearsSinceHipparcos,
     type Planet,
   } from "@asteria/astro-core";
-  import { CONSTELLATION_LATIN, constellationNames, localizeStarStrings } from "@asteria/content";
+  import {
+    CONSTELLATION_LATIN,
+    constellationNames,
+    deepSkyNames,
+    localizeStarStrings,
+  } from "@asteria/content";
   import {
     decodeCoastlines,
     decodeStarCatalog,
+    loadDeepSkyCatalog,
     type CatalogStar as CatalogRecord,
+    type DeepSkyObject,
+    type DeepSkyType,
   } from "@asteria/catalog";
   import { formatDec, formatRa, starDistance, yearLabel } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
@@ -61,6 +71,16 @@
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
+  import {
+    apparentSize,
+    deepSkyLabel,
+    deepSkyMapObjects,
+    deepSkySearchSources,
+    displayMagnitude,
+    isUserLevel,
+    observability,
+    type UserLevel,
+  } from "./lib/deepsky";
   import {
     LAYERS_STORAGE_KEY,
     graduationFormatter,
@@ -161,6 +181,7 @@
   }
   function close3d() {
     view3d = null;
+    if (!isUserLevel(urlLevel)) level = readSetting("asteria.level", "amateur", isUserLevel);
     if (mode === "sky") map?.start();
   }
   let layersButton = $state<HTMLButtonElement>();
@@ -528,7 +549,9 @@
               ? planetName(t.planet)
               : t.kind === "constellation"
                 ? (names[t.abbr] ?? t.abbr)
-                : starLabel(t.star),
+                : t.kind === "deepsky"
+                  ? deepSkyTitle(t.id)
+                  : starLabel(t.star),
       });
     } catch (e) {
       console.error(e);
@@ -574,6 +597,12 @@
       select({ kind: "constellation", abbr: con });
       if (params.get("view3d") === "1") open3d(con);
     }
+    // Deep-sky sheet from the URL (captures): ?deepsky=M42
+    const dso = params.get("deepsky");
+    if (dso)
+      void ensureDeepSky().then((objects) => {
+        if (objects?.some((o) => o.id === dso)) selection = { kind: "deepsky", id: dso };
+      });
     // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
     if (params.get("space") === "1") {
       await flyToSpace(true);
@@ -594,9 +623,9 @@
   let searchButton = $state<HTMLButtonElement>();
   let searchIndex = $state.raw<SearchIndex | null>(null);
   let iauNames: Record<string, string> = {};
-  function openSearch() {
-    if (!catalog) return;
-    searchIndex ??= buildSearchIndex({
+  function buildIndex(): SearchIndex | null {
+    if (!catalog) return null;
+    return buildSearchIndex({
       stars: catalog.stars,
       iauNames,
       constellations: Object.entries(CONSTELLATION_LATIN).map(([abbr, latin]) => ({
@@ -607,7 +636,19 @@
       bodies: (["Sun", "Moon"] as const).map((body) => ({ body, name: $_(`body.${body}`) })),
       planets: PLANETS.map((planet) => ({ planet, name: planetName(planet) })),
       hipLabel,
+      ...(deepSky && {
+        deepSky: deepSkySearchSources(deepSky, deepSkyNamesFr, deepSkyTypeLabel),
+      }),
     });
+  }
+  function openSearch() {
+    if (!catalog) return;
+    searchIndex ??= buildIndex();
+    // Deep-sky objects join the index once their catalogue is there (#101).
+    if (!deepSky)
+      void ensureDeepSky().then((objects) => {
+        if (objects) searchIndex = buildIndex();
+      });
     layersOpen = false;
     searchOpen = true;
   }
@@ -625,7 +666,17 @@
     const years = yearsSinceHipparcos(date);
     let next: SkySelection;
     let dirs: ReturnType<typeof figureDirections>;
-    if (target.kind === "constellation") {
+    /** Narrower field for a deep-sky object too faint for the current one (#101). */
+    let fov: number | undefined;
+    if (target.kind === "deepsky") {
+      const o = deepSky?.find((x) => x.id === target.id);
+      if (!o) return;
+      viewLayers.sky.deepSky = true; // else its sheet would close
+      next = target;
+      dirs = [unitVector(o.ra, o.dec)];
+      const field = deepSkyFieldFor(deepSkyRank({ ...o, name: deepSkyNamesFr[o.id] }));
+      if (map && field < map.view.fov) fov = field;
+    } else if (target.kind === "constellation") {
       next = { kind: "constellation", abbr: target.abbr };
       dirs = figureDirections(catalog.stars, catalog.lines, target.abbr, years);
     } else if (target.kind === "star") {
@@ -653,9 +704,10 @@
     map.setSelection(next);
     if (pointer.state === "off") {
       const placement = placeFigure(dirs, date, place);
+      const from = fov ? { ...map.view, fov } : map.view;
       const view =
-        placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-      if (view) map.animateTo(view);
+        placement && frameAbove(placement, from, canvas.clientWidth / canvas.clientHeight);
+      if (view || fov) map.animateTo({ ...view, ...(fov && { fov }) });
     }
     // Converging rings once the map has turned; a static marker with reduced motion.
     if (!reducedMotion.matches) map.playArrival();
@@ -881,6 +933,88 @@
   $effect(() => {
     if (status !== "ready") return;
     map?.setBodies(skyBodies);
+  });
+
+  // --- Deep-sky objects (#101): catalogue loaded on demand (layer on, or search), once.
+  const deepSkyNamesFr = deepSkyNames("fr");
+  const deepSkyTypeLabel = (type: DeepSkyType) => $_(`deepsky.type.${type}`);
+  let deepSky = $state.raw<DeepSkyObject[] | null>(null);
+  /** The catalogue could not be loaded: the layer is shown unavailable. */
+  let deepSkyFailed = $state(false);
+  let deepSkyLoad: Promise<DeepSkyObject[] | null> | null = null;
+  function ensureDeepSky(): Promise<DeepSkyObject[] | null> {
+    deepSkyLoad ??= loadDeepSkyCatalog(dataUrl("deepsky.json")).then(
+      (objects) => (deepSky = objects),
+      (e: unknown) => {
+        console.warn("Deep-sky catalogue unavailable", e);
+        deepSkyFailed = true;
+        return null;
+      },
+    );
+    return deepSkyLoad;
+  }
+  const deepSkyTitle = (id: string) => {
+    const o = deepSky?.find((x) => x.id === id);
+    return o ? deepSkyLabel(o, deepSkyNamesFr) : id;
+  };
+  // User level (chosen in the 3D view, #8): Découverte shows the Messier objects only.
+  const urlLevel = new URLSearchParams(location.search).get("level");
+  let level = $state<UserLevel>(
+    isUserLevel(urlLevel) ? urlLevel : readSetting("asteria.level", "amateur", isUserLevel),
+  );
+  $effect(() => {
+    if (status === "ready" && viewLayers.sky.deepSky) void ensureDeepSky();
+  });
+  $effect(() => {
+    if (status !== "ready" || !deepSky) return;
+    map?.setDeepSky(deepSkyMapObjects(deepSky, deepSkyNamesFr));
+  });
+  $effect(() => {
+    if (status === "ready") map?.setDeepSkyMessierOnly(level === "discovery");
+  });
+  $effect(() => {
+    if (!viewLayers.sky.deepSky && selection?.kind === "deepsky") selection = null;
+  });
+  const unavailableLayers = $derived<LayerKey[]>(deepSkyFailed ? ["deepSky"] : []);
+
+  const deepSkyInfo = $derived.by(() => {
+    const id = selection?.kind === "deepsky" ? selection.id : null;
+    const o = id ? deepSky?.find((x) => x.id === id) : undefined;
+    if (!o) return null;
+    const name = deepSkyLabel(o, deepSkyNamesFr);
+    const rows: InfoRow[] = [];
+    const see = observability(o);
+    if (see)
+      rows.push({
+        label: $_("deepsky.see"),
+        value: $_(`deepsky.see.${see}`),
+        title: $_("deepsky.see.hint"),
+      });
+    const mag = displayMagnitude(o);
+    if (mag)
+      rows.push({ label: $_(mag.band === "V" ? "data.v" : "data.b"), value: fixed(mag.value, 1) });
+    const size = apparentSize(o);
+    if (size)
+      rows.push({
+        label: $_("deepsky.size"),
+        value: $_(`deepsky.size.${size.unit}${size.round ? "Round" : ""}`, {
+          values: { a: size.a, b: size.b },
+        }),
+        title: $_("deepsky.size.hint"),
+      });
+    rows.push(
+      { label: $_("data.ra"), value: formatRa(o.ra) },
+      { label: $_("data.dec"), value: formatDec(o.dec) },
+    );
+    return {
+      name,
+      type: deepSkyTypeLabel(o.type),
+      // No distance: the catalogue has none (#101).
+      designations: o.designations.filter((d) => d !== name),
+      con: { abbr: o.con, name: names[o.con] ?? o.con, latin: CONSTELLATION_LATIN[o.con] ?? o.con },
+      below: altitudeOf(o.ra, o.dec, date, place) < 0,
+      rows,
+    };
   });
 
   // --- Info panels (star, Sun/Moon, planet): rows of label/value, labels from the catalogue.
@@ -1219,6 +1353,25 @@
     {#snippet meta()}{$_("planet.kind")}{/snippet}
   </InfoPanel>
 {/if}
+{#if deepSkyInfo}
+  {@const info = deepSkyInfo}
+  <InfoPanel
+    name={info.name}
+    belowHorizon={info.below}
+    constellation={{
+      name: info.con.name,
+      latin: info.con.latin,
+      onopen: () => (selection = { kind: "constellation", abbr: info.con.abbr }),
+    }}
+    rows={info.rows}
+    bottom={aboveControls}
+    onclose={() => (selection = null)}
+  >
+    {#snippet meta()}{info.type}{#if info.designations.length}{` // ${info.designations.join(
+          " · ",
+        )}`}{/if}{/snippet}
+  </InfoPanel>
+{/if}
 
 {#if constellationInfo}
   {@const info = constellationInfo}
@@ -1286,6 +1439,7 @@
         creditsOpen = true;
       }}
       toggle={layersButton}
+      unavailable={mode === "sky" ? unavailableLayers : []}
     />
   {/if}
   <div class="controls" bind:clientHeight={controlsHeight}>

@@ -46,6 +46,19 @@
     <path d={sparkle(5.5, 6, 3.4)} class="fill" />
     <path d={sparkle(11.6, 3.4, 2)} class="fill" />
     <path d={sparkle(11.4, 9.4, 1.6)} class="fill" />
+  {:else if name === "deepsky"}
+    <!-- A galaxy as the map engraves it: tilted ellipse, dotted inner ring, bright core. -->
+    <ellipse cx="8" cy="8" rx="6.6" ry="2.9" transform="rotate(-30 8 8)" />
+    <ellipse
+      cx="8"
+      cy="8"
+      rx="3.6"
+      ry="1.5"
+      transform="rotate(-30 8 8)"
+      stroke-dasharray="1 1.2"
+      class="thin"
+    />
+    <circle cx="8" cy="8" r="1.2" class="fill" />
   {:else if name === "planets"}
     <circle cx="8" cy="8" r="3" />
     <ellipse cx="8" cy="8" rx="6.5" ry="2" transform="rotate(-20 8 8)" />
