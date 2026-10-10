@@ -29,5 +29,6 @@ export type IconName =
   | "star"
   | "sun"
   | "moon"
+  | "deepsky"
   | "recentre"
   | "frame";

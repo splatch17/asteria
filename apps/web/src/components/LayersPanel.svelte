@@ -12,6 +12,7 @@
     onclose,
     oncredits,
     toggle,
+    unavailable = [],
   }: {
     /** Current view: only the layers it renders are offered. */
     view: LayerView;
@@ -22,6 +23,8 @@
     oncredits?: (() => void) | undefined;
     /** The button that opens the panel (a tap on it is not an "outside" tap). */
     toggle?: HTMLElement | undefined;
+    /** Layers whose data could not be loaded (#101): shown off and disabled, with a notice. */
+    unavailable?: readonly LayerKey[];
   } = $props();
 
   let panel: HTMLElement;
@@ -64,16 +67,19 @@
       <section aria-labelledby={`layers-${section.id}`}>
         <h2 id={`layers-${section.id}`}>{pad(i)} // {$_(`layers.section.${section.id}`)}</h2>
         {#each section.entries as entry (entry.key)}
+          {@const off = unavailable.includes(entry.key)}
           <button
             class="switch"
             role="switch"
-            aria-checked={layers[entry.key]}
+            aria-checked={layers[entry.key] && !off}
+            disabled={off}
             onclick={() => onchange(entry.key, !layers[entry.key])}
           >
             <span class="icon"><Icon name={entry.icon} /></span>
             <span class="text">
               <span class="label">{$_(`layers.${entry.key}`)}</span>
-              {#if entry.hint}<span class="hint">{$_(`layers.${entry.key}.hint`)}</span>{/if}
+              {#if off}<span class="hint">{$_("layers.unavailable")}</span>
+              {:else if entry.hint}<span class="hint">{$_(`layers.${entry.key}.hint`)}</span>{/if}
             </span>
             <span class="track" aria-hidden="true"><span class="knob"></span></span>
           </button>
@@ -190,6 +196,10 @@
     border: 1px solid var(--ast-fg-muted);
     box-sizing: border-box;
     transition: transform 120ms var(--ast-ease-out);
+  }
+  .switch:disabled {
+    cursor: default;
+    opacity: 0.55;
   }
   .switch[aria-checked="true"] {
     color: var(--ast-fg);

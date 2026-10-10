@@ -14,5 +14,7 @@ export * from "./flight";
 export * from "./mini-globe";
 export * from "./figures";
 export * from "./highlight";
+export * from "./deepsky-style";
+export * from "./deepsky";
 export * from "./reference-frames";
 export * from "./body-frame";
