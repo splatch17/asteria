@@ -7,7 +7,7 @@
  * - Vu du sol: the Sun and the Moon on their daily circles round the Earth (schematic radii),
  *   and today's sub-solar and sub-lunar tracks on the globe; under reduced motion, ghosts of
  *   the Sun 3 h and 6 h before and after.
- * - Les saisons: the Sun, the Earth's orbit (true shape, 8 Earth radii per au), the lines of
+ * - Les saisons: the Sun, the Earth's orbit (true shape, 6 Earth radii per au), the lines of
  *   the solstices and of the equinoxes, and four ghost Earths at those instants, lit by the Sun,
  *   their axes parallel to the Earth's.
  * - Le système solaire: the Sun, the eight orbits (compressed), the planets as small engraved
@@ -37,6 +37,7 @@ import {
 import { BodyGlobe, type EngravedUniforms, type SurfaceUniforms } from "./body-globe";
 import { bodyPole } from "./body-frame";
 import { bodyFrag } from "./shaders";
+import { localBodyVert } from "./space-shaders";
 import { planetAxes } from "./space-style";
 import { SEASONS_SCALE, diagramPoint, lineOfSight, planetDrawRadius } from "./points-of-view";
 import type { ReferenceFrameId } from "./reference-frames";
@@ -45,12 +46,14 @@ import type { ReferenceFrameId } from "./reference-frames";
 export const GROUND_SUN_RADIUS = 1.9;
 export const GROUND_MOON_RADIUS = 1.45;
 /** Radius of the backdrop circle of the solar system diagram (beyond Neptune's 32.3). */
-export const BACKDROP_RADIUS = 36;
+export const BACKDROP_RADIUS = 35;
 /** Radius of the ghost Earths of « Les saisons », Earth radii. */
-export const GHOST_EARTH_RADIUS = 0.6;
+export const GHOST_EARTH_RADIUS = 0.7;
 /** Trace of the Earth → Mars line on the backdrop: one point every 4 days over 6 months. */
 const TRAIL_STEP_DAYS = 4;
 const TRAIL_SAMPLES = 46;
+/** Inward drift of the trace per day of age, as a share of the backdrop's radius (8 % in 6 months). */
+const TRAIL_SPIRAL = 0.08 / 184;
 const DAY_MS = 86_400_000;
 const ORBIT_SAMPLES = 256;
 /** Hour offsets of the ghost Suns of « Vu du sol » under reduced motion. */
@@ -59,23 +62,6 @@ export const GHOST_SUN_HOURS = [-6, -3, 3, 6] as const;
 const EARTH_TURN_PER_HOUR = 360.98564736629 / 24;
 const OBLIQUITY_J2000 = meanObliquity(new Date(Date.UTC(2000, 0, 1, 12))) * (Math.PI / 180);
 const DEG = Math.PI / 180;
-
-/** Sprites of the Sun and the Moon at finite positions (the sky map's engraved glyphs). */
-const localBodyVert = /* glsl */ `
-  uniform float uDpr;
-  attribute float aKind;
-  attribute float aSize;
-  attribute float aFade;
-  varying float vKind;
-  varying float vFade;
-  void main() {
-    vKind = aKind;
-    vFade = aFade;
-    if (aFade <= 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * uDpr;
-  }
-`;
 
 /** Glyph vertices: Sun and Moon of « Vu du sol », 4 ghost Suns, the diagrams' Suns. */
 export const GLYPH = { groundSun: 0, groundMoon: 1, ghost: 2, seasonsSun: 6, solarSun: 7 } as const;
@@ -215,7 +201,7 @@ export class PovScene {
     // --- « La Terre tourne »: arrow round the axis above the North Pole, 290° counterclockwise
     // seen from the north (west to east).
     const spin: number[] = [];
-    const [cz, r, end] = [1.22, 0.42, 290 * DEG];
+    const [cz, r, end] = [1.2, 0.62, 290 * DEG];
     const at = (a: number) => [r * Math.cos(a), r * Math.sin(a), cz];
     for (let i = 0; i < 48; i++) spin.push(...at((end * i) / 48), ...at((end * (i + 1)) / 48));
     const tip = at(end);
@@ -225,8 +211,8 @@ export class PovScene {
     for (const side of [1, -1]) {
       spin.push(...tip);
       spin.push(
-        tip[0]! - 0.14 * tangent[0]! + side * 0.08 * radial[0]!,
-        tip[1]! - 0.14 * tangent[1]! + side * 0.08 * radial[1]!,
+        tip[0]! - 0.2 * tangent[0]! + side * 0.11 * radial[0]!,
+        tip[1]! - 0.2 * tangent[1]! + side * 0.11 * radial[1]!,
         cz,
       );
     }
@@ -529,7 +515,7 @@ export class PovScene {
 
   /**
    * Trace of the Earth → Mars line on the backdrop: the hit now, then every TRAIL_STEP_DAYS
-   * back over six months. Samples are cached by their day index (two positions per new sample).
+   * back over six months. Samples are cached by their index (two positions per new sample).
    */
   private updateTrail(date: Date, earthNow: THREE.Vector3): void {
     const pos = this.trail.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -572,16 +558,19 @@ export class PovScene {
         }
       }
       if (!this.trailOk[slot]) break;
+      // Older points drawn slightly inside the backdrop (a spiral): where the line of sight
+      // turns back (retrograde motion) the trace makes a visible hairpin instead of running
+      // over itself.
       const j = 3 * slot;
-      pos.setXYZ(n++, this.trailHits[j]!, this.trailHits[j + 1]!, this.trailHits[j + 2]!);
+      const age = (date.getTime() - index * step) / DAY_MS;
+      const f = 1 - TRAIL_SPIRAL * Math.max(0, age);
+      pos.setXYZ(
+        n++,
+        f * this.trailHits[j]!,
+        f * this.trailHits[j + 1]!,
+        f * this.trailHits[j + 2]!,
+      );
     }
-    // Restore the diagram's Earth (tmp.b) for the caller.
-    diagramPoint(
-      "solar",
-      heliocentricPosition("Earth", date, this.tmp.helio),
-      IDENTITY,
-      this.tmp.b,
-    );
     this.trail.geometry.setDrawRange(0, n);
     pos.needsUpdate = true;
     this.trail.geometry.computeBoundingSphere();

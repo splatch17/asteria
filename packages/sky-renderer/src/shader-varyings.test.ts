@@ -24,6 +24,7 @@ describe("vertex / fragment varyings", () => {
     ["earth body", space.skyBodyVert, map.bodyFrag],
     ["earth planet", space.skyPlanetVert, map.planetFrag],
     ["earth path", space.skyPathVert, map.pathFrag],
+    ["earth local body", space.localBodyVert, map.bodyFrag],
     ["earth globe", space.globeVert, space.globeFrag],
   ];
   it.each(pairs)("%s: every fragment varying comes from the vertex shader", (_, vert, frag) => {

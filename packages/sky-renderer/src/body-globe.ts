@@ -196,7 +196,10 @@ export class BodyGlobe {
       globe: this.globeMaterial(engravedGlobeFrag, uniforms),
       rings: this.ringMaterial(engravedRingFrag, uniforms, false),
     };
-    this.sphere = new THREE.Mesh(new THREE.SphereGeometry(1, segments, segments / 2), this.engraved.globe);
+    this.sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1, segments, segments / 2),
+      this.engraved.globe,
+    );
     this.rings = new THREE.Mesh(
       new THREE.RingGeometry(SATURN_RINGS.inner, SATURN_RINGS.outer, 192, 1),
       this.engraved.rings,

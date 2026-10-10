@@ -10,6 +10,7 @@ import {
   yearsSinceHipparcos,
   type Observer,
   type Planet,
+  type SeasonKind,
   type StarMotion,
   type Vec3,
 } from "@asteria/astro-core";
@@ -76,14 +77,23 @@ import type { ViewState } from "./view";
 import {
   DEFAULT_REFERENCE_FRAME,
   FRAME_TRANSITION_MS,
+  REFERENCE_FRAMES,
   directionInFrame,
   frameOf,
   isAvailableFrame,
-  orbitInFrame,
+  isSunCentred,
   orbitPose,
   type FrameOrbit,
   type ReferenceFrameId,
 } from "./reference-frames";
+import {
+  BACKDROP_RADIUS,
+  GHOST_EARTH_RADIUS,
+  GROUND_SUN_RADIUS,
+  PovScene,
+  type PovWeights,
+} from "./pov-scene";
+import { SEASONS_SCALE, fitDistance } from "./points-of-view";
 import { GestureInput } from "./gesture-input";
 import { easeOut, panLimit, panScale, raySphere, wrapDegrees, zoomAnchorShift } from "./gestures";
 
@@ -118,11 +128,18 @@ export interface SpaceViewOptions {
     sun: string;
     moon: string;
     pole: string;
-    /** Ecliptic pole, labelled in the ecliptic frame (#122). */
-    eclipticPole?: string;
+    /** Points of view (#128): the Earth in the diagrams, its axis, its rotation. */
+    earth?: string;
+    axis?: string;
+    rotation?: string;
   };
-  /** Label of the axis tilt in the ecliptic frame, from the obliquity in degrees (#122). */
-  formatObliquity?: (degrees: number) => string;
+  /** Label of an equinox or solstice mark of « Les saisons » (#128), e.g. "Solstice · 21 juin". */
+  formatSeason?: (kind: SeasonKind, date: Date) => string;
+  /**
+   * The user touched the view (grab, pinch, wheel): the caller pauses the point of view's
+   * demonstration (#128).
+   */
+  onInteract?: () => void;
   /** Initial reference frame (default: star-fixed); unavailable frames are ignored. */
   frame?: ReferenceFrameId;
   /** Body orbited by the body-centred frame (#123), default the Moon. */
@@ -177,14 +194,36 @@ const GLOBE_MIN_PX = 6;
 
 /** Orbit camera of the Earth view, in the current reference frame (see reference-frames.ts). */
 type EarthOrbit = FrameOrbit;
-/** Radius of the dashed ecliptic plane ring drawn in the ecliptic frame, Earth radii. */
-const ECLIPTIC_RING = 1.7;
 /** Radius of the arc marking the axis tilt between the two poles, Earth radii. */
 const TILT_ARC = 1.32;
 const TILT_ARC_SEGMENTS = 24;
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 const X_AXIS = new THREE.Vector3(1, 0, 0);
+const FRAME_IDS = REFERENCE_FRAMES.map((f) => f.id);
+
+/**
+ * Framing of the points of view (#128), see defaultOrbit: share of the safe area filled, and the
+ * camera's elevation above the orbit's plane in the sun-centred diagrams (degrees).
+ */
+const FRAMING = Object.freeze({
+  earthFill: 0.55,
+  /** The Earth moved away from the Sun's side, Earth radii. */
+  earthShift: 0.4,
+  earthLat: 20,
+  groundFill: 0.95,
+  seasonsFill: 0.94,
+  seasonsLat: 32,
+  solarFill: 0.97,
+  solarLat: 48,
+  /** Diagrams seen from ecliptic longitude 180°: the June solstice on the right. */
+  diagramLon: 180,
+});
+/** Engraved dashes of the overlay (Sun's light), CSS px; allocated once. */
+const DASH = [5, 4];
+/** Offsets of the Sun's rays from the Earth's centre line, in Earth radii on screen. */
+const SUN_RAYS = [-0.6, 0, 0.6] as const;
+const NO_DASH: number[] = [];
 
 /** Earth-fixed unit vector for a geographic position. */
 function geo(lonDeg: number, latDeg: number, r = 1): THREE.Vector3 {
@@ -266,7 +305,26 @@ export class SpaceView {
   /** The first refresh in the body frame places the camera round the body. */
   private pendingBodyOrbit = false;
   /** Where the camera was round the Earth before leaving for a body: back there on return. */
-  private readonly earthReturn = { dir: new THREE.Vector3(0, 0, 1), dist: ORBIT_RADIUS };
+  // --- Points of view (#128), see points-of-view.ts and pov-scene.ts
+  private readonly pov: PovScene;
+  /** Weight of each point of view: 1 when shown, blended during a transition. */
+  private readonly weights: PovWeights = {
+    stars: 1,
+    earth: 0,
+    ecliptic: 0,
+    heliocentric: 0,
+    body: 0,
+  };
+  private readonly povNeeds = { ground: false, seasons: false, solar: false };
+  private readonly povSun = new THREE.Vector3();
+  private readonly povMoon = new THREE.Vector3();
+  private reducedMotion = false;
+  /** Screen insets (CSS px) covered by the HUD: the scene is centred and framed in the rest. */
+  private readonly safe = { top: 0, right: 0, bottom: 0, left: 0 };
+  /** Shift of the projection centre (CSS px) from the canvas centre, towards the safe area. */
+  private readonly viewShift = { x: 0, y: 0, on: false };
+  /** Formatted labels of the season marks, for the year they were made for. */
+  private seasonTexts = { time: NaN, texts: ["", "", "", ""] };
   private readonly tripTmp = {
     look: new THREE.Quaternion(),
     dest: new THREE.Vector3(),
@@ -287,9 +345,8 @@ export class SpaceView {
   private readonly guideMaterials: THREE.LineDashedMaterial[] = [];
   private readonly tiltArc: THREE.Line;
   private tiltEpsilon = NaN;
-  /** Mean obliquity of date, degrees, and its label (formatted once per value). */
+  /** Mean obliquity of date, degrees. */
   private obliquity = 0;
-  private obliquityLabel = { value: NaN, text: "" };
   private readonly poseTarget = new THREE.Vector3();
   /** Animated move of the orbit (recentre, reset); null when none. */
   private camTween: { from: EarthOrbit; to: EarthOrbit; start: number } | null = null;
@@ -416,6 +473,8 @@ export class SpaceView {
       uSunAngle: { value: 0 },
       uYears: { value: 0 },
       uFigures: { value: 1 },
+      uGlyphs: { value: 1 },
+      uPlanetGlyphs: { value: 1 },
     };
 
     // --- Celestial sphere (at infinity)
@@ -574,19 +633,11 @@ export class SpaceView {
     // Earth's axis, through the poles towards the celestial pole (fixed in the world frame)
     this.axis = this.surfaceLines([0, 0, -1.5, 0, 0, 1.5], 0.6);
 
-    // Ecliptic frame guide (#122): dashed ecliptic plane round the Earth, dashed ecliptic pole
-    // line, and the arc from it to the Earth's axis (the obliquity). Ecliptic frame axes.
-    const ring: number[] = [];
-    for (let i = 0; i <= 128; i++) {
-      const t = (i / 128) * 2 * Math.PI;
-      ring.push(ECLIPTIC_RING * Math.cos(t), ECLIPTIC_RING * Math.sin(t), 0);
-    }
+    // Guide of « Les saisons » (#122, #128): dashed ecliptic pole line through the Earth and the
+    // arc from it to the Earth's axis (the obliquity). Ecliptic frame axes. The orbit drawn by
+    // the seasons diagram stands for the ecliptic plane.
     this.tiltArc = this.dashedLine(new Array<number>(3 * (TILT_ARC_SEGMENTS + 1)).fill(0), 0.8);
-    this.eclipticGuide.add(
-      this.dashedLine(ring, 0.7),
-      this.dashedLine([0, 0, -1.5, 0, 0, 1.5], 0.55),
-      this.tiltArc,
-    );
+    this.eclipticGuide.add(this.dashedLine([0, 0, -1.5, 0, 0, 1.5], 0.55), this.tiltArc);
     this.eclipticGuide.visible = false;
 
     // Globes of the body-centred frame (#123), hidden until it is chosen.
@@ -600,8 +651,14 @@ export class SpaceView {
     const body = options.body && isBodyTarget(options.body) ? options.body : "Moon";
     this.bodyFrame.body = body;
     this.globe3d.setBody(body);
+    this.pov = new PovScene(engravedUniforms, {
+      uInk: this.uniforms.uInk,
+      uDpr: this.uniforms.uDpr,
+      uMoonT: this.uniforms.uMoonT,
+    });
 
     this.scene.add(
+      this.pov.object,
       this.globe3d.object,
       this.fadingGlobe.object,
       this.earth,
@@ -648,6 +705,7 @@ export class SpaceView {
     this.globe.material = realistic && this.real ? this.real.globeMaterial : this.engravedGlobe;
     this.globe3d.setRealistic(realistic);
     this.fadingGlobe.setRealistic(realistic);
+    this.pov.setRealistic(realistic);
     this.globesApplied = false;
     this.renderer.setClearColor(realistic ? "#000000" : this.options.theme.sky);
     this.update();
@@ -796,9 +854,10 @@ export class SpaceView {
   }
 
   /**
-   * Changes the reference frame (#122). The camera keeps its place and target; its orientation
-   * slerps to the new frame's (its pole up) in `duration` ms (FRAME_TRANSITION_MS by default; 0
-   * jumps, for reduced motion). Frames not available yet are ignored.
+   * Changes the reference frame, i.e. the point of view (#122, #128): the camera moves from where
+   * it is to the new point of view's framing (defaultOrbit), its orientation slerped, its
+   * distance interpolated geometrically, in `duration` ms (FRAME_TRANSITION_MS by default; 0
+   * jumps, for reduced motion). Frames not available are ignored.
    */
   setFrame(
     id: ReferenceFrameId,
@@ -846,10 +905,31 @@ export class SpaceView {
    */
   resetView(instant = false): void {
     if (this.flight) return;
-    this.moveTo(
-      this.frameId === "body" ? this.bodyOrbit() : this.observerOrbit(ORBIT_RADIUS),
-      instant,
-    );
+    this.moveTo(this.defaultOrbit(), instant);
+  }
+
+  /**
+   * Screen insets (CSS px) covered by the interface: the projection centre moves to the middle
+   * of the rest, and the points of view are framed in it (#128).
+   */
+  setSafeArea(insets: { top: number; right: number; bottom: number; left: number }): void {
+    const s = this.safe;
+    if (
+      s.top === insets.top &&
+      s.right === insets.right &&
+      s.bottom === insets.bottom &&
+      s.left === insets.left
+    )
+      return;
+    Object.assign(s, insets);
+    this.applyViewShift(!this.flight);
+    this.dirty = true;
+  }
+
+  /** Reduced motion: the static state of the points of view (ghost Suns in « Vu du sol »). */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    this.dirty = true;
   }
 
   /**
@@ -945,6 +1025,7 @@ export class SpaceView {
     this.real?.globeMaterial.dispose();
     this.globe3d.dispose();
     this.fadingGlobe.dispose();
+    this.pov.dispose();
     this.renderer.dispose();
   }
 
@@ -987,13 +1068,95 @@ export class SpaceView {
     this.dirty = true;
   }
 
-  /** Weight of the ecliptic frame's guide: 1 in that frame, faded in or out by a transition. */
-  private eclipticWeight(): number {
+  /** Weight of each point of view: 1 for the current one, blended during a transition. */
+  private updateWeights(): void {
     const tw = this.frameTween;
-    const on = this.frameId === "ecliptic" ? 1 : 0;
-    if (!tw) return on;
-    const was = tw.from === "ecliptic" ? 1 : 0;
-    return was + (on - was) * tw.k;
+    for (const id of FRAME_IDS) {
+      const on = this.frameId === id ? 1 : 0;
+      const was = tw?.from === id ? 1 : 0;
+      this.weights[id] = tw ? was + (on - was) * tw.k : on;
+    }
+  }
+
+  /**
+   * Where each point of view opens (#128), in the current frame (call after updateFrame):
+   * - La Terre tourne: the whole Earth, lit from the left (the camera at 90° from the Sun, so
+   *   the terminator crosses the disc), 20° above the equator;
+   * - Vu du sol: above the observer, the Sun's daily circle in view;
+   * - Les saisons, Le système solaire: from 28° / 48° above the ecliptic, from longitude 180°
+   *   (June solstice on the right), the orbit or the backdrop filling the safe area;
+   * - Visiter un astre: bodyOrbit.
+   */
+  private defaultOrbit(id: ReferenceFrameId = this.frameId): EarthOrbit {
+    if (this.stale) this.refresh();
+    if (id === "body") return this.bodyOrbit();
+    const { clientHeight: h } = this.options.canvas;
+    const { w: safeW, h: safeH } = this.safeSize();
+    const fit = (halfW: number, halfH: number, fill: number, sphere = false) =>
+      fitDistance(halfW, halfH, ORBIT_FOV, Math.max(1, h), safeW, safeH, fill, sphere);
+    const orbit = { lon: 0, lat: 0, dist: 4, tx: 0, ty: 0, tz: 0 };
+    if (id === "stars") {
+      orbit.dist = fit(1, 1, FRAMING.earthFill, true);
+      orbit.lat = FRAMING.earthLat;
+      if (this.bodies) {
+        // Camera along pole × Sun: the Sun on the left of the screen, the pole up; the Earth
+        // shifted to the right, leaving room for the Sun's light (drawSunlight).
+        const sun = this.dirAt(0, this.frameTmp.a);
+        const side = this.frameTmp.b.crossVectors(Z_AXIS, sun);
+        if (side.lengthSq() > 1e-9) {
+          orbit.lon = directionInFrame(side, this.frameQuat, orbit).lon;
+          const across = sun.addScaledVector(side.normalize(), -sun.dot(side));
+          across.z = 0;
+          if (across.lengthSq() > 1e-9) {
+            across.normalize().multiplyScalar(FRAMING.earthShift); // the target towards the Sun
+            [orbit.tx, orbit.ty, orbit.tz] = [across.x, across.y, across.z];
+          }
+        }
+        orbit.lat = FRAMING.earthLat;
+      }
+    } else if (id === "earth") {
+      const r = GROUND_SUN_RADIUS + 0.3;
+      return this.observerOrbit(fit(r, r, FRAMING.groundFill));
+    } else if (id === "ecliptic") {
+      const lat = FRAMING.seasonsLat * DEG;
+      const halfW = SEASONS_SCALE * 1.02 + 1.2;
+      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2.4, FRAMING.seasonsFill);
+      orbit.lon = FRAMING.diagramLon;
+      orbit.lat = FRAMING.seasonsLat;
+    } else {
+      const lat = FRAMING.solarLat * DEG;
+      const halfW = BACKDROP_RADIUS + 1.5;
+      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2, FRAMING.solarFill);
+      orbit.lon = FRAMING.diagramLon;
+      orbit.lat = FRAMING.solarLat;
+    }
+    orbit.dist = Math.max(this.distMin(id), Math.min(this.distMax(id), orbit.dist));
+    return orbit;
+  }
+
+  /** Size (CSS px) of the screen left free by the HUD (setSafeArea). */
+  private safeSize(): { w: number; h: number } {
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const s = this.safe;
+    return { w: Math.max(80, w - s.left - s.right), h: Math.max(80, h - s.top - s.bottom) };
+  }
+
+  /**
+   * Moves the projection centre to the middle of the safe area (setViewOffset), or back to the
+   * canvas centre (`on` false: flights, which match the sky map's centred projection).
+   */
+  private applyViewShift(on: boolean, force = false): void {
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const s = this.safe;
+    const x = on ? (s.left - s.right) / 2 : 0;
+    const y = on ? (s.top - s.bottom) / 2 : 0;
+    const v = this.viewShift;
+    if (!w || !h || (!force && v.x === x && v.y === y && v.on === on && this.camera.view)) return;
+    v.x = x;
+    v.y = y;
+    v.on = on;
+    // The window's centre sits at (w/2 − offset) on screen: offset −x moves the centre by +x.
+    this.camera.setViewOffset(w, h, -x, -y, w, h);
   }
 
   private moveTo(to: EarthOrbit, instant: boolean): void {
@@ -1069,6 +1232,7 @@ export class SpaceView {
       enabled: () => !this.flight,
       grab: () => {
         this.camTween = null;
+        this.options.onInteract?.();
       },
       orbit: (dx: number, dy: number) => {
         // Dragging turns the globe under the finger (the camera orbits the other way).
@@ -1083,13 +1247,16 @@ export class SpaceView {
       },
       zoom: (factor: number, x: number, y: number) => {
         const d = this.orbit.dist;
+        this.options.onInteract?.();
         this.zoom(factor);
         if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
         // Towards the point between the fingers (or under the cursor).
         const { clientWidth: w, clientHeight: h } = canvas;
+        // From the projection centre, moved towards the safe area (setSafeArea).
+        const [cx, cy] = [w / 2 + this.viewShift.x, h / 2 + this.viewShift.y];
         const shift = zoomAnchorShift(
-          (2 * x) / Math.max(1, w) - 1,
-          1 - (2 * y) / Math.max(1, h),
+          (2 * (x - cx)) / Math.max(1, w),
+          (2 * (cy - y)) / Math.max(1, h),
           this.camera.aspect,
           d,
           focal(),
@@ -1106,6 +1273,8 @@ export class SpaceView {
 
   /** Double tap: the place of the globe under (x, y) turns to face the camera; beside it, reset. */
   private centreAt(x: number, y: number): void {
+    // Round the Sun of a diagram there is no globe to turn: back to the point of view's framing.
+    if (isSunCentred(this.frameId)) return this.resetView();
     const { clientWidth: w, clientHeight: h } = this.options.canvas;
     const { a: dir } = this.frameTmp;
     const o = this.camera.position;
@@ -1146,6 +1315,7 @@ export class SpaceView {
     this.real = real;
     this.globe3d.useRealistic(real.surfaceUniforms());
     this.fadingGlobe.useRealistic(real.surfaceUniforms());
+    this.pov.useRealistic(real.surfaceUniforms());
     this.globesApplied = false;
     const load = this.options.loadTexture;
     if (!load) return;
@@ -1261,8 +1431,7 @@ export class SpaceView {
     if (f.direction === "out") {
       // Hand over to the orbit camera exactly where the flight ends; in the body frame, travel
       // on to the body from there.
-      if (this.frameId === "body") this.tripFromEarth(f.duration > 0 ? BODY_TRANSITION_MS : 0);
-      else this.orbit = this.observerOrbit(ORBIT_RADIUS);
+      this.travelToDefault(f.duration > 0 ? FRAME_TRANSITION_MS : 0);
     }
     this.dirty = true;
     f.options.onDone?.();
@@ -1481,6 +1650,7 @@ export class SpaceView {
     // Geocentric glyph directions, before the body frame's camera-relative blend (render).
     this.geoBodyDirs.set(this.bodyPoints.geometry.getAttribute("aDir").array as Float32Array);
     this.geoPlanetDirs.set(this.planetPoints.geometry.getAttribute("aDir").array as Float32Array);
+    this.refreshPointsOfView(prec);
     this.skyBlended = false;
     this.globesApplied = false;
     this.refreshBodies(prec);
@@ -1488,6 +1658,24 @@ export class SpaceView {
       this.pendingBodyOrbit = false;
       this.orbit = this.bodyOrbit();
     }
+  }
+
+  /**
+   * Anchors of the points of view shown or being left (#128): the Sun and the Moon of « Vu du
+   * sol », the seasons and solar system diagrams. Date-dependent: run by refresh().
+   */
+  private refreshPointsOfView(prec: THREE.Matrix3): void {
+    const tw = this.frameTween;
+    const on = (id: ReferenceFrameId) => this.frameId === id || tw?.from === id;
+    const needs = this.povNeeds;
+    needs.ground = on("earth");
+    needs.seasons = on("ecliptic");
+    needs.solar = on("heliocentric");
+    if (!needs.ground && !needs.seasons && !needs.solar) return;
+    const d = this.geoBodyDirs;
+    const sun = this.bodies ? this.povSun.set(d[0]!, d[1]!, d[2]!) : null;
+    const moon = this.bodies && this.ephemerisOk ? this.povMoon.set(d[3]!, d[4]!, d[5]!) : null;
+    this.pov.update({ date: this.date, prec, sun, moon }, needs);
   }
 
   /** Planets are drawn (layer on, data given, date within the ephemeris range). */
@@ -1501,6 +1689,7 @@ export class SpaceView {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    this.applyViewShift(!this.flight, true); // the view offset follows the new size
     this.camera.updateProjectionMatrix();
     const dpr = this.renderer.getPixelRatio();
     overlay.width = w * dpr;
@@ -1552,11 +1741,26 @@ export class SpaceView {
     this.fadingGlobe.setCamera(this.camera.position);
     // Mix with zoom: engraved from afar, relief shows through when close.
     this.uniforms.uDetail.value = globeDetail(dist);
-    // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar.
-    this.observerMarker.visible = dist > 1.05;
+    // Points of view (#128): weights of their anchors and of the sky glyphs they replace.
+    this.applyViewShift(!posed);
+    this.updateWeights();
+    const w = this.weights;
+    const sunCentred = w.ecliptic + w.heliocentric;
+    this.pov.setWeights(w, this.reducedMotion);
+    this.pov.setCamera(this.camera.position);
+    // Sun and Moon at infinity: replaced by their glyphs round the Earth (Vu du sol) or by the
+    // diagrams' Sun; planets at infinity: replaced by the solar system's.
+    this.uniforms.uGlyphs.value = Math.max(0, 1 - w.earth - sunCentred);
+    this.uniforms.uPlanetGlyphs.value = Math.max(0, 1 - sunCentred);
+    // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar;
+    // too small to read on the diagrams' Earth.
+    this.observerMarker.visible = dist > 1.05 && sunCentred < 0.5;
     this.axis.visible = dist >= DIST_MIN;
-    const guide = this.eclipticWeight();
+    // The axis is drawn longer on the diagrams' small Earth, as the seasons' guide.
+    this.axis.scale.set(1, 1, 1 + 0.7 * sunCentred);
+    const guide = w.ecliptic;
     this.eclipticGuide.visible = guide > 0 && dist >= DIST_MIN;
+    this.eclipticGuide.scale.setScalar(1 + 0.6 * guide);
     for (const m of this.guideMaterials) m.opacity = m.userData.opacity * guide;
     if (this.style === "realistic")
       this.real?.setCameraEarth(this.camera.position, this.earth.rotation.z);
@@ -1566,6 +1770,15 @@ export class SpaceView {
       const [sx, sy] = s ? s : [NaN, NaN];
       const m = this.screenOf(this.dirAt(1, moon));
       if (s && m) this.uniforms.uSunAngle.value = Math.atan2(-(sy - m[1]), sx - m[0]);
+    }
+    if (w.earth > 0 && this.bodies) {
+      // The Moon of « Vu du sol », lit from the Sun drawn beside it.
+      const a = this.pov.anchors;
+      const s = this.screenOf(a.groundSun, false);
+      const sx = s ? s[0] : NaN;
+      const sy = s ? s[1] : NaN;
+      const m = this.screenOf(a.groundMoon, false);
+      if (s && m) this.pov.glyphUniforms.uSunAngle.value = Math.atan2(-(sy - m[1]), sx - m[0]);
     }
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
@@ -1631,6 +1844,8 @@ export class SpaceView {
       ...this.hudExclusions,
       { x: -width, y: -100, w: 3 * width, h: 100 },
       { x: -width, y: height, w: 3 * width, h: 100 },
+      { x: -200, y: -100, w: 204, h: height + 200 },
+      { x: width - 4, y: -100, w: 200, h: height + 200 },
     ]);
     const H = 12;
     const font = (weightSize: string, spacing: string) => {
@@ -1660,15 +1875,20 @@ export class SpaceView {
       .set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat))
       .multiplyScalar(1.3)
       .applyMatrix4(this.earth.matrixWorld);
+    const w = this.weights;
+    // Points of view (#128): their own anchors first.
+    if (w.stars >= 0.5) this.drawSunlight(layout);
     // On the ground (flight) the marker is hidden: its label would float overhead.
     if (this.observerMarker.visible) label(labels.here, here, false);
-    if (this.bodies) {
+    this.labelPointsOfView(label, font, layout);
+    font("700 11px", "0.12em");
+    if (this.bodies && this.uniforms.uGlyphs.value >= 0.5) {
       label(labels.sun, this.dirAt(0, sun), true, 20);
       if (this.ephemerisOk && !this.isGlobe(0))
         label(labels.moon, this.dirAt(1, moon), true, this.labelOffset(0, 18));
     }
     const names = this.options.planetNames;
-    if (this.planetsShown() && this.planets && names) {
+    if (this.planetsShown() && this.planets && names && this.uniforms.uPlanetGlyphs.value >= 0.5) {
       font("700 10px", "0.12em");
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       const d = new THREE.Vector3();
@@ -1683,27 +1903,9 @@ export class SpaceView {
       });
     }
     font("700 11px", "0.12em");
-    label(labels.pole, pole, true);
-    // Ecliptic frame (#122): its pole, and the axis tilt beside the arc.
-    if (this.eclipticGuide.visible && this.eclipticWeight() >= 0.5) {
-      const { eclPole } = this.frameTmp;
-      eclPole.set(0, 0, 1).applyQuaternion(this.eclipticGuide.quaternion);
-      if (labels.eclipticPole) label(labels.eclipticPole, eclPole, true);
-      const format = this.options.formatObliquity;
-      if (format) {
-        // Middle of the arc, ecliptic axes → world.
-        const half = (this.obliquity * DEG) / 2;
-        const mid = this.frameTmp.tilt
-          .set(0, TILT_ARC * Math.sin(half), TILT_ARC * Math.cos(half))
-          .applyQuaternion(this.eclipticGuide.quaternion);
-        // Shown to 0.01°: formatted again only when it moves by more than 0.0001°.
-        if (!(Math.abs(this.obliquityLabel.value - this.obliquity) < 1e-4))
-          this.obliquityLabel = { value: this.obliquity, text: format(this.obliquity) };
-        label(this.obliquityLabel.text, mid, false, 8);
-      }
-    }
+    if (w.stars + w.earth >= 0.5) label(labels.pole, pole, true);
     // Dated monthly marks of the selected planet's path (lowest priority).
-    if (this.pathPoints.visible && this.pathMarks.length) {
+    if (this.pathPoints.visible && this.pathMarks.length && w.ecliptic + w.heliocentric < 0.5) {
       font("400 9px", "0.06em");
       ctx.globalAlpha = 0.65;
       const h = 10;
@@ -1724,6 +1926,220 @@ export class SpaceView {
       ctx.globalAlpha = 1;
     }
     this.drawSelectionMarker();
+  }
+
+  /**
+   * Labels of the points of view's anchors (#128): the Sun and the Moon round the Earth (Vu du
+   * sol), the rotation (La Terre tourne), the Sun, the Earth, its axis and the season marks
+   * (Les saisons), the Sun and the planets (Le système solaire).
+   */
+  private labelPointsOfView(
+    label: (text: string, p: THREE.Vector3, atInfinity: boolean, dx?: number) => void,
+    font: (weightSize: string, spacing: string) => void,
+    layout: LabelLayout,
+  ): void {
+    const w = this.weights;
+    const a = this.pov.anchors;
+    const { labels } = this.options;
+    if (w.stars >= 0.5 && labels.rotation) {
+      font("400 10px", "0.08em");
+      label(labels.rotation, a.spinTip, false, 8);
+    }
+    if (w.earth >= 0.5 && this.bodies) {
+      font("700 11px", "0.12em");
+      label(labels.sun, a.groundSun, false, 20);
+      if (this.ephemerisOk) label(labels.moon, a.groundMoon, false, 16);
+      this.drawSubSolarPoint();
+    }
+    if (w.ecliptic >= 0.5 && this.pov.ready.seasons) {
+      this.reserveGlyph(layout, a.seasonsSun, 18);
+      // The season marks first: they are what the point of view is about.
+      const format = this.options.formatSeason;
+      if (format) {
+        const texts = this.seasonTexts;
+        const time = a.marks[0]!.date.getTime();
+        if (texts.time !== time) {
+          texts.time = time;
+          for (let i = 0; i < 4; i++) texts.texts[i] = format(a.marks[i]!.kind, a.marks[i]!.date);
+        }
+        font("400 10px", "0.06em");
+        for (let i = 0; i < 4; i++) {
+          const p = a.marks[i]!.position;
+          this.labelInside(layout, texts.texts[i]!, p, 4 + this.pixelRadius(p, GHOST_EARTH_RADIUS));
+        }
+      }
+      font("700 11px", "0.12em");
+      label(labels.sun, a.seasonsSun, false, 28);
+      if (labels.earth)
+        label(labels.earth, this.earthLabelPoint(), false, 4 + this.pixelRadius(ORIGIN, 1));
+      if (labels.axis) {
+        const top = this.frameTmp.tilt.set(0, 0, 1.5 * this.axis.scale.z + 0.1);
+        label(labels.axis, top, false, 6);
+      }
+    }
+    if (w.heliocentric >= 0.5 && this.pov.ready.solar) {
+      font("700 11px", "0.12em");
+      this.reserveGlyph(layout, a.solarSun, 14);
+      label(labels.sun, a.solarSun, false, 24);
+      if (labels.earth)
+        label(labels.earth, this.earthLabelPoint(), false, 4 + this.pixelRadius(ORIGIN, 1));
+      const names = this.options.planetNames;
+      if (names) {
+        font("700 10px", "0.12em");
+        for (let i = 0; i < PLANETS.length; i++)
+          label(
+            names[PLANETS[i]!],
+            a.planets[i]!,
+            false,
+            6 + this.pixelRadius(a.planets[i]!, a.planetRadius[i]!),
+          );
+      }
+    }
+  }
+
+  /**
+   * A label beside a world point (right, left, below, above), the last two slid sideways to
+   * stay on screen: the marks at the ends of the seasons' orbit sit near the screen's edges.
+   */
+  private labelInside(layout: LabelLayout, text: string, p: THREE.Vector3, dx: number): void {
+    if (this.hiddenByEarth(p, false)) return;
+    const s = this.screenOf(p, false);
+    if (!s) return;
+    const ctx = this.ctx;
+    const [x, y] = s;
+    const t = text.toUpperCase();
+    const w = ctx.measureText(t).width;
+    const h = 12;
+    const width = this.options.canvas.clientWidth;
+    const cx = Math.max(6, Math.min(width - 6 - w, x - w / 2));
+    const r = layout.place([
+      { x: x + dx, y: y - h / 2, w, h },
+      { x: x - dx - w, y: y - h / 2, w, h },
+      { x: cx, y: y + dx, w, h },
+      { x: cx, y: y - dx - h, w, h },
+    ]);
+    if (r) ctx.fillText(t, r.x, r.y + h / 2);
+  }
+
+  /** Keeps labels off the disc of a Sun glyph (half-size `r` CSS px) at the world point p. */
+  private reserveGlyph(layout: LabelLayout, p: THREE.Vector3, r: number): void {
+    const s = this.screenOf(p, false);
+    if (s) layout.place([{ x: s[0] - r, y: s[1] - r, w: 2 * r, h: 2 * r }]);
+  }
+
+  /** The point of the Earth's surface facing the camera: its labels' anchor, never hidden. */
+  private earthLabelPoint(): THREE.Vector3 {
+    return this.frameTmp.eclPole.copy(this.camera.position).normalize().multiplyScalar(1.001);
+  }
+
+  /** Apparent radius (CSS px) of a sphere of radius r at the world point p. */
+  private pixelRadius(p: THREE.Vector3, r: number): number {
+    const d = Math.max(r * 1.001, this.camera.position.distanceTo(p));
+    const focalPx = this.options.canvas.clientHeight / 2 / Math.tan((this.camera.fov * DEG) / 2);
+    return (r / Math.sqrt(d * d - r * r)) * focalPx;
+  }
+
+  /** « Vu du sol »: today's sub-solar point, a ringed dot on the globe (#128). */
+  private drawSubSolarPoint(): void {
+    const p = this.pov.anchors.subSolar;
+    if (this.hiddenByEarth(p, false)) return;
+    const s = this.screenOf(p, false);
+    if (!s) return;
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.arc(s[0], s[1], 2.5, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(s[0], s[1], 6, 0, 2 * Math.PI);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = this.options.theme.ink;
+    ctx.stroke();
+  }
+
+  /**
+   * « La Terre tourne » (#128): the Sun's light reaching the Earth from the side, drawn on the
+   * overlay: the Sun's glyph at the edge of the safe area (or where the Sun is, if on screen) and
+   * three engraved dashed rays to the lit limb. Allocation-free.
+   */
+  private drawSunlight(layout: LabelLayout): void {
+    if (!this.bodies) return;
+    const ctx = this.ctx;
+    const { clientWidth: width, clientHeight: height } = this.options.canvas;
+    const centre = this.screenOf(ORIGIN, false);
+    if (!centre) return;
+    const [cx, cy] = [centre[0], centre[1]];
+    const sun = this.dirAt(0, this.frameTmp.sun);
+    const towards = this.screenOf(this.frameTmp.marker.copy(sun).multiplyScalar(0.25), false);
+    if (!towards) return;
+    let ux = towards[0] - cx;
+    let uy = towards[1] - cy;
+    const n = Math.hypot(ux, uy);
+    if (n < 1e-3) return; // the Sun right behind or in front of the Earth
+    ux /= n;
+    uy /= n;
+    const radius = this.pixelRadius(ORIGIN, 1);
+    // The glyph: where the Sun is if on screen, else at the edge of the safe area, on its side.
+    const margin = 20;
+    const s = this.safe;
+    const [x0, x1] = [s.left + margin, width - s.right - margin];
+    const [y0, y1] = [s.top + margin, height - s.bottom - margin];
+    let t = Infinity;
+    if (ux > 0) t = Math.min(t, (x1 - cx) / ux);
+    if (ux < 0) t = Math.min(t, (x0 - cx) / ux);
+    if (uy > 0) t = Math.min(t, (y1 - cy) / uy);
+    if (uy < 0) t = Math.min(t, (y0 - cy) / uy);
+    const onScreen = this.hiddenByEarth(sun, true) ? null : this.screenOf(sun, true);
+    if (onScreen) t = Math.min(t, Math.hypot(onScreen[0] - cx, onScreen[1] - cy));
+    if (!(t > radius + 24)) return;
+    const gx = cx + ux * t;
+    const gy = cy + uy * t;
+    ctx.strokeStyle = this.options.theme.ink;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash(NO_DASH);
+    // Sun glyph: a ring and twelve rays.
+    ctx.beginPath();
+    ctx.arc(gx, gy, 8, 0, 2 * Math.PI);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * 2 * Math.PI;
+      ctx.moveTo(gx + 11 * Math.cos(a), gy + 11 * Math.sin(a));
+      ctx.lineTo(gx + 16 * Math.cos(a), gy + 16 * Math.sin(a));
+    }
+    ctx.stroke();
+    // Three parallel rays, from the Sun's side to the lit limb, with arrowheads.
+    ctx.setLineDash(DASH);
+    ctx.globalAlpha = 0.85;
+    for (const k of SUN_RAYS) {
+      const o = k * radius;
+      const along = Math.sqrt(Math.max(0, radius * radius - o * o)) + 6;
+      const sx = gx - uy * o - ux * 24;
+      const sy = gy + ux * o - uy * 24;
+      const ex = cx - uy * o + ux * along;
+      const ey = cy + ux * o + uy * along;
+      if ((sx - ex) * ux + (sy - ey) * uy <= 8) continue;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+      ctx.setLineDash(NO_DASH);
+      ctx.beginPath();
+      ctx.moveTo(ex + ux * 7 - uy * 4, ey + uy * 7 + ux * 4);
+      ctx.lineTo(ex, ey);
+      ctx.lineTo(ex + ux * 7 + uy * 4, ey + uy * 7 - ux * 4);
+      ctx.stroke();
+      ctx.setLineDash(DASH);
+    }
+    ctx.setLineDash(NO_DASH);
+    ctx.globalAlpha = 1;
+    // Its name beside the glyph.
+    const text = this.options.labels.sun.toUpperCase();
+    const tw = ctx.measureText(text).width;
+    const r = layout.place([
+      { x: gx - tw / 2, y: gy + 20, w: tw, h: 12 },
+      { x: gx - tw / 2, y: gy - 32, w: tw, h: 12 },
+      { x: gx + 20, y: gy - 6, w: tw, h: 12 },
+      { x: gx - 20 - tw, y: gy - 6, w: tw, h: 12 },
+    ]);
+    if (r) ctx.fillText(text, r.x, r.y + 6);
   }
 
   /**
@@ -1782,6 +2198,8 @@ export class SpaceView {
   private pick(x: number, y: number): SkySelection | null {
     const onGlobe = this.pickGlobe(x, y);
     if (onGlobe) return onGlobe;
+    if (this.weights.heliocentric >= 0.5) return this.pickPlanetDiagram(x, y);
+    if (this.weights.ecliptic >= 0.5) return null;
     let best: SkySelection | null = null;
     let bestDist = Infinity;
     const consider = (dir: THREE.Vector3, radius: number, selection: SkySelection) => {
@@ -1795,7 +2213,7 @@ export class SpaceView {
     const real = this.style === "realistic" ? this.real : null;
     const radius = (index: number, min: number) =>
       Math.max(min, real ? real.spriteSize(index) / (index > 0 ? 3.2 : 2) : 0);
-    if (this.bodies) {
+    if (this.bodies && this.uniforms.uGlyphs.value >= 0.5) {
       const r = Math.max(22, this.uniforms.uBodySize.value / 2);
       consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
       if (this.ephemerisOk && !this.isGlobe(0))
@@ -1812,6 +2230,24 @@ export class SpaceView {
       });
     }
     return best;
+  }
+
+  /** « Le système solaire » (#128): the planet whose drawn globe is under (x, y), CSS px. */
+  private pickPlanetDiagram(x: number, y: number): SkySelection | null {
+    if (!this.pov.planetShown()) return null;
+    const a = this.pov.anchors;
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < PLANETS.length; i++) {
+      const p = a.planets[i]!;
+      const r = Math.max(22, this.pixelRadius(p, a.planetRadius[i]!) + 6);
+      if (this.hiddenByEarth(p, false)) continue;
+      const s = this.screenOf(p, false);
+      if (!s) continue;
+      const d = Math.hypot(s[0] - x, s[1] - y);
+      if (d < r && d < bestDist) [best, bestDist] = [i, d];
+    }
+    return best < 0 ? null : { kind: "planet", planet: PLANETS[best]! };
   }
 
   // --- Body-centred frame (#123)
@@ -1834,7 +2270,6 @@ export class SpaceView {
     const dist = this.camera.position.distanceTo(this.poseTarget);
     const from = this.frameId;
     const fromBody = from === "body" ? this.bodyFrame.body : null;
-    if (!fromBody && id === "body") this.rememberEarthView();
     if (fromBody) {
       // The globe of the body left stays drawn during the transition.
       [this.globe3d, this.fadingGlobe] = [this.fadingGlobe, this.globe3d];
@@ -1848,55 +2283,36 @@ export class SpaceView {
       duration > 0 && !this.flight
         ? { from, fromBody, dist, start: performance.now(), duration: ms, k: 0, t: 0, ...state }
         : null;
-    this.refresh(); // the new frame, positions and globes
-    if (id === "body") this.orbit = this.bodyOrbit();
-    else if (fromBody) this.orbit = this.earthOrbitBack();
-    else {
-      // Same camera position and target, expressed in the new frame.
-      orbitInFrame(
-        this.camera.position,
-        this.poseTarget,
-        this.frameQuat,
-        this.frameOrigin,
-        this.orbit,
-      );
-    }
+    this.refresh(); // the new frame, positions, anchors and globes
+    // Each point of view opens on its own framing (#128).
+    this.orbit = this.defaultOrbit(id);
     this.dirty = true;
   }
 
-  /** After a flight out of the sky in the body frame: from the Earth's orbit to the body. */
-  private tripFromEarth(duration: number): void {
+  /**
+   * After a flight out of the sky: from where the flight ends (above the observer, looking at
+   * the Earth's centre) to the point of view's framing; in the body frame, a trip to the body.
+   */
+  private travelToDefault(duration: number): void {
     const state = this.frameTweenState;
     state.quat.copy(this.camera.quaternion);
     state.target.set(0, 0, 0); // the flight ends looking at the Earth's centre
-    this.rememberEarthView();
+    const body = this.frameId === "body";
     this.frameTween =
       duration > 0
         ? {
-            from: "stars",
+            from: body ? "stars" : this.frameId,
             fromBody: null,
             dist: this.camera.position.length(),
             start: performance.now(),
-            duration,
+            duration: body ? Math.max(duration, BODY_TRANSITION_MS) : duration,
             k: 0,
             t: 0,
             ...state,
           }
         : null;
-    this.orbit = this.bodyOrbit();
+    this.orbit = this.defaultOrbit();
     this.update();
-  }
-
-  private rememberEarthView(): void {
-    this.earthReturn.dir.copy(this.camera.position).normalize();
-    this.earthReturn.dist = this.camera.position.length();
-  }
-
-  /** Back round the Earth from a body: where the camera was before leaving, no pan. */
-  private earthOrbitBack(): EarthOrbit {
-    const at = directionInFrame(this.earthReturn.dir, this.frameQuat, { lon: 0, lat: 0 });
-    const dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.earthReturn.dist));
-    return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
   }
 
   /**
@@ -1918,17 +2334,24 @@ export class SpaceView {
     return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
   }
 
-  /** Radius (Earth radii) of the frame's target: the body in the body frame, else the Earth. */
-  private radius(): number {
-    return this.frameId === "body" ? bodyRadius(this.bodyFrame.body) : 1;
+  /**
+   * Size (Earth radii) of what the frame's camera orbits: the body in the body frame, the Earth's
+   * orbit (8) or Saturn's (≈ 25) in the diagrams (#128), else the Earth. Scales the zoom limits
+   * and the orbit gesture.
+   */
+  private radius(id: ReferenceFrameId = this.frameId): number {
+    if (id === "body") return bodyRadius(this.bodyFrame.body);
+    if (id === "ecliptic") return SEASONS_SCALE;
+    if (id === "heliocentric") return 25;
+    return 1;
   }
 
-  private distMin(): number {
-    return DIST_MIN * this.radius();
+  private distMin(id: ReferenceFrameId = this.frameId): number {
+    return DIST_MIN * this.radius(id);
   }
 
-  private distMax(): number {
-    return DIST_MAX * this.radius();
+  private distMax(id: ReferenceFrameId = this.frameId): number {
+    return DIST_MAX * this.radius(id);
   }
 
   /** Centre (world) of the frame's target: the body's globe, or the Earth's. */
@@ -2080,8 +2503,17 @@ export class SpaceView {
       surface = Math.min(surface, d - r);
       far = Math.max(far, d + 3 * r);
     }
+    // Sun-centred diagrams (#128): the orbits and the backdrop round the drawn Sun.
+    let cap = globes ? Infinity : 0.01;
+    const w = this.weights;
+    if (w.ecliptic + w.heliocentric > 0) {
+      const toTarget = this.camera.position.distanceTo(this.poseTarget);
+      const extent = w.heliocentric > 0 ? BACKDROP_RADIUS + 4 : SEASONS_SCALE * 1.1 + 3;
+      far = Math.max(far, (toTarget + extent) * 1.1 + this.poseTarget.length());
+      if (!globes) cap = Math.max(0.01, 0.05 * toTarget);
+    }
     // Near the ground (flight) the ground below the eye is closer than the usual near plane.
-    const near = Math.max(1e-4, Math.min(globes ? Infinity : 0.01, surface * 0.5));
+    const near = Math.max(1e-4, Math.min(cap, surface * 0.5));
     if (near !== this.camera.near || far !== this.camera.far) {
       this.camera.near = near;
       this.camera.far = far;
@@ -2110,10 +2542,10 @@ export class SpaceView {
     const requested = this.orbit.dist * factor;
     this.orbit.dist = Math.max(this.distMin(), Math.min(this.distMax(), requested));
     this.dirty = true;
-    // Zooming in past the closest distance on "you are here": into the sky (#37). Not round
-    // another body.
+    // Zooming in past the closest distance on "you are here": into the sky (#37). Only round the
+    // Earth (not round a body, nor in the sun-centred diagrams).
     if (
-      this.frameId === "body" ||
+      (this.frameId !== "stars" && this.frameId !== "earth") ||
       !this.options.onEnterSky ||
       !this.overZoom.push(DIST_MIN / requested, performance.now())
     )

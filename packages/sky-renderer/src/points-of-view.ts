@@ -33,22 +33,22 @@ export const AU_KM = 149_597_870.7;
 /**
  * "Les saisons": drawn distance of 1 au, Earth radii. The orbit keeps its true shape and its
  * true size relative to the Sun–Earth distance; the Earth (radius 1) is enlarged by
- * AU / (Earth radius × SEASONS_SCALE) ≈ 2 930 so that its axis and terminator stay visible.
+ * AU / (Earth radius × SEASONS_SCALE) ≈ 3 900 so that its axis and terminator stay visible.
  */
-export const SEASONS_SCALE = 8;
+export const SEASONS_SCALE = 6;
 
-/** Earth enlargement in "Les saisons" (≈ 2 932). */
+/** Earth enlargement in "Les saisons" (≈ 3 909). */
 export const SEASONS_EARTH_ENLARGEMENT = AU_KM / EARTH_RADIUS_KM / SEASONS_SCALE;
 
 /**
  * "Le système solaire": a distance r (au) from the Sun is drawn at a·ln(1 + r / r0) Earth radii.
  * Logarithmic so that Mercury (0.39 au) and Neptune (30 au) fit on one phone screen with the
- * inner planets apart: Mercury 5.8, Earth 10.3, Mars 12.6, Jupiter 20.3, Neptune 32.3.
+ * inner planets apart: Mercury 7.6, Venus 10.7, Earth 12.4, Mars 14.6, Jupiter 21.8, Neptune 32.3.
  * Monotonic and direction-preserving: the order of the planets, the angles seen from the Sun
  * and the shapes' orientation are kept, not the ratios of distances. The Sun is a glyph of
  * constant size on screen in both diagrams, not to scale.
  */
-export const SOLAR_SCALE = Object.freeze({ a: 7, r0: 0.3 });
+export const SOLAR_SCALE = Object.freeze({ a: 6.1, r0: 0.15 });
 
 /** Drawn distance (Earth radii) of a heliocentric distance r (au) in "Le système solaire". */
 export const compressedRadius = (rAu: number): number =>

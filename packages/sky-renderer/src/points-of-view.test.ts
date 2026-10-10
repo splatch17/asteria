@@ -23,9 +23,9 @@ const prec = (d: Date) => new THREE.Matrix3().set(...precessionMatrix(d));
 const DEG = Math.PI / 180;
 
 describe("scales", () => {
-  it("enlarges the Earth ≈ 2 930 times in « Les saisons »", () => {
-    // 149 597 870.7 km / 6 378.137 km / 8
-    expect(SEASONS_EARTH_ENLARGEMENT).toBeCloseTo(2931.8, 1);
+  it("enlarges the Earth ≈ 3 900 times in « Les saisons »", () => {
+    // 149 597 870.7 km / 6 378.137 km / 6
+    expect(SEASONS_EARTH_ENLARGEMENT).toBeCloseTo(3909.1, 1);
   });
 
   it("compresses distances monotonically, orbits at least 1.5 Earth radii apart", () => {
