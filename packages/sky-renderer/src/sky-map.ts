@@ -14,6 +14,7 @@
  *   ecliptic,        // J2000 ecliptic, dashed, graduated every 30° of longitude of date
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
+ *   constellationFigures, // #96: illustrated figures under the stars (figures.ts)
  *   realisticDaylight, // #106: daylight hides the stars (off: drawn as at night; daylight.ts)
  *   deepSky,         // #101: Messier and bright NGC/IC objects (data from setDeepSky; deepsky.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
@@ -71,6 +72,7 @@ import {
   projectStereo,
   stereoScale,
   unprojectStereo,
+  viewAnimationProgress,
   viewMatrix,
   type ViewState,
 } from "./view";
@@ -89,6 +91,7 @@ import {
 import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
 import { DeepSkyLayer, type DeepSkyFrame, type DeepSkyMapObject } from "./deepsky";
+import { FigureLayer } from "./figures";
 import {
   MARKER_GAP,
   STAR_MARKER_RADIUS,
@@ -182,6 +185,8 @@ export interface SkyLayers {
   seeThroughGround: boolean;
   /** Mini-globe in a corner of the sky view (#38): drawn by the app (MiniGlobe), not the map. */
   miniGlobe: boolean;
+  /** Illustrated constellation figures (#96), loaded on demand (options.figureSet). */
+  constellationFigures: boolean;
   /**
    * Realistic daytime sky (#106): daylight hides the stars and their names (#34). Off (default):
    * by day they stay drawn as at night, with a stronger ink (see daylight.ts).
@@ -205,6 +210,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   ecliptic: false,
   seeThroughGround: true,
   miniGlobe: true,
+  constellationFigures: false,
   realisticDaylight: false,
   deepSky: true,
 });
@@ -259,6 +265,8 @@ export interface SkyMapOptions {
   formatGraduation?: (kind: GraduationKind, value: number) => string;
   /** Initial layers (default: DEFAULT_SKY_LAYERS). */
   layers?: Partial<SkyLayers>;
+  /** URL of the figure set manifest (#96); without it the figures layer stays empty. */
+  figureSet?: string;
 }
 
 const FOV_MIN = 2;
@@ -410,6 +418,8 @@ export class SkyMap {
   /** Canvas size in CSS px, kept by resize(): read for every projected label, it avoids layout reads. */
   private size = { w: 1, h: 1 };
   private readonly backZCache = { fov: NaN, aspect: NaN, z: -0.6 };
+  /** Illustrated figures (#96): level and selection are driven through it. */
+  readonly figureLayer: FigureLayer;
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -599,7 +609,14 @@ export class SkyMap {
       dash: 3,
     });
 
+    this.figureLayer = new FigureLayer({
+      uniforms: this.uniforms,
+      url: options.figureSet,
+      starDirection: (hip) => byHip.get(hip),
+      requestFrame: () => (this.dirty = true),
+    });
     this.scene.add(
+      this.figureLayer.object,
       this.azimuthalGrid,
       this.equatorialGrid,
       this.eclipticLine,
@@ -815,6 +832,7 @@ export class SkyMap {
   setSelectedConstellation(abbr: string | null): void {
     this.selectedConstellation = abbr;
     this.uniforms.uLineOpacity.value = abbr ? 0.3 : 0.45;
+    this.figureLayer.setSelected(abbr);
     this.dim = selectionDim(abbr ? "constellation" : null);
     this.dirty = true;
   }
@@ -920,6 +938,7 @@ export class SkyMap {
     this.deepSky.mesh.visible = l.deepSky && this.deepSky.count > 0;
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
+    this.figureLayer.setEnabled(l.constellationFigures);
     this.dirty = true;
   }
 
@@ -967,6 +986,7 @@ export class SkyMap {
   /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
   dispose(): void {
     this.stop();
+    this.figureLayer.dispose();
     this.listeners.abort();
     this.resizeObserver.disconnect();
     disposeObjects(this.scene);
@@ -1092,12 +1112,11 @@ export class SkyMap {
     }
     if (this.animation) {
       const { from, to, start, duration } = this.animation;
-      const t = Math.min(1, (performance.now() - start) / duration);
-      const e = 1 - (1 - t) ** 3; // ease-out cubic
+      const e = viewAnimationProgress(performance.now(), start, duration);
       this.view.azimuth = from.azimuth + (to.azimuth - from.azimuth) * e;
       this.view.altitude = from.altitude + (to.altitude - from.altitude) * e;
       this.view.fov = from.fov + (to.fov - from.fov) * e;
-      if (t >= 1) this.animation = null;
+      if (e >= 1) this.animation = null;
       this.clampView();
       this.dirty = true;
     }
@@ -1183,6 +1202,9 @@ export class SkyMap {
       const [tx, ty] = applyMat3(m, tangent);
       this.uniforms.uSunAngle.value = Math.atan2(ty, tx);
     }
+    // Figures: reveal animation and proper motion of their anchors (another frame while revealing).
+    if (this.figureLayer.update(performance.now(), this.view.fov, this.motionYears))
+      this.dirty = true;
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
   }

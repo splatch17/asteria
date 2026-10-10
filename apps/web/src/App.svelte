@@ -6,12 +6,16 @@
     SpaceView,
     type BodyName,
     type CatalogStar,
+    type FigureLevel,
     type SkyLayers,
     type SkySelection,
     type SpaceStyle,
     type ViewState,
+    type ReferenceFrameId,
     isSpaceStyle,
-    DEFAULT_SKY_LAYERS,
+    isAvailableFrame,
+    DEFAULT_REFERENCE_FRAME,
+    FRAME_TRANSITION_MS,
     DEFAULT_SPACE_LAYERS,
     ephemerisReliable,
     skyOpacity,
@@ -24,6 +28,7 @@
     PLANETS,
     bodyPosition,
     constellationOf,
+    meanObliquity,
     moonPhase,
     propagateStar,
     unitVector,
@@ -68,6 +73,8 @@
   import DialsColumn from "./components/DialsColumn.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import SearchPanel from "./components/SearchPanel.svelte";
+  import GestureTip from "./components/GestureTip.svelte";
+  import FramePanel from "./components/FramePanel.svelte";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
@@ -77,17 +84,18 @@
     deepSkyMapObjects,
     deepSkySearchSources,
     displayMagnitude,
-    isUserLevel,
     observability,
-    type UserLevel,
   } from "./lib/deepsky";
   import {
     LAYERS_STORAGE_KEY,
+    LEVEL_STORAGE_KEY,
     graduationFormatter,
+    isLevel,
     isRecord,
     layersFromUrl,
     restoreLayers,
     serializeLayers,
+    skyDefaults,
     type LayerKey,
     type LayerView,
   } from "./lib/layers";
@@ -126,6 +134,18 @@
       ? urlStyle
       : readSetting("asteria.spaceStyle", "engraving", isSpaceStyle),
   );
+  // Earth view reference frame (#122), remembered; `?frame=` for captures (then not saved).
+  const urlFrame = new URLSearchParams(location.search).get("frame");
+  let spaceFrame = $state<ReferenceFrameId>(
+    isAvailableFrame(urlFrame)
+      ? urlFrame
+      : readSetting("asteria.spaceFrame", DEFAULT_REFERENCE_FRAME, isAvailableFrame),
+  );
+  let frameOpen = $state(false);
+  let frameButton = $state<HTMLButtonElement>();
+  /** Short explanation of the frame just chosen, for the public level (#122). */
+  let frameNote = $state<string | null>(null);
+  let frameNoteTimer: ReturnType<typeof setTimeout> | undefined;
   let catalog: { stars: CatalogStar[]; lines: Record<string, number[][]> } | undefined;
   let status = $state<"loading" | "ready" | "error">("loading");
   const isBool = (v: unknown): v is boolean => typeof v === "boolean";
@@ -136,8 +156,10 @@
   // the layers panel and remembered between sessions. `?layers=` (captures) takes precedence and
   // is then not saved.
   const urlLayers = new URLSearchParams(location.search).get("layers");
+  // Public level (chosen in the 3D view): the figures are shown by default in Découverte (#96).
+  const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
   function initialLayers(view: LayerView): SkyLayers {
-    const defaults = view === "sky" ? DEFAULT_SKY_LAYERS : DEFAULT_SPACE_LAYERS;
+    const defaults = view === "sky" ? skyDefaults(level) : DEFAULT_SPACE_LAYERS;
     const fromUrl = layersFromUrl(urlLayers, defaults);
     if (fromUrl) return fromUrl;
     const saved = readSetting<unknown>(LAYERS_STORAGE_KEY[view], null, isRecord);
@@ -181,7 +203,7 @@
   }
   function close3d() {
     view3d = null;
-    if (!isUserLevel(urlLevel)) level = readSetting("asteria.level", "amateur", isUserLevel);
+    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     if (mode === "sky") map?.start();
   }
   let layersButton = $state<HTMLButtonElement>();
@@ -214,6 +236,10 @@
   /** Current UI locale, for dates and numbers formatted outside ICU messages. */
   const lang = $derived($locale ?? "fr");
   // One formatter for the ~80 path marks (toLocaleDateString builds a new one on each call).
+  /** Axis tilt in the Earth view's ecliptic frame (#122): two decimals, 23,44. */
+  const angleFormat = $derived(
+    new Intl.NumberFormat(lang, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+  );
   const pathMarkFormat = $derived(
     new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" }),
   );
@@ -370,7 +396,11 @@
         sun: $_("body.Sun"),
         moon: $_("body.Moon"),
         pole: $_("space.pole"),
+        eclipticPole: $_("space.eclipticPole"),
       },
+      formatObliquity: (deg) =>
+        $_("space.obliquity", { values: { angle: angleFormat.format(deg) } }),
+      frame: spaceFrame,
       planetNames: planetNames(),
       formatPathMark: (d) => pathMarkFormat.format(d),
       onSelect: (s) => (selection = s),
@@ -402,6 +432,12 @@
   const urlFlightMs = Number(new URLSearchParams(location.search).get("flightMs"));
   const flightDuration = () =>
     reducedMotion.matches ? 0 : urlFlightMs > 0 ? urlFlightMs : FLIGHT_MS;
+  /** Reference frame slerp (#122): instant with reduced motion; `?frameMs=` for captures. */
+  const urlFrameMs = Number(new URLSearchParams(location.search).get("frameMs"));
+  const frameDuration = () =>
+    reducedMotion.matches ? 0 : urlFrameMs > 0 ? urlFrameMs : FRAME_TRANSITION_MS;
+  /** Map turns (north, search, constellation framing): instant with reduced motion. */
+  const viewTurnMs = () => (reducedMotion.matches ? 0 : 600);
   /** Nothing in the way of leaving the sky (re-read after awaiting the Earth view). */
   const canLeaveSky = () => !flying && mode === "sky" && map !== undefined;
 
@@ -480,7 +516,7 @@
 
   function faceNorth() {
     if (pointer.state === "on") return;
-    map?.animateTo({ azimuth: 0 });
+    map?.animateTo({ azimuth: 0 }, viewTurnMs());
   }
 
   function locate() {
@@ -533,6 +569,8 @@
         cardinals: $_("map.cardinals").split(","),
         formatGraduation: graduationFormatter($_),
         theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+        // Illustrated figures (#95): loaded the first time the layer is switched on.
+        figureSet: `${base}data/figures/stellarium-western.json`,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
@@ -561,6 +599,7 @@
       return false;
     }
     map.setObserver(place);
+    map.figureLayer.setLevel(level);
     status = "ready";
     return true;
   }
@@ -603,11 +642,14 @@
       void ensureDeepSky().then((objects) => {
         if (objects?.some((o) => o.id === dso)) selection = { kind: "deepsky", id: dso };
       });
-    // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist
+    // Space view from the URL (captures): ?space=1&orbit=lon,lat,dist (in the frame, ?frame=)
     if (params.get("space") === "1") {
       await flyToSpace(true);
       const [lon = NaN, lat = NaN, dist = NaN] = (params.get("orbit") ?? "").split(",").map(Number);
       if ([lon, lat, dist].every(Number.isFinite)) space?.setOrbit({ lon, lat, dist });
+      if (params.get("panel") === "frame") frameOpen = true;
+      const note = params.get("frameNote"); // captures: ?frameNote=1 shows the explanation
+      if (note === "1") chooseFrame(spaceFrame);
     }
     clock = setInterval(() => {
       if (live) goLive();
@@ -707,7 +749,7 @@
       const from = fov ? { ...map.view, fov } : map.view;
       const view =
         placement && frameAbove(placement, from, canvas.clientWidth / canvas.clientHeight);
-      if (view || fov) map.animateTo({ ...view, ...(fov && { fov }) });
+      if (view || fov) map.animateTo({ ...view, ...(fov && { fov }) }, viewTurnMs());
     }
     // Converging rings once the map has turned; a static marker with reduced motion.
     if (!reducedMotion.matches) map.playArrival();
@@ -725,7 +767,7 @@
     );
     if (!placement || placement.visibility === "down") return;
     const next = frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
-    if (next) map.animateTo(next);
+    if (next) map.animateTo(next, viewTurnMs());
   }
   const constellationInfo = $derived.by(() => {
     if (!selectedConstellation || !catalog) return null;
@@ -816,6 +858,7 @@
     hudObserver?.disconnect();
     removeEventListener("resize", updateGraduationExclusions);
     space?.dispose();
+    clearTimeout(frameNoteTimer);
     pointer.stop();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
     removeEventListener("pointerup", restoreFullscreen, true);
@@ -855,6 +898,30 @@
   $effect(() => {
     space?.setSelection(selection);
   });
+  $effect(() => {
+    space?.setFrame(spaceFrame, { duration: frameDuration() });
+    if (urlFrame === null) writeSetting("asteria.spaceFrame", spaceFrame);
+  });
+  $effect(() => {
+    if (mode !== "space") {
+      frameOpen = false;
+      frameNote = null;
+    }
+  });
+
+  /** A frame is chosen in the selector: switch, and say in one sentence what it shows. */
+  function chooseFrame(id: ReferenceFrameId) {
+    frameOpen = false;
+    frameButton?.focus();
+    if (!isAvailableFrame(id)) return;
+    spaceFrame = id;
+    // Level read now: it may have changed in the 3D view since start-up.
+    const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
+    const angle = angleFormat.format(meanObliquity(date));
+    frameNote = $_(`frame.${id}.${level}`, { values: { angle } });
+    clearTimeout(frameNoteTimer);
+    frameNoteTimer = setTimeout(() => (frameNote = null), 9000);
+  }
   $effect(() => {
     const sky = serializeLayers(viewLayers.sky);
     const earth = serializeLayers(viewLayers.space);
@@ -957,11 +1024,9 @@
     const o = deepSky?.find((x) => x.id === id);
     return o ? deepSkyLabel(o, deepSkyNamesFr) : id;
   };
-  // User level (chosen in the 3D view, #8): Découverte shows the Messier objects only.
+  // Public level (chosen in the 3D view, #8): Découverte shows the Messier objects only (#101).
   const urlLevel = new URLSearchParams(location.search).get("level");
-  let level = $state<UserLevel>(
-    isUserLevel(urlLevel) ? urlLevel : readSetting("asteria.level", "amateur", isUserLevel),
-  );
+  let userLevel = $state<FigureLevel>(isLevel(urlLevel) ? urlLevel : level);
   $effect(() => {
     if (status === "ready" && viewLayers.sky.deepSky) void ensureDeepSky();
   });
@@ -970,7 +1035,7 @@
     map?.setDeepSky(deepSkyMapObjects(deepSky, deepSkyNamesFr));
   });
   $effect(() => {
-    if (status === "ready") map?.setDeepSkyMessierOnly(level === "discovery");
+    if (status === "ready") map?.setDeepSkyMessierOnly(userLevel === "discovery");
   });
   $effect(() => {
     if (!viewLayers.sky.deepSky && selection?.kind === "deepsky") selection = null;
@@ -1225,9 +1290,23 @@
   onpoint={() => pointer.toggle()}
   onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
   onsearch={openSearch}
+  onrecentre={() => space?.resetView()}
+  onframe={() => (frameOpen = !frameOpen)}
+  {frameOpen}
+  bind:frameButton
   {searchOpen}
   bind:searchButton
 />
+
+{#if frameOpen && mode === "space"}
+  <FramePanel
+    frame={spaceFrame}
+    top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
+    onselect={chooseFrame}
+    onclose={() => (frameOpen = false)}
+    toggle={frameButton}
+  />
+{/if}
 
 {#if searchOpen}
   <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
@@ -1271,6 +1350,16 @@
       >{$_("pointing.dismiss")}</span
     >
   </button>
+{:else if frameNote && mode === "space" && !frameOpen}
+  <!-- Discreet: muted, left-aligned; a tap dismisses it, it leaves by itself after 9 s. -->
+  <button
+    class="hud toast note"
+    style:top={toastTop}
+    aria-live="polite"
+    onclick={() => (frameNote = null)}
+  >
+    <span class="note-title">{$_(`frame.${spaceFrame}`)}</span>{frameNote}
+  </button>
 {:else if spaceError}
   <div class="hud toast notice" style:top={toastTop} role="alert">
     <p>{$_("space.loadError")}</p>
@@ -1285,6 +1374,8 @@
     </div>
   </div>
 {/if}
+
+<GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
 
 {#if status !== "ready"}
   <div class="status" role={status === "error" ? "alert" : "status"}>
@@ -1551,6 +1642,19 @@
     letter-spacing: 0;
     height: auto;
     display: block;
+  }
+  .toast.note {
+    color: var(--ast-fg-muted);
+    text-align: left;
+    cursor: pointer;
+  }
+  .note-title {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 9px;
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg);
   }
   .toast .dismiss {
     display: block;

@@ -6,7 +6,6 @@ import {
   deepSkyMapObjects,
   deepSkySearchSources,
   displayMagnitude,
-  isUserLevel,
   observability,
   surfaceBrightness,
 } from "./deepsky";
@@ -180,13 +179,5 @@ describe("map and search sources", () => {
       mag: 3.44,
       messier: 31,
     });
-  });
-});
-
-describe("isUserLevel", () => {
-  it("accepts the three levels only", () => {
-    expect(["discovery", "amateur", "expert"].every(isUserLevel)).toBe(true);
-    expect(isUserLevel("child")).toBe(false);
-    expect(isUserLevel(null)).toBe(false);
   });
 });

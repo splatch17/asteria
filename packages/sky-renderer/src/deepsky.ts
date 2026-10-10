@@ -102,8 +102,9 @@ export class DeepSkyLayer {
     this.mesh = new THREE.Mesh(this.geometry([]), material);
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
-    // Under the stars and the figures (drawn after it), above a see-through ground (−1).
-    this.mesh.renderOrder = -0.5;
+    // Under the lines and stars (0), above the illustrated figures (−0.5, #96) and a see-through
+    // ground (−1).
+    this.mesh.renderOrder = -0.4;
   }
 
   /** Replaces the objects (once, when the catalogue has loaded); null or [] clears them. */

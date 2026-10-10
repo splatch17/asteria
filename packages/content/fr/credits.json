@@ -181,6 +181,16 @@
       "license": "CC BY-SA 4.0",
       "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
       "sourceUrl": "https://fr.wikipedia.org/wiki/Constellation"
+    },
+    {
+      "id": "stellarium-western-figures",
+      "name": "Stellarium, culture du ciel « western » : illustrations des constellations",
+      "role": "Figures illustrées du calque « Figures des constellations » (84 figures), placées sur leurs trois étoiles d'ancrage. Modifications : niveaux de gris, réduction à 240 px, luminance normalisée, rendu en trame 1-bit à la couleur de l'encre. L'atlas dérivé est diffusé sous la même licence.",
+      "author": "Johan Meuris (illustrations) ; l'équipe Stellarium (étoiles d'ancrage)",
+      "notice": "Illustrations by Johan Meuris, Free Art License 1.3 ; anchors: Stellarium's team, CC BY-SA. Originaux : Stellarium/stellarium-skycultures, dossier western, commit 014fbb5e5923.",
+      "license": "Licence Art Libre 1.3 (illustrations) ; CC BY-SA 4.0 (ancrages)",
+      "licenseUrl": "https://artlibre.org/licence/lal/",
+      "sourceUrl": "https://github.com/Stellarium/stellarium-skycultures/tree/014fbb5e59233d133c22f9811af96b67d05a95c9/western"
     }
   ],
   "fonts": [

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { applyMat3 } from "@asteria/astro-core";
-import { projectStereo, stereoScale, unprojectStereo, viewMatrix } from "./view";
+import {
+  projectStereo,
+  stereoScale,
+  unprojectStereo,
+  viewAnimationProgress,
+  viewMatrix,
+} from "./view";
 
 describe("viewMatrix", () => {
   it("maps the looked-at direction to forward", () => {
@@ -53,5 +59,19 @@ describe("stereographic projection", () => {
     const [nx, ny] = projectStereo(dir, scale, 1.6);
     const back = unprojectStereo(nx, ny, scale, 1.6);
     back.forEach((c, i) => expect(c).toBeCloseTo(dir[i]!, 12));
+  });
+});
+
+describe("viewAnimationProgress", () => {
+  it("eases out from 0 to 1 over the duration", () => {
+    expect(viewAnimationProgress(1000, 1000, 600)).toBe(0);
+    expect(viewAnimationProgress(1300, 1000, 600)).toBeCloseTo(0.875);
+    expect(viewAnimationProgress(1600, 1000, 600)).toBe(1);
+    expect(viewAnimationProgress(9999, 1000, 600)).toBe(1);
+  });
+
+  it("ends at once without a duration (reduced motion), never NaN", () => {
+    expect(viewAnimationProgress(1000, 1000, 0)).toBe(1);
+    expect(viewAnimationProgress(1000, 1000, -5)).toBe(1);
   });
 });

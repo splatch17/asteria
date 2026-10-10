@@ -16,6 +16,8 @@
   } from "@asteria/sky-renderer/constellation-3d";
   import { readSetting, writeSetting } from "../lib/storage";
   import Designation from "./Designation.svelte";
+  import GestureTip from "./GestureTip.svelte";
+  import Icon from "./Icon.svelte";
 
   let {
     abbr,
@@ -171,7 +173,10 @@
     observer.observe(footer);
     // Captures: ?t3d= freezes the transition, ?orbit3d=yaw,pitch,zoom, ?sel3d=HIP.
     const frozen = Number(params.get("t3d") ?? NaN);
-    const [yaw, pitch, zoom] = (params.get("orbit3d") ?? "").split(",").map(Number);
+    // An empty field is not 0: without the parameter the view keeps its default angles.
+    const [yaw, pitch, zoom] = (params.get("orbit3d") ?? "")
+      .split(",")
+      .map((v) => (v.trim() === "" ? NaN : Number(v)));
     if (Number.isFinite(yaw) || Number.isFinite(pitch) || Number.isFinite(zoom))
       view.setOrbit({
         ...(Number.isFinite(yaw) && { yaw }),
@@ -210,6 +215,11 @@
     selected = null;
     await view?.close();
     onclose();
+  }
+
+  /** Back to the view the transition ended on (#107). */
+  function recentre() {
+    view?.resetView();
   }
 
   async function toggleEarth() {
@@ -263,6 +273,20 @@
   <button class="icon close" bind:this={closeButton} onclick={close} aria-label={$_("c3d.close")}
     >×</button
   >
+  <button
+    class="dial recentre"
+    onclick={recentre}
+    disabled={!ready || fromEarth}
+    aria-label={$_("gestures.recentre")}
+    title={$_("gestures.recentre")}
+  >
+    <Icon name="recentre" size={22} />
+  </button>
+  <GestureTip
+    view="c3d"
+    active={ready && !fromEarth}
+    top="calc(max(12px, env(safe-area-inset-top)) + 112px)"
+  />
   <header class="head" bind:this={header}>
     <div class="titles">
       <p class="meta">#{abbr.toUpperCase()} // {$_("c3d.meta")}</p>
@@ -358,7 +382,8 @@
   }
   /* The interface appears once the depth has unfolded, and leaves before the way back. */
   .head,
-  .foot {
+  .foot,
+  .recentre {
     opacity: 0;
     visibility: hidden;
     transition:
@@ -366,7 +391,8 @@
       visibility 0s 0.35s;
   }
   .ready .head,
-  .ready .foot {
+  .ready .foot,
+  .ready .recentre {
     opacity: 1;
     visibility: visible;
     transition: opacity 0.35s var(--ast-ease-out);
@@ -424,6 +450,31 @@
     right: max(6px, env(safe-area-inset-right));
     background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
     border: 1px solid var(--ast-hairline);
+  }
+  /* Round button, as the dials of the sky map (DialsColumn). */
+  .dial {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--ast-hairline);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
+    backdrop-filter: blur(4px);
+  }
+  .dial:focus-visible {
+    outline: 2px solid var(--ast-fg);
+    outline-offset: 2px;
+  }
+  .recentre {
+    position: absolute;
+    z-index: 1;
+    top: calc(max(6px, env(safe-area-inset-top)) + 52px);
+    right: max(6px, env(safe-area-inset-right));
+  }
+  .ready .recentre:disabled {
+    opacity: 0.4;
   }
   .levels {
     display: flex;

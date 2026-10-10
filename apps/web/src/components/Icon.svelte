@@ -94,6 +94,11 @@
     <path d="M3 7.5 A5 5 0 0 0 13 7.5" class="thin" stroke-dasharray="1.2 1.1" />
     <circle cx="8" cy="4" r="1.4" class="fill" />
     <circle cx="8" cy="10.6" r="1.1" class="thin" />
+  {:else if name === "figures"}
+    <!-- An engraved figure among the stars: the illustrated constellations (#96). -->
+    <circle cx="6" cy="4" r="1.8" />
+    <path d="M6 5.8 V10.5 M2.8 7.6 L6 6.8 L9.2 8.6 M6 10.5 L4 14 M6 10.5 L8.2 13.6" />
+    <path d={sparkle(12.5, 4, 2.2)} class="fill" />
   {:else if name === "fullscreen"}
     <path d="M2.5 6 V2.5 H6 M10 2.5 H13.5 V6 M13.5 10 V13.5 H10 M6 13.5 H2.5 V10" />
   {:else if name === "fullscreenExit"}
@@ -123,6 +128,11 @@
     <path d={sparkle(12.6, 3, 2.4)} class="fill" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
+  {:else if name === "frame"}
+    <!-- A globe on a tilted axis over a dashed plane: change the reference frame (#122). -->
+    <path d="M1.2 10.2 H14.8" class="thin" stroke-dasharray="1.5 1.2" />
+    <circle cx="8" cy="8" r="3.6" />
+    <path d="M5.6 1.6 L10.4 14.4" />
   {:else if name === "search"}
     <!-- A magnifier: find an object in the sky (#99). -->
     <circle cx="6.8" cy="6.8" r="4.3" />
@@ -137,6 +147,11 @@
     />
   {:else if name === "moon"}
     <path d="M9 2 A6 6 0 1 0 14 10.5 A5 5 0 0 1 9 2 Z" class="fill" />
+  {:else if name === "recentre"}
+    <!-- A sight: back to the view's starting point (#107). -->
+    <circle cx="8" cy="8" r="4.5" />
+    <path d="M8 1 V4.5 M8 11.5 V15 M1 8 H4.5 M11.5 8 H15" />
+    <circle cx="8" cy="8" r="1.2" class="fill" />
   {/if}
 </svg>
 

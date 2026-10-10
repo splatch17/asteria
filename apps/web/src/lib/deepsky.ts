@@ -142,8 +142,3 @@ export function deepSkySearchSources(
     messier: o.messier,
   }));
 }
-
-/** User level (#8, Constellation3D): the map shows only Messier objects at Découverte. */
-export type UserLevel = "discovery" | "amateur" | "expert";
-export const isUserLevel = (v: unknown): v is UserLevel =>
-  v === "discovery" || v === "amateur" || v === "expert";

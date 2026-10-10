@@ -3,10 +3,12 @@ import { DEFAULT_SKY_LAYERS, DEFAULT_SPACE_LAYERS } from "@asteria/sky-renderer"
 import {
   LAYER_SECTIONS,
   graduationFormatter,
+  isLevel,
   layersFromUrl,
   restoreLayers,
   sectionsFor,
   serializeLayers,
+  skyDefaults,
 } from "./layers";
 import fr from "@asteria/ui/locales/fr.json";
 
@@ -93,5 +95,29 @@ describe("graduationFormatter", () => {
     expect(format("az", 90)).toBe("Az 90°");
     expect(format("alt", 30)).toBe("h 30°");
     expect(format("ecliptic", 120)).toBe("λ 120°");
+  });
+});
+
+describe("skyDefaults", () => {
+  it("shows the illustrated figures by default in Découverte only (#96)", () => {
+    expect(skyDefaults("discovery").constellationFigures).toBe(true);
+    expect(skyDefaults("amateur").constellationFigures).toBe(false);
+    expect(skyDefaults("expert").constellationFigures).toBe(false);
+    expect({ ...skyDefaults("discovery"), constellationFigures: false }).toEqual(
+      DEFAULT_SKY_LAYERS,
+    );
+  });
+
+  it("keeps a remembered choice over the level's default", () => {
+    const discovery = skyDefaults("discovery");
+    expect(restoreLayers({ constellationFigures: false }, discovery).constellationFigures).toBe(
+      false,
+    );
+    expect(restoreLayers({ planets: true }, discovery).constellationFigures).toBe(true);
+  });
+
+  it("recognises the three levels only", () => {
+    expect(["discovery", "amateur", "expert"].every(isLevel)).toBe(true);
+    expect(isLevel("novice")).toBe(false);
   });
 });

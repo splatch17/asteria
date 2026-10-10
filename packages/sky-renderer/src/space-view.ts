@@ -3,6 +3,7 @@ import {
   PLANETS,
   bodyPosition,
   greenwichMeanSiderealTime,
+  meanObliquity,
   precessionMatrix,
   starMotion,
   unitVector,
@@ -50,6 +51,7 @@ import {
   ORBIT_FOV,
   ORBIT_RADIUS,
   OverZoom,
+  flightEase,
   flightProgress,
   globeDetail,
   headingOf,
@@ -58,6 +60,26 @@ import {
   type HorizonBasis,
 } from "./flight";
 import type { ViewState } from "./view";
+import {
+  DEFAULT_REFERENCE_FRAME,
+  FRAME_TRANSITION_MS,
+  directionInFrame,
+  frameOf,
+  isAvailableFrame,
+  orbitInFrame,
+  orbitPose,
+  type FrameOrbit,
+  type ReferenceFrameId,
+} from "./reference-frames";
+import { GestureInput } from "./gesture-input";
+import {
+  earthPanLimit,
+  easeOut,
+  panScale,
+  raySphere,
+  wrapDegrees,
+  zoomAnchorShift,
+} from "./gestures";
 
 export type { SpaceTextureName } from "./space-realistic";
 
@@ -85,7 +107,18 @@ export interface SpaceViewOptions {
   lines: Record<string, number[][]>;
   earth: EarthAssets;
   theme: SkyTheme;
-  labels: { here: string; sun: string; moon: string; pole: string };
+  labels: {
+    here: string;
+    sun: string;
+    moon: string;
+    pole: string;
+    /** Ecliptic pole, labelled in the ecliptic frame (#122). */
+    eclipticPole?: string;
+  };
+  /** Label of the axis tilt in the ecliptic frame, from the obliquity in degrees (#122). */
+  formatObliquity?: (degrees: number) => string;
+  /** Initial reference frame (default: star-fixed); unavailable frames are ignored. */
+  frame?: ReferenceFrameId;
   /** Localised planet names, drawn as labels. */
   planetNames?: Record<Planet, string>;
   /** Formats the date of a monthly mark on the selected planet's path (localised by the caller). */
@@ -122,11 +155,23 @@ export interface FlightOptions {
 const LIGHT_REFRESH_MS = 3_600_000;
 
 const DEG = Math.PI / 180;
-const OBLIQUITY = 23.4392911 * DEG;
+/** J2000 obliquity (IAU 2006): the ecliptic circle is drawn in J2000 directions, then precessed. */
+const OBLIQUITY_J2000 = meanObliquity(new Date(Date.UTC(2000, 0, 1, 12))) * DEG;
 const DIST_MIN = 1.6;
 const DIST_MAX = 40;
+/** Duration of the recentring and reset tweens, ms. */
+const RECENTRE_MS = 600;
+
+/** Orbit camera of the Earth view, in the current reference frame (see reference-frames.ts). */
+type EarthOrbit = FrameOrbit;
+/** Radius of the dashed ecliptic plane ring drawn in the ecliptic frame, Earth radii. */
+const ECLIPTIC_RING = 1.7;
+/** Radius of the arc marking the axis tilt between the two poles, Earth radii. */
+const TILT_ARC = 1.32;
+const TILT_ARC_SEGMENTS = 24;
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 
 /** Earth-fixed unit vector for a geographic position. */
 function geo(lonDeg: number, latDeg: number, r = 1): THREE.Vector3 {
@@ -154,7 +199,41 @@ export class SpaceView {
   private readonly observerMarker = new THREE.Group();
   /** Earth's axis (to 1.5 radii): hidden near the ground, where it would stand in the sky. */
   private readonly axis: THREE.LineSegments;
-  private orbit = { lon: 0, lat: 30, dist: 4 }; // camera, in world (equatorial) coordinates
+  /** Camera, in the reference frame's coordinates, round the target point (pan). */
+  private orbit: EarthOrbit = { lon: 0, lat: 30, dist: 4, tx: 0, ty: 0, tz: 0 };
+  // --- Reference frames (#122), see reference-frames.ts
+  private frameId: ReferenceFrameId = DEFAULT_REFERENCE_FRAME;
+  /** Rotation frame → world at the current date, and the frame's target (world). */
+  private readonly frameQuat = new THREE.Quaternion();
+  private readonly frameOrigin = new THREE.Vector3();
+  /** The frame's pole in the world: the top of the screen. */
+  private readonly frameUp = new THREE.Vector3(0, 0, 1);
+  /** Slerp from the camera's pose when the frame changed (frozen) to the new frame's pose. */
+  private frameTween: {
+    from: ReferenceFrameId;
+    start: number;
+    duration: number;
+    /** Eased progress, updated each frame. */
+    k: number;
+    readonly quat: THREE.Quaternion;
+    readonly target: THREE.Vector3;
+  } | null = null;
+  private readonly frameTweenState = {
+    quat: new THREE.Quaternion(),
+    target: new THREE.Vector3(),
+  };
+  /** Ecliptic plane ring, ecliptic pole line and tilt arc, in ecliptic frame axes. */
+  private readonly eclipticGuide = new THREE.Group();
+  private readonly guideMaterials: THREE.LineDashedMaterial[] = [];
+  private readonly tiltArc: THREE.Line;
+  private tiltEpsilon = NaN;
+  /** Mean obliquity of date, degrees, and its label (formatted once per value). */
+  private obliquity = 0;
+  private obliquityLabel = { value: NaN, text: "" };
+  private readonly poseTarget = new THREE.Vector3();
+  /** Animated move of the orbit (recentre, reset); null when none. */
+  private camTween: { from: EarthOrbit; to: EarthOrbit; start: number } | null = null;
+  private lastFrame = 0;
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
   private bodies: { sun: Vec3; moon: Vec3 } | null = null;
@@ -184,9 +263,7 @@ export class SpaceView {
   private hudExclusions: readonly Rect[] = [];
   /** Moon and planet positions are within the validated range (see ephemeris-range.ts). */
   private ephemerisOk = true;
-  private readonly pointers = new Map<number, { x: number; y: number }>();
-  private velocity = { lon: 0, lat: 0 };
-  private moved = 0;
+  private readonly input: GestureInput;
   private readonly resizeObserver: ResizeObserver;
   // --- realistic style (#55), built on first use
   private style: SpaceStyle = "engraving";
@@ -222,9 +299,13 @@ export class SpaceView {
     moon: new THREE.Vector3(),
     here: new THREE.Vector3(),
     marker: new THREE.Vector3(),
+    tilt: new THREE.Vector3(),
+    eclPole: new THREE.Vector3(),
+    q: new THREE.Quaternion(),
     pole: new THREE.Vector3(0, 0, 1),
     point: [0, 0] as [number, number],
     size: new THREE.Vector2(),
+    shift: { x: 0, y: 0 },
   };
   // --- Sky <-> Earth flight (#37)
   private readonly flightPath = new FlightPath();
@@ -330,7 +411,7 @@ export class SpaceView {
       return pts;
     };
     const equator = this.skyLines(circle(0), 0.35);
-    const ecliptic = this.skyLines(circle(OBLIQUITY), 0.5);
+    const ecliptic = this.skyLines(circle(OBLIQUITY_J2000), 0.5);
     this.eclipticLine = ecliptic;
     // RA/Dec grid of date: already in the world frame, so no precession (uPrec = identity).
     const equatorialGrid = this.skyLines(
@@ -433,9 +514,25 @@ export class SpaceView {
     // Earth's axis, through the poles towards the celestial pole (fixed in the world frame)
     this.axis = this.surfaceLines([0, 0, -1.5, 0, 0, 1.5], 0.6);
 
+    // Ecliptic frame guide (#122): dashed ecliptic plane round the Earth, dashed ecliptic pole
+    // line, and the arc from it to the Earth's axis (the obliquity). Ecliptic frame axes.
+    const ring: number[] = [];
+    for (let i = 0; i <= 128; i++) {
+      const t = (i / 128) * 2 * Math.PI;
+      ring.push(ECLIPTIC_RING * Math.cos(t), ECLIPTIC_RING * Math.sin(t), 0);
+    }
+    this.tiltArc = this.dashedLine(new Array<number>(3 * (TILT_ARC_SEGMENTS + 1)).fill(0), 0.8);
+    this.eclipticGuide.add(
+      this.dashedLine(ring, 0.7),
+      this.dashedLine([0, 0, -1.5, 0, 0, 1.5], 0.55),
+      this.tiltArc,
+    );
+    this.eclipticGuide.visible = false;
+
     this.scene.add(
       this.earth,
       this.axis,
+      this.eclipticGuide,
       starPoints,
       constellationLines,
       equatorialGrid,
@@ -456,11 +553,12 @@ export class SpaceView {
         this.update();
       },
     });
-    this.bindInput(canvas);
+    this.input = new GestureInput(canvas, this.gestures(), this.listeners.signal);
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
     this.setStyle(options.style ?? "engraving");
+    if (options.frame && isAvailableFrame(options.frame)) this.frameId = options.frame;
   }
 
   // --- public API
@@ -604,23 +702,75 @@ export class SpaceView {
   }
 
   /**
-   * Places the camera: longitude/latitude in the world (equator of date) frame, in degrees, and
-   * distance in Earth radii. The camera always looks at the Earth's centre.
+   * Places the camera: longitude/latitude in the current reference frame (star-fixed: equator of
+   * date), in degrees, and distance in Earth radii. The camera looks at the frame's target.
    */
   setOrbit(orbit: Partial<{ lon: number; lat: number; dist: number }>): void {
     Object.assign(this.orbit, orbit);
     this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat));
     this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.orbit.dist));
-    this.velocity = { lon: 0, lat: 0 };
+    this.clampPan();
+    this.input.stopInertia();
+    this.camTween = null;
     this.dirty = true;
+  }
+
+  /**
+   * Changes the reference frame (#122). The camera keeps its place and target; its orientation
+   * slerps to the new frame's (its pole up) in `duration` ms (FRAME_TRANSITION_MS by default; 0
+   * jumps, for reduced motion). Frames not available yet are ignored.
+   */
+  setFrame(
+    id: ReferenceFrameId,
+    { duration = FRAME_TRANSITION_MS }: { duration?: number } = {},
+  ): void {
+    if (id === this.frameId || !isAvailableFrame(id)) return;
+    if (this.stale) this.refresh();
+    this.input.stopInertia();
+    this.camTween = null;
+    // The camera now (mid-transition included), frozen as the slerp's start.
+    this.placeCamera();
+    const state = this.frameTweenState;
+    state.quat.copy(this.camera.quaternion);
+    state.target.copy(this.poseTarget);
+    const from = this.frameId;
+    this.frameId = id;
+    this.updateFrame();
+    // Same camera position and target, expressed in the new frame.
+    orbitInFrame(
+      this.camera.position,
+      this.poseTarget,
+      this.frameQuat,
+      this.frameOrigin,
+      this.orbit,
+    );
+    this.frameTween =
+      duration > 0 && !this.flight
+        ? { from, start: performance.now(), duration, k: 0, ...state }
+        : null;
+    this.dirty = true;
+  }
+
+  getFrame(): ReferenceFrameId {
+    return this.frameId;
   }
 
   /** Points the camera at the observer's place, at the given distance (Earth radii). */
   focusObserver(dist = 4): void {
-    const gst = greenwichMeanSiderealTime(this.date);
-    this.orbit = { lon: this.observer.longitude + gst, lat: this.observer.latitude, dist };
-    this.velocity = { lon: 0, lat: 0 };
+    this.input.stopInertia();
+    this.camTween = null;
+    this.orbit = this.observerOrbit(dist);
     this.dirty = true;
+  }
+
+  /**
+   * Back to the view the Earth view opens on (above the observer, at the orbit radius, no pan),
+   * within the current reference frame, animated unless `instant` (#107: the recentre button
+   * and a double tap beside the globe).
+   */
+  resetView(instant = false): void {
+    if (this.flight) return;
+    this.moveTo(this.observerOrbit(ORBIT_RADIUS), instant);
   }
 
   /**
@@ -630,7 +780,7 @@ export class SpaceView {
    */
   flyFromSky(view: ViewState, options: FlightOptions = {}): void {
     this.prepareFlight();
-    this.flightPath.setup(this.horizon, view);
+    this.flightPath.setup(this.horizon, view, null, ORBIT_RADIUS, this.frameUp);
     this.beginFlight("out", options);
   }
 
@@ -641,6 +791,7 @@ export class SpaceView {
    */
   flyToSky(options: FlightOptions = {}): ViewState {
     this.prepareFlight();
+    this.frameTween = null; // from the frame's own pose, whose up the flight starts with
     this.placeCamera();
     const view: ViewState = {
       azimuth: headingOf(this.camera.quaternion, this.horizon),
@@ -648,8 +799,10 @@ export class SpaceView {
       fov: LANDING_VIEW.fov,
       roll: 0,
     };
+    // From where the camera is (a pan moves it off the orbit's sphere).
+    const dist = this.camera.position.length();
     const dir = this.camera.position.clone().normalize();
-    this.flightPath.setup(this.horizon, view, dir, this.orbit.dist);
+    this.flightPath.setup(this.horizon, view, dir, dist, this.frameUp);
     this.beginFlight("in", options);
     return view;
   }
@@ -712,6 +865,173 @@ export class SpaceView {
   }
 
   // --- internals
+
+  /** Above the observer's place, in the current frame, no pan. */
+  private observerOrbit(dist: number): EarthOrbit {
+    if (this.stale) this.refresh();
+    const gst = greenwichMeanSiderealTime(this.date);
+    const { longitude, latitude } = this.observer;
+    const [lon, lat] = [(longitude + gst) * DEG, latitude * DEG];
+    const dir = this.frameTmp.a.set(
+      Math.cos(lat) * Math.cos(lon),
+      Math.cos(lat) * Math.sin(lon),
+      Math.sin(lat),
+    );
+    const at = directionInFrame(dir, this.frameQuat, { lon: 0, lat: 0 });
+    return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
+  }
+
+  /** Frame rotation, target and pole at the current date. */
+  private updateFrame(): void {
+    const frame = frameOf(this.frameId);
+    frame.orientation(this.date, this.frameQuat);
+    frame.target(this.date, this.frameOrigin);
+    this.frameUp.set(0, 0, 1).applyQuaternion(this.frameQuat);
+  }
+
+  /** Eased progress of the frame slerp at time `now`; ends it at 1. */
+  private stepFrameTween(now: number): void {
+    const tw = this.frameTween;
+    if (!tw) return;
+    tw.k = flightEase((now - tw.start) / tw.duration);
+    if (tw.k >= 1) this.frameTween = null;
+    this.dirty = true;
+  }
+
+  /** Weight of the ecliptic frame's guide: 1 in that frame, faded in or out by a transition. */
+  private eclipticWeight(): number {
+    const tw = this.frameTween;
+    const on = this.frameId === "ecliptic" ? 1 : 0;
+    if (!tw) return on;
+    const was = tw.from === "ecliptic" ? 1 : 0;
+    return was + (on - was) * tw.k;
+  }
+
+  private moveTo(to: EarthOrbit, instant: boolean): void {
+    this.input.stopInertia();
+    const from = { ...this.orbit };
+    to.lon = from.lon + wrapDegrees(to.lon - from.lon); // shortest way round
+    if (instant) {
+      this.orbit = to;
+      this.camTween = null;
+    } else this.camTween = { from, to, start: performance.now() };
+    this.dirty = true;
+  }
+
+  /** Orbit at time `now` of the recentring tween. */
+  private stepCamTween(now: number): void {
+    const tw = this.camTween;
+    if (!tw) return;
+    const k = easeOut((now - tw.start) / RECENTRE_MS);
+    const { from: a, to: b } = tw;
+    const o = this.orbit;
+    o.lon = a.lon + (b.lon - a.lon) * k;
+    o.lat = a.lat + (b.lat - a.lat) * k;
+    o.dist = a.dist * (b.dist / a.dist) ** k;
+    o.tx = a.tx + (b.tx - a.tx) * k;
+    o.ty = a.ty + (b.ty - a.ty) * k;
+    o.tz = a.tz + (b.tz - a.tz) * k;
+    if (k >= 1) this.camTween = null;
+    this.dirty = true;
+  }
+
+  /** Keeps the pan within reach: the Earth's centre stays well inside the screen. */
+  private clampPan(): void {
+    const o = this.orbit;
+    const max = earthPanLimit(o.dist, ORBIT_FOV, this.camera.aspect);
+    const n = Math.hypot(o.tx, o.ty, o.tz);
+    if (n <= max) return;
+    const k = max / n;
+    o.tx *= k;
+    o.ty *= k;
+    o.tz *= k;
+  }
+
+  /** Moves the target along the camera's right and up axes (world units). */
+  private shiftTarget(right: number, up: number): void {
+    const e = this.camera.matrixWorld.elements; // columns: right, up, back
+    // World shift, then into the frame's axes (the pan follows the frame, e.g. the Earth).
+    const d = this.frameTmp.a.set(
+      right * e[0]! + up * e[4]!,
+      right * e[1]! + up * e[5]!,
+      right * e[2]! + up * e[6]!,
+    );
+    d.applyQuaternion(this.frameTmp.q.copy(this.frameQuat).invert());
+    const o = this.orbit;
+    o.tx += d.x;
+    o.ty += d.y;
+    o.tz += d.z;
+    this.clampPan();
+    this.dirty = true;
+  }
+
+  /**
+   * Gesture intents (CSS px) mapped onto the orbit, in the current reference frame. Its pole
+   * stays up (no twist): celestial north in the star-fixed and Earth-fixed frames, the ecliptic
+   * pole in the ecliptic frame; the flights to and from the sky map land on that same up.
+   */
+  private gestures() {
+    const canvas = this.options.canvas;
+    const focal = () => 1 / Math.tan((ORBIT_FOV * DEG) / 2);
+    return {
+      enabled: () => !this.flight,
+      grab: () => {
+        this.camTween = null;
+      },
+      orbit: (dx: number, dy: number) => {
+        // Dragging turns the globe under the finger (the camera orbits the other way).
+        const k = (60 / Math.max(1, canvas.clientHeight)) * (this.orbit.dist / 4);
+        this.orbit.lon -= dx * k;
+        this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + dy * k));
+        this.dirty = true;
+      },
+      pan: (dx: number, dy: number) => {
+        const k = panScale(this.orbit.dist, focal(), canvas.clientHeight);
+        this.shiftTarget(-dx * k, dy * k);
+      },
+      zoom: (factor: number, x: number, y: number) => {
+        const d = this.orbit.dist;
+        this.zoom(factor);
+        if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
+        // Towards the point between the fingers (or under the cursor).
+        const { clientWidth: w, clientHeight: h } = canvas;
+        const shift = zoomAnchorShift(
+          (2 * x) / Math.max(1, w) - 1,
+          1 - (2 * y) / Math.max(1, h),
+          this.camera.aspect,
+          d,
+          focal(),
+          this.orbit.dist / d,
+          this.frameTmp.shift,
+        );
+        this.shiftTarget(shift.x, shift.y);
+      },
+      tap: (x: number, y: number) => this.options.onSelect?.(this.pick(x, y)),
+      doubleTap: (x: number, y: number) => this.centreAt(x, y),
+      changed: () => (this.dirty = true),
+    };
+  }
+
+  /** Double tap: the place of the globe under (x, y) turns to face the camera; beside it, reset. */
+  private centreAt(x: number, y: number): void {
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const { a: dir } = this.frameTmp;
+    const o = this.camera.position;
+    dir
+      .set((2 * x) / Math.max(1, w) - 1, 1 - (2 * y) / Math.max(1, h), 0.5)
+      .unproject(this.camera)
+      .sub(o)
+      .normalize();
+    const t = raySphere(o.x, o.y, o.z, dir.x, dir.y, dir.z);
+    if (t < 0) {
+      this.resetView();
+      return;
+    }
+    dir.multiplyScalar(t).add(o); // the point of the globe, on the unit sphere
+    const { lon, lat } = directionInFrame(dir, this.frameQuat, { lon: 0, lat: 0 });
+    const clamped = Math.max(-89, Math.min(89, lat));
+    this.moveTo({ lon, lat: clamped, dist: this.orbit.dist, tx: 0, ty: 0, tz: 0 }, false);
+  }
 
   private buildRealistic(): void {
     const u = this.uniforms;
@@ -819,8 +1139,9 @@ export class SpaceView {
 
   private beginFlight(direction: "out" | "in", options: FlightOptions): void {
     this.cancelFlight();
-    this.pointers.clear();
-    this.velocity = { lon: 0, lat: 0 };
+    this.input.cancel();
+    this.camTween = null;
+    this.frameTween = null;
     this.overZoom.reset();
     this.flight = {
       direction,
@@ -843,29 +1164,29 @@ export class SpaceView {
     this.flight = null;
     if (f.direction === "out") {
       // Hand over to the orbit camera exactly where the flight ends.
-      const gst = greenwichMeanSiderealTime(this.date);
-      this.orbit = {
-        lon: this.observer.longitude + gst,
-        lat: this.observer.latitude,
-        dist: ORBIT_RADIUS,
-      };
+      this.orbit = this.observerOrbit(ORBIT_RADIUS);
     }
-    this.velocity = { lon: 0, lat: 0 };
     this.dirty = true;
     f.options.onDone?.();
   }
 
-  /** Orbit camera: position from (lon, lat, dist), looking at the Earth's centre, north up. */
+  /**
+   * Orbit camera: position from (lon, lat, dist) round the target, looking at it, the frame's
+   * pole up; during a frame change, slerped from the pose the change started from.
+   */
   private placeCamera(): void {
-    const { lon, lat, dist } = this.orbit;
-    const [l, b] = [lon * DEG, lat * DEG];
-    this.camera.position.set(
-      dist * Math.cos(b) * Math.cos(l),
-      dist * Math.cos(b) * Math.sin(l),
-      dist * Math.sin(b),
-    );
-    this.camera.lookAt(0, 0, 0);
+    const { position, quaternion } = this.camera;
+    const target = this.poseTarget;
+    orbitPose(this.frameQuat, this.frameOrigin, this.orbit, position, quaternion, target);
+    const tw = this.frameTween;
+    if (tw) {
+      quaternion.slerpQuaternions(tw.quat, quaternion, tw.k);
+      target.lerpVectors(tw.target, target, tw.k);
+      // Back from the target along the slerped view axis, at the orbit's distance.
+      position.set(0, 0, this.orbit.dist).applyQuaternion(quaternion).add(target);
+    }
     this.setFov(ORBIT_FOV);
+    this.camera.updateMatrixWorld();
   }
 
   private setFov(fov: number): void {
@@ -896,6 +1217,40 @@ export class SpaceView {
     const m = this.material(pm ? constellationLineVert : skyLineVert, skyLineFrag, false);
     m.uniforms = { ...this.uniforms, uOpacity: { value: opacity } };
     return new THREE.LineSegments(g, m);
+  }
+
+  /** Dashed ink line (a strip) of the ecliptic frame's guide; base opacity in userData. */
+  private dashedLine(points: number[], opacity: number): THREE.Line {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+    const m = new THREE.LineDashedMaterial({
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      dashSize: 0.06,
+      gapSize: 0.05,
+    });
+    m.userData.ink = true; // recoloured by setTheme
+    m.userData.opacity = opacity;
+    this.guideMaterials.push(m);
+    const line = new THREE.Line(g, m);
+    line.computeLineDistances();
+    return line;
+  }
+
+  /** Arc from the ecliptic pole to the Earth's axis, at the obliquity of date (ecliptic axes). */
+  private updateTiltArc(): void {
+    const eps = this.obliquity * DEG;
+    if (Math.abs(eps - this.tiltEpsilon) < 1e-7) return;
+    this.tiltEpsilon = eps;
+    const pos = this.tiltArc.geometry.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i <= TILT_ARC_SEGMENTS; i++) {
+      // The celestial pole in ecliptic axes is (0, sin ε, cos ε).
+      const a = (eps * i) / TILT_ARC_SEGMENTS;
+      pos.setXYZ(i, 0, TILT_ARC * Math.sin(a), TILT_ARC * Math.cos(a));
+    }
+    pos.needsUpdate = true;
+    this.tiltArc.computeLineDistances();
   }
 
   private surfaceLines(points: number[], opacity: number): THREE.LineSegments {
@@ -966,6 +1321,10 @@ export class SpaceView {
     this.ephemerisOk = ephemerisReliable(this.date);
     const gst = greenwichMeanSiderealTime(this.date) * DEG;
     this.earth.rotation.set(0, 0, gst);
+    this.updateFrame();
+    this.obliquity = meanObliquity(this.date);
+    this.eclipticGuide.quaternion.setFromAxisAngle(X_AXIS, this.obliquity * DEG);
+    this.updateTiltArc();
     const prec = this.precession.set(...precessionMatrix(this.date));
     this.uniforms.uPrec.value.copy(prec);
     this.uniforms.uYears.value = yearsSinceHipparcos(this.date);
@@ -1023,15 +1382,14 @@ export class SpaceView {
     if (!this.running) return;
     this.raf = requestAnimationFrame(this.loop);
     if (this.contextLost) return;
-    if (
-      !this.pointers.size &&
-      (Math.abs(this.velocity.lon) > 0.01 || Math.abs(this.velocity.lat) > 0.01)
-    ) {
-      this.orbit.lon += this.velocity.lon;
-      this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
-      this.velocity.lon *= 0.9;
-      this.velocity.lat *= 0.9;
-      this.dirty = true;
+    const now = performance.now();
+    const dt = now - this.lastFrame;
+    this.lastFrame = now;
+    // Inertia of the orbit (calls the orbit gesture), then the recentring tween.
+    if (!this.flight) {
+      this.input.step(dt);
+      this.stepCamTween(now);
+      this.stepFrameTween(now);
     }
     if (this.stale) this.refresh();
     if (this.flight) {
@@ -1067,6 +1425,9 @@ export class SpaceView {
     // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar.
     this.observerMarker.visible = dist > 1.05;
     this.axis.visible = dist >= DIST_MIN;
+    const guide = this.eclipticWeight();
+    this.eclipticGuide.visible = guide > 0 && dist >= DIST_MIN;
+    for (const m of this.guideMaterials) m.opacity = m.userData.opacity * guide;
     if (this.style === "realistic")
       this.real?.setCameraEarth(this.camera.position, this.earth.rotation.z);
     if (this.bodies) {
@@ -1188,6 +1549,24 @@ export class SpaceView {
     }
     font("700 11px", "0.12em");
     label(labels.pole, pole, true);
+    // Ecliptic frame (#122): its pole, and the axis tilt beside the arc.
+    if (this.eclipticGuide.visible && this.eclipticWeight() >= 0.5) {
+      const { eclPole } = this.frameTmp;
+      eclPole.set(0, 0, 1).applyQuaternion(this.eclipticGuide.quaternion);
+      if (labels.eclipticPole) label(labels.eclipticPole, eclPole, true);
+      const format = this.options.formatObliquity;
+      if (format) {
+        // Middle of the arc, ecliptic axes → world.
+        const half = (this.obliquity * DEG) / 2;
+        const mid = this.frameTmp.tilt
+          .set(0, TILT_ARC * Math.sin(half), TILT_ARC * Math.cos(half))
+          .applyQuaternion(this.eclipticGuide.quaternion);
+        // Shown to 0.01°: formatted again only when it moves by more than 0.0001°.
+        if (!(Math.abs(this.obliquityLabel.value - this.obliquity) < 1e-4))
+          this.obliquityLabel = { value: this.obliquity, text: format(this.obliquity) };
+        label(this.obliquityLabel.text, mid, false, 8);
+      }
+    }
     // Dated monthly marks of the selected planet's path (lowest priority).
     if (this.pathPoints.visible && this.pathMarks.length) {
       font("400 9px", "0.06em");
@@ -1293,69 +1672,6 @@ export class SpaceView {
       });
     }
     return best;
-  }
-
-  private bindInput(canvas: HTMLCanvasElement): void {
-    const signal = this.listeners.signal;
-    canvas.style.touchAction = "none";
-    let pinch = 0;
-    const distance = () => {
-      const [a, b] = [...this.pointers.values()];
-      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
-    };
-    canvas.addEventListener(
-      "pointerdown",
-      (e) => {
-        if (this.flight) return; // the flight owns the camera
-        canvas.setPointerCapture(e.pointerId);
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.velocity = { lon: 0, lat: 0 };
-        this.moved = 0;
-        if (this.pointers.size === 2) pinch = distance();
-      },
-      { signal },
-    );
-    canvas.addEventListener(
-      "pointermove",
-      (e) => {
-        const prev = this.pointers.get(e.pointerId);
-        if (!prev) return;
-        const [dx, dy] = [e.clientX - prev.x, e.clientY - prev.y];
-        this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        this.moved += Math.abs(dx) + Math.abs(dy);
-        if (this.pointers.size === 1) {
-          // Dragging turns the globe under the finger (the camera orbits the other way).
-          const k = (60 / canvas.clientHeight) * (this.orbit.dist / 4);
-          this.velocity = { lon: -dx * k, lat: dy * k };
-          this.orbit.lon += this.velocity.lon;
-          this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + this.velocity.lat));
-        } else if (this.pointers.size === 2) {
-          const d = distance();
-          if (pinch > 0) this.zoom(pinch / d);
-          pinch = d;
-        }
-        this.dirty = true;
-      },
-      { signal },
-    );
-    const end = (e: PointerEvent) => {
-      if (!this.pointers.delete(e.pointerId)) return;
-      if (this.pointers.size === 0 && this.moved < 6 && e.type === "pointerup") {
-        const rect = canvas.getBoundingClientRect();
-        this.options.onSelect?.(this.pick(e.clientX - rect.left, e.clientY - rect.top));
-      }
-      pinch = 0;
-    };
-    canvas.addEventListener("pointerup", end, { signal });
-    canvas.addEventListener("pointercancel", end, { signal });
-    canvas.addEventListener(
-      "wheel",
-      (e) => {
-        e.preventDefault();
-        if (!this.flight) this.zoom(Math.exp(e.deltaY * 0.0012));
-      },
-      { passive: false, signal },
-    );
   }
 
   private zoom(factor: number): void {

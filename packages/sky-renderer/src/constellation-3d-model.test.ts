@@ -12,16 +12,23 @@ import {
   PARALLAX_LY,
   PHASES,
   buildConstellation3D,
+  dragOrbit,
   equatorialToCartesian,
   fitOrbitDistance,
   orbitCamera,
+  orbitPose,
+  panOrbit,
   planTransition,
   poseAt,
+  rollOrbitAbout,
   projectPose,
   scaleRings,
   slerpRotation,
   stellarDistance,
+  zoomOrbit,
+  type OrbitState,
 } from "./constellation-3d-model";
+import { panScale } from "./gestures";
 import type { CatalogStar } from "./sky-map";
 import { projectStereo, stereoScale, viewMatrix, type ViewState } from "./view";
 
@@ -383,5 +390,152 @@ describe("transition 2D → 3D", () => {
       expect(mid[k]).toBeCloseTo(v, 9),
     );
     slerpRotation(a, b, 0).forEach((v, k) => expect(v).toBeCloseTo(a[k]!, 9));
+  });
+});
+
+describe("gestures on the 3D orbit (#107)", () => {
+  const date = new Date(Date.UTC(2026, 0, 15, 21));
+  const frame = j2000ToHorizontalMatrix(date, { latitude: 48.8566, longitude: 2.3522 });
+  const model = buildConstellation3D(ORION, LINES, "Ori", { frame });
+  const view: ViewState = { azimuth: 170, altitude: 30, fov: 90, roll: 0 };
+  const [w, h] = [360, 780];
+  const aspect = w / h;
+  const plan = planTransition(model, view, aspect);
+  const points = [[0, 0, 0] as Vec3, ...model.stars.map((s) => s.position)];
+  const fitted = fitOrbitDistance(plan, points, 38, 48, aspect);
+  const start = (): OrbitState => ({ yaw: 38, pitch: 48, distance: fitted });
+  /** CSS px position of a point. */
+  const px = (orbit: OrbitState, p: Vec3) => {
+    const q = projectPose(orbitPose(plan, orbit), p, aspect)!;
+    return { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h };
+  };
+  const pivotPlus = (orbit: OrbitState): Vec3 => {
+    const t = orbit.target ?? [0, 0, 0];
+    return [0, 1, 2].map((k) => plan.frame.pivot[k]! + t[k]!) as Vec3;
+  };
+
+  it("pans the target point under the fingers", () => {
+    const orbit = start();
+    const p = pivotPlus(orbit);
+    const before = px(orbit, p);
+    const camRot = orbitPose(plan, orbit).camRot;
+    panOrbit(orbit, camRot, 40, -25, panScale(orbit.distance, plan.focal, h), 1e9);
+    // The point that was at the target moves with the fingers.
+    const after = px(orbit, p);
+    expect(after.x - before.x).toBeCloseTo(40, 6);
+    expect(after.y - before.y).toBeCloseTo(-25, 6);
+    // The orbit now turns round the new target, which is at the image centre.
+    const centre = px(orbit, pivotPlus(orbit));
+    expect(centre.x).toBeCloseTo(before.x, 6);
+    expect(centre.y).toBeCloseTo(before.y, 6);
+  });
+
+  it("bounds the pan", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    panOrbit(orbit, camRot, 1e6, 0, 1, 100);
+    expect(Math.hypot(...orbit.target!)).toBeCloseTo(100, 9);
+  });
+
+  it("zooms towards the point between the fingers", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    // A point of the target plane, off-centre on screen.
+    const right: Vec3 = [camRot[0], camRot[1], camRot[2]];
+    const up: Vec3 = [camRot[3], camRot[4], camRot[5]];
+    const c = pivotPlus(orbit);
+    const p = [0, 1, 2].map((k) => c[k]! + 30 * right[k]! - 20 * up[k]!) as Vec3;
+    const anchor = px(orbit, p);
+    const ndcX = (2 * anchor.x) / w - 1;
+    const ndcY = 1 - (2 * anchor.y) / h - plan.shiftY;
+    zoomOrbit(orbit, camRot, 0.5, ndcX, ndcY, aspect, plan.focal, 0, Infinity, 1e9);
+    expect(orbit.distance).toBeCloseTo(fitted * 0.5, 9);
+    const after = px(orbit, p);
+    expect(after.x).toBeCloseTo(anchor.x, 6);
+    expect(after.y).toBeCloseTo(anchor.y, 6);
+  });
+
+  it("clamps the zoom, and does not shift the target when clamped", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    zoomOrbit(orbit, camRot, 0.01, 0.5, 0.5, aspect, plan.focal, fitted, fitted * 4, 1e9);
+    expect(orbit.distance).toBe(fitted);
+    expect(Math.hypot(...orbit.target!)).toBeCloseTo(0, 12);
+  });
+
+  it("rolls the image round the line of sight (positive: counter-clockwise)", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    const c = pivotPlus(orbit);
+    const p = [0, 1, 2].map((k) => c[k]! + 30 * camRot[k]!) as Vec3; // on the right
+    const centre = px(orbit, c);
+    const a = px(orbit, p);
+    expect(a.x).toBeGreaterThan(centre.x);
+    orbit.roll = 90;
+    const b = px(orbit, p);
+    // Now straight above the centre (y down: smaller y).
+    expect(b.x).toBeCloseTo(centre.x, 6);
+    expect(b.y).toBeLessThan(centre.y);
+    expect(centre.y - b.y).toBeCloseTo(a.x - centre.x, 6);
+  });
+
+  it("twists about the point between the fingers", () => {
+    const orbit = start();
+    const camRot = orbitPose(plan, orbit).camRot;
+    const c = pivotPlus(orbit);
+    // A point of the target plane, under the fingers.
+    const p = [0, 1, 2].map((k) => c[k]! + 25 * camRot[k]! + 15 * camRot[3 + k]!) as Vec3;
+    const fingers = px(orbit, p);
+    const centre = px(orbit, c);
+    const rad = 0.6; // clockwise
+    rollOrbitAbout(
+      orbit,
+      camRot,
+      rad,
+      fingers.x - centre.x,
+      fingers.y - centre.y,
+      panScale(orbit.distance, plan.focal, h),
+      1e9,
+    );
+    expect(orbit.roll).toBeCloseTo(-0.6 / (Math.PI / 180), 9);
+    const after = px(orbit, p);
+    expect(after.x).toBeCloseTo(fingers.x, 6);
+    expect(after.y).toBeCloseTo(fingers.y, 6);
+    // And the image turned clockwise: a point right of the fingers is now below-right of them.
+    const q = [0, 1, 2].map((k) => p[k]! + 10 * camRot[k]!) as Vec3;
+    const qa = px(orbit, q);
+    expect(qa.y).toBeGreaterThan(after.y);
+    expect(qa.x).toBeGreaterThan(after.x);
+  });
+
+  it("orbits along the drag's screen direction whatever the roll", () => {
+    for (const roll of [0, 35, 90, -140]) {
+      const orbit = { ...start(), roll };
+      const camRot = orbitPose(plan, orbit).camRot;
+      // A point just in front of the target, on the line of sight: a horizontal drag must move
+      // it horizontally on screen.
+      const c = pivotPlus(orbit);
+      const p = [0, 1, 2].map((k) => c[k]! - 0.3 * orbit.distance * camRot[6 + k]!) as Vec3;
+      const before = px(orbit, p);
+      dragOrbit(orbit, 6, 0, 0.5, 85);
+      const after = px(orbit, p);
+      // Yaw turns round the frame's up, foreshortened by cos(pitch): close to, not exactly,
+      // the screen's horizontal once rolled. Without the roll correction it would be off by
+      // the roll itself.
+      const off = Math.atan2(Math.abs(after.y - before.y), after.x - before.x) / (Math.PI / 180);
+      expect(off).toBeLessThan(12);
+    }
+  });
+
+  it("unwinds pan and roll during the transition back (no jump at t = 1)", () => {
+    const target: OrbitState = { ...start(), roll: 30, target: [5, -3, 2] };
+    const end = poseAt(plan, 1, target);
+    const orbit = orbitPose(plan, target);
+    end.camPos.forEach((v, k) => expect(v).toBeCloseTo(orbit.camPos[k]!, 9));
+    end.camRot.forEach((v, k) => expect(v).toBeCloseTo(orbit.camRot[k]!, 9));
+    // From the Earth (t before the turn) the figure is centred, zenith up: as without gestures.
+    const plain = poseAt(plan, PHASES.morph, start());
+    const moved = poseAt(plan, PHASES.morph, target);
+    moved.camRot.forEach((v, k) => expect(v).toBeCloseTo(plain.camRot[k]!, 9));
   });
 });

@@ -17,6 +17,7 @@ export type IconName =
   | "azGrid"
   | "ecliptic"
   | "seeThrough"
+  | "figures"
   | "fullscreen"
   | "fullscreenExit"
   | "realistic"
@@ -28,4 +29,6 @@ export type IconName =
   | "star"
   | "sun"
   | "moon"
-  | "deepsky";
+  | "deepsky"
+  | "recentre"
+  | "frame";
