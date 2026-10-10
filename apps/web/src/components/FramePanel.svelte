@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Reference frame selector of the Earth view (#122): five entries, the frames of later
-  // sub-tickets shown disabled ("bientôt"). Opens beside the dials column. The body-centred
-  // frame (#123) has a sub-list: the Moon and the planets, one tap travels there.
+  // Point of view selector of the Earth view (#122, #128): five entries, each with an engraved
+  // pictogram and a one-line hint. Opens beside the dials column. « Visiter un astre » (#123)
+  // has a sub-list: the Moon and the planets, one tap travels there.
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
   import { REFERENCE_FRAMES, type BodyTarget, type ReferenceFrameId } from "@asteria/sky-renderer";
@@ -31,7 +31,6 @@
   } = $props();
 
   let panel: HTMLElement;
-  const pad = (i: number) => String(i + 1).padStart(2, "0");
 
   onMount(() => {
     panel.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
@@ -66,7 +65,7 @@
 >
   <h2 id="frame-title">{$_("frame.title")}</h2>
   <div role="radiogroup" aria-labelledby="frame-title">
-    {#each REFERENCE_FRAMES as entry, i (entry.id)}
+    {#each REFERENCE_FRAMES as entry (entry.id)}
       <button
         class="choice"
         role="radio"
@@ -74,7 +73,44 @@
         disabled={!entry.available}
         onclick={() => onselect(entry.id)}
       >
-        <span class="num" aria-hidden="true">{pad(i)}</span>
+        <svg class="picto" viewBox="0 0 32 32" aria-hidden="true">
+          {#if entry.id === "stars"}
+            <!-- The Earth lit from the left, its rotation arrow, the Sun's rays -->
+            <circle cx="19" cy="17" r="8" />
+            <path class="fill" d="M19 9 A8 8 0 0 0 19 25 Z" />
+            <path d="M13 6.5 A8 3 0 1 0 25 6.5" />
+            <path d="M25 6.5 l-2.6 -0.6 M25 6.5 l-1.2 2.3" />
+            <path class="dash" d="M2 13 H9 M2 17 H9 M2 21 H9" />
+          {:else if entry.id === "earth"}
+            <!-- Your place on the Earth, the Sun on its daily circle -->
+            <ellipse class="dash" cx="16" cy="17" rx="13" ry="7" />
+            <circle cx="16" cy="17" r="6" />
+            <path d="M16 11 V7.5" />
+            <circle class="fill" cx="16" cy="11" r="1.4" />
+            <circle cx="28" cy="15" r="2.2" />
+          {:else if entry.id === "ecliptic"}
+            <!-- The Sun, the orbit, two Earths with the same tilted axis -->
+            <ellipse cx="16" cy="17" rx="13" ry="6" />
+            <circle class="fill" cx="16" cy="17" r="2.6" />
+            <circle cx="3" cy="17" r="2.2" />
+            <circle cx="29" cy="17" r="2.2" />
+            <path d="M1.4 13 L4.6 21 M27.4 13 L30.6 21" />
+          {:else if entry.id === "heliocentric"}
+            <!-- The Sun and nested orbits, planets on them -->
+            <ellipse cx="16" cy="16" rx="6" ry="3" />
+            <ellipse cx="16" cy="16" rx="10" ry="5" />
+            <ellipse cx="16" cy="16" rx="14.5" ry="7.5" />
+            <circle class="fill" cx="16" cy="16" r="1.8" />
+            <circle class="fill" cx="22" cy="16" r="1.1" />
+            <circle class="fill" cx="9" cy="19.5" r="1.3" />
+            <circle class="fill" cx="27" cy="11" r="1.6" />
+          {:else}
+            <!-- A ringed planet, the Earth far away -->
+            <circle cx="15" cy="17" r="6.5" />
+            <ellipse cx="15" cy="17" rx="12" ry="3.2" transform="rotate(-18 15 17)" />
+            <circle class="fill" cx="28" cy="5" r="1.3" />
+          {/if}
+        </svg>
         <span class="text">
           <span class="label">{$_(`frame.${entry.id}`)}</span>
           <span class="hint">{$_(`frame.${entry.id}.hint`)}</span>
@@ -132,7 +168,7 @@
   }
   .choice {
     display: grid;
-    grid-template-columns: 18px 1fr auto;
+    grid-template-columns: 30px 1fr auto;
     align-items: center;
     gap: 10px;
     width: 100%;
@@ -155,9 +191,21 @@
     cursor: default;
     opacity: 0.5;
   }
-  .num {
-    font-size: 9px;
-    letter-spacing: var(--ast-tracking-meta);
+  /* Engraved pictogram: ink hairlines, a few filled parts. */
+  .picto {
+    width: 30px;
+    height: 30px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.1;
+    stroke-linecap: round;
+  }
+  .picto .fill {
+    fill: currentColor;
+    stroke: none;
+  }
+  .picto .dash {
+    stroke-dasharray: 2 2;
   }
   .text {
     display: flex;

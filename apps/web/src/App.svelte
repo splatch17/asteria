@@ -26,6 +26,8 @@
     deepSkyFieldFor,
     deepSkyRank,
     FLIGHT_MS,
+    SEASONS_EARTH_ENLARGEMENT,
+    SOLAR_SCALE,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
@@ -38,6 +40,7 @@
     unitVector,
     yearsSinceHipparcos,
     type Planet,
+    type SeasonKind,
   } from "@asteria/astro-core";
   import {
     CONSTELLATION_LATIN,
@@ -112,6 +115,8 @@
     offsetParts,
     restartOffset,
     type TimeRange,
+    POINT_OF_VIEW_DEMOS,
+    speedIndexOf,
   } from "./lib/timeline";
 
   const THEMES = {
@@ -233,6 +238,11 @@
   let playFrame = 0;
   /** Playback time not yet applied (whole-day speeds of the one-year range, #74). */
   let playCarry = 0;
+  /**
+   * The playback is a point of view's demonstration (#128): started on entering it, it loops
+   * over the range and pauses at the first gesture or time-control touch.
+   */
+  let demo = $state(false);
   let viewAzimuth = $state(180);
   let viewRoll = $state(0);
   // Declared before loadPlace() runs: read earlier, it was in its temporal dead zone and the
@@ -251,6 +261,10 @@
   );
   const pathMarkFormat = $derived(
     new Intl.DateTimeFormat(lang, { day: "numeric", month: "short" }),
+  );
+  /** Equinox and solstice marks of « Les saisons » (#128): day, month, UTC (as computed). */
+  const seasonFormat = $derived(
+    new Intl.DateTimeFormat(lang, { day: "numeric", month: "short", timeZone: "UTC" }),
   );
   const planetName = (p: Planet) => $_(`planet.${p}`);
   const planetNames = () =>
@@ -302,6 +316,13 @@
   function cycleSpeed() {
     speedIndex = (speedIndex + 1) % RANGES[range].speeds.length;
     playCarry = 0;
+    demo = false; // the user takes over the playback
+  }
+
+  /** The scrubber moved by the user: a demonstration pauses there. */
+  function scrub(value: number) {
+    pauseDemo();
+    setOffset(value);
   }
 
   function togglePlay() {
@@ -316,7 +337,9 @@
       const step = advance(offset, playCarry, dt, range, speedIndex);
       playCarry = step.carry;
       if (step.offset !== offset) setOffset(step.offset);
-      if (step.done) return stopPlaying();
+      // A demonstration loops over the range; a playback stops at its end.
+      if (step.done && demo) setOffset(restartOffset(range));
+      else if (step.done) return stopPlaying();
       playFrame = requestAnimationFrame(tick);
     };
     playFrame = requestAnimationFrame(tick);
@@ -325,6 +348,32 @@
   function stopPlaying() {
     cancelAnimationFrame(playFrame);
     playing = false;
+    demo = false;
+  }
+
+  /**
+   * Plays the demonstration of a point of view of the Earth view (#128): its range and speed,
+   * from the date shown, using the time controls (the scrubber follows). None with reduced
+   * motion: the points of view then show a static state (ghost positions, traces).
+   */
+  function startDemo(id: ReferenceFrameId) {
+    const spec = POINT_OF_VIEW_DEMOS[id];
+    if (!spec || reducedMotion.matches) {
+      if (demo) stopPlaying();
+      return;
+    }
+    stopPlaying();
+    range = spec.range;
+    anchor = date;
+    offset = 0;
+    speedIndex = Math.max(0, speedIndexOf(spec.range, spec.speed));
+    togglePlay();
+    demo = true;
+  }
+
+  /** First gesture on the Earth view, or a time-control touch: the demonstration pauses. */
+  function pauseDemo() {
+    if (demo) stopPlaying();
   }
 
   // --- Sensor pointing (#45, #59), in lib/pointing.svelte.ts
@@ -405,19 +454,24 @@
         sun: $_("body.Sun"),
         moon: $_("body.Moon"),
         pole: $_("space.pole"),
-        eclipticPole: $_("space.eclipticPole"),
+        earth: $_("space.earth"),
+        axis: $_("space.axis"),
+        rotation: $_("space.rotation"),
       },
-      formatObliquity: (deg) =>
-        $_("space.obliquity", { values: { angle: angleFormat.format(deg) } }),
+      formatSeason: (kind: SeasonKind, d: Date) =>
+        $_(`space.season.${kind}`, { values: { date: seasonFormat.format(d) } }),
+      onInteract: pauseDemo,
       frame: spaceFrame,
       body: spaceBody,
       planetNames: planetNames(),
       formatPathMark: (d) => pathMarkFormat.format(d),
       onSelect: (s) => {
         selection = s;
-        // Body-centred frame (#123): a tap on the Moon or a planet travels to it.
+        // Body-centred frame (#123): a tap on the Moon or a planet travels to it; in the solar
+        // system (#128), a tap on a planet visits it.
         const body = targetOf(s);
         if (spaceFrame === "body" && body) spaceBody = body;
+        else if (spaceFrame === "heliocentric" && body) chooseBody(body);
       },
       onEnterSky: () => flyToSky(),
       style: spaceStyle,
@@ -425,6 +479,8 @@
       loadTexture: (name) => getImage(`space/${name}.webp`),
     });
     syncSpace(view);
+    view.setReducedMotion(reducedMotion.matches);
+    reducedMotion.addEventListener("change", () => view.setReducedMotion(reducedMotion.matches));
     space = view;
     updateGraduationExclusions();
     // Shaders compiled and textures uploaded now, not on the flight's first frame.
@@ -493,6 +549,8 @@
             flying = null;
             skyView.style.opacity = "";
             updateGraduationExclusions();
+            // Entering the Earth view shows its point of view at work (#128).
+            if (!instant) startDemo(spaceFrame);
             done();
           },
         },
@@ -506,6 +564,7 @@
    */
   function flyToSky() {
     if (flying || mode !== "space" || !space || !map) return;
+    pauseDemo();
     const view = space;
     flying = "in";
     skyView.style.opacity = "0";
@@ -665,6 +724,7 @@
       if (params.get("panel") === "frame") frameOpen = true;
       const note = params.get("frameNote"); // captures: ?frameNote=1 shows the explanation
       if (note === "1") chooseFrame(spaceFrame);
+      if (params.get("demo") === "1") startDemo(spaceFrame); // captures: the demonstration
     }
     clock = setInterval(() => {
       if (live) goLive();
@@ -824,6 +884,23 @@
       .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
     map?.setHudExclusions(rects);
     space?.setHudExclusions(rects);
+    space?.setSafeArea(spaceSafeArea());
+  }
+  /**
+   * Caption of the points of view (#128), raised above the scrubber's bubble during playback:
+   * kept free below the scene on narrow screens, whether shown or not (beside it on wide ones).
+   */
+  const captionReserve = () => (innerWidth < 700 ? 64 + BUBBLE_RISE : 12);
+  /**
+   * Insets of the Earth view's scene (#128): below the header, left of the dials column, above
+   * the time controls and the caption. The points of view are framed in the rest.
+   */
+  function spaceSafeArea() {
+    const [w, h] = [innerWidth, innerHeight];
+    const top = (header?.getBoundingClientRect().bottom ?? 100) + 10;
+    const right = w - (compass?.getBoundingClientRect().left ?? w - 72) + 6;
+    const bottom = h - (bottomNav?.getBoundingClientRect().top ?? h - 150) + captionReserve();
+    return { top, right, bottom, left: 16 };
   }
   function observeHud() {
     hudObserver = new ResizeObserver(updateGraduationExclusions);
@@ -984,7 +1061,38 @@
     frameNote = $_(`frame.${id}.${level}`, { values: { angle, body: targetName(spaceBody) } });
     clearTimeout(frameNoteTimer);
     frameNoteTimer = setTimeout(() => (frameNote = null), 9000);
+    if (mode === "space") startDemo(id);
   }
+
+  /** Title of the Earth view's header: the point of view shown (#128). */
+  const povTitle = $derived(
+    spaceFrame === "body"
+      ? $_("frame.body.header", { values: { body: targetName(spaceBody) } })
+      : $_(`frame.${spaceFrame}`),
+  );
+
+  /**
+   * Caption of the point of view (#128): « Fixe : … · Bouge : … » for the level, then what is
+   * (not) to scale.
+   */
+  const povCaption = $derived.by(() => {
+    if (mode !== "space") return null;
+    const values = {
+      angle: angleFormat.format(meanObliquity(date)),
+      body: targetName(spaceBody),
+      earth: Math.round(SEASONS_EARTH_ENLARGEMENT / 100) * 100,
+      a: SOLAR_SCALE.a,
+      r0: SOLAR_SCALE.r0,
+    };
+    const title = $_(`frame.${spaceFrame}.caption.${userLevel}`, { values });
+    let detail = "";
+    if (spaceFrame === "ecliptic") detail = $_("frame.ecliptic.scale", { values });
+    else if (spaceFrame === "heliocentric")
+      detail = $_(`frame.heliocentric.scale.${userLevel}`, { values });
+    else if (spaceFrame === "body" && bodyScale)
+      detail = `${bodyScale.distance} · ${bodyScale.light}. ${$_("frame.body.scale")}`;
+    return { title, detail };
+  });
   $effect(() => {
     const sky = serializeLayers(viewLayers.sky);
     const earth = serializeLayers(viewLayers.space);
@@ -1286,7 +1394,10 @@
       !layersOpen &&
       starsHiddenByDaylight(bodies.sun.altitude),
   );
-  const hint = $derived(playing ? $_(HINTS[range]) : daylightHint ? $_("map.daylightHint") : "");
+  // A demonstration of the Earth view (#128) has its own caption: no playback hint over it.
+  const hint = $derived(
+    playing && !demo ? $_(HINTS[range]) : daylightHint && !demo ? $_("map.daylightHint") : "",
+  );
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
     if (selectedNow) return altitudeOf(selectedNow.ra, selectedNow.dec, date, place) < 0;
@@ -1305,6 +1416,7 @@
       },
     }),
   );
+  const placeName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
   const toastTop = $derived(`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16}px)`);
 </script>
 
@@ -1326,9 +1438,11 @@
 <SkyHeader
   bind:element={header}
   bind:height={headerHeight}
-  title={mode === "sky" ? `#02 // ${$_("map.title")}` : `#03 // ${$_("space.title")}`}
+  title={mode === "sky"
+    ? `#02 // ${$_("map.title")}`
+    : `#03 // ${$_("space.title")} · ${placeName}`}
   loading={spaceLoading}
-  place={place.name === "mine" ? $_("place.mine") : $_("place.paris")}
+  place={mode === "space" && !flying ? povTitle : placeName}
   {coords}
   {time}
   {live}
@@ -1443,11 +1557,15 @@
 
 <GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
 
-{#if bodyScale && !flying && !selection}
-  <!-- Body-centred frame (#123): where the body is, and what is (not) to scale. -->
-  <p class="hud scale-note" style:bottom={aboveControls} aria-live="polite">
-    <span class="note-title">{bodyScale.name} · {bodyScale.distance} · {bodyScale.light}</span>
-    {$_("frame.body.scale")}
+{#if povCaption && !flying && !selection}
+  <!-- Points of view (#128): what stays fixed, what moves; what is (not) to scale. -->
+  <p
+    class="hud scale-note"
+    style:bottom={playing ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)` : aboveControls}
+    aria-live="polite"
+  >
+    <span class="note-title">{povCaption.title}</span>
+    {#if povCaption.detail}{povCaption.detail}{/if}
   </p>
 {/if}
 
@@ -1619,7 +1737,7 @@
       {relative}
       target={time}
       speedKey={RANGES[range].speeds[speedIndex]!.key}
-      onscrub={setOffset}
+      onscrub={scrub}
       ontoggle={togglePlay}
       onspeed={cycleSpeed}
     />

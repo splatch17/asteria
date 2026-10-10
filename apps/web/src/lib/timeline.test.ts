@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { advance, clampOffset, dateAt, offsetParts, RANGES, restartOffset } from "./timeline";
+import {
+  POINT_OF_VIEW_DEMOS,
+  RANGES,
+  advance,
+  clampOffset,
+  dateAt,
+  offsetParts,
+  restartOffset,
+  speedIndexOf,
+} from "./timeline";
 
 describe("timeline", () => {
   const anchor = new Date("2026-10-01T22:00:00Z");
@@ -55,7 +64,7 @@ describe("timeline", () => {
     expect(new Set(frames.map((o) => o % DAY))).toEqual(new Set([0]));
     expect(frames.at(-1)).toBe(2 * DAY);
     // 1 s = 10 d: 10 one-day steps per second, at most one day per frame at 60 fps.
-    const fast = advance(0, 0, 0.1, "1y", 2);
+    const fast = advance(0, 0, 0.1, "1y", speedIndexOf("1y", "time.speed.10d"));
     expect(fast.offset).toBe(DAY);
   });
 
@@ -70,5 +79,32 @@ describe("timeline", () => {
     expect(restartOffset("1y")).toBe(-182 * DAY);
     expect(restartOffset("48h")).toBe(-DAY);
     expect(restartOffset("26ky")).toBe(-13_000);
+  });
+});
+
+describe("point of view demonstrations (#128)", () => {
+  const DAY = 86_400_000;
+  const HOUR = 3_600_000;
+  it("plays each at the speed of its phenomenon, on a range that has it", () => {
+    const speed = (id: string) => {
+      const demo = POINT_OF_VIEW_DEMOS[id]!;
+      const i = speedIndexOf(demo.range, demo.speed);
+      expect(i).toBeGreaterThanOrEqual(0);
+      return RANGES[demo.range].speeds[i]!.value;
+    };
+    expect(speed("stars")).toBe(HOUR);
+    expect(speed("earth")).toBe(HOUR);
+    expect(speed("ecliptic")).toBe(7 * DAY);
+    expect(speed("heliocentric") / DAY).toBeCloseTo(30.44, 2);
+    expect(POINT_OF_VIEW_DEMOS.body).toBeUndefined();
+  });
+
+  it("moves the seasons by whole days (the same hour each day: no strobing of the globe)", () => {
+    const i = speedIndexOf("1y", "time.speed.1w");
+    const step = advance(0, 0, 1 / 60, "1y", i);
+    expect(step.offset % DAY).toBe(0);
+    let state = { offset: 0, carry: 0, done: false };
+    for (let k = 0; k < 60; k++) state = advance(state.offset, state.carry, 1 / 60, "1y", i);
+    expect(state.offset).toBe(7 * DAY);
   });
 });
