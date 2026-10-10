@@ -46,7 +46,9 @@ import type { ReferenceFrameId } from "./reference-frames";
 export const GROUND_SUN_RADIUS = 1.9;
 export const GROUND_MOON_RADIUS = 1.45;
 /** Radius of the backdrop circle of the solar system diagram (beyond Neptune's 32.3). */
-export const BACKDROP_RADIUS = 35;
+export const BACKDROP_RADIUS = 34;
+/** Rotation arrow of « La Terre tourne »: a circle round the axis above the North Pole. */
+export const SPIN_ARROW = Object.freeze({ height: 1.2, radius: 0.62 });
 /** Radius of the ghost Earths of « Les saisons », Earth radii. */
 export const GHOST_EARTH_RADIUS = 0.7;
 /** Trace of the Earth → Mars line on the backdrop: one point every 4 days over 6 months. */
@@ -201,7 +203,7 @@ export class PovScene {
     // --- « La Terre tourne »: arrow round the axis above the North Pole, 290° counterclockwise
     // seen from the north (west to east).
     const spin: number[] = [];
-    const [cz, r, end] = [1.2, 0.62, 290 * DEG];
+    const [cz, r, end] = [SPIN_ARROW.height, SPIN_ARROW.radius, 290 * DEG];
     const at = (a: number) => [r * Math.cos(a), r * Math.sin(a), cz];
     for (let i = 0; i < 48; i++) spin.push(...at((end * i) / 48), ...at((end * (i + 1)) / 48));
     const tip = at(end);

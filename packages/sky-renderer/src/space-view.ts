@@ -91,6 +91,7 @@ import {
   GHOST_EARTH_RADIUS,
   GROUND_SUN_RADIUS,
   PovScene,
+  SPIN_ARROW,
   type PovWeights,
 } from "./pov-scene";
 import { SEASONS_SCALE, fitDistance } from "./points-of-view";
@@ -135,6 +136,11 @@ export interface SpaceViewOptions {
   };
   /** Label of an equinox or solstice mark of « Les saisons » (#128), e.g. "Solstice · 21 juin". */
   formatSeason?: (kind: SeasonKind, date: Date) => string;
+  /**
+   * The Earth's label when it is within a few days of an equinox or a solstice (#128): `days`
+   * signed, positive before the mark, e.g. "Terre · équinoxe dans 13 j".
+   */
+  formatEarthSeason?: (kind: SeasonKind, days: number) => string;
   /**
    * The user touched the view (grab, pinch, wheel): the caller pauses the point of view's
    * demonstration (#128).
@@ -212,15 +218,27 @@ const FRAMING = Object.freeze({
   earthShift: 0.4,
   earthLat: 20,
   groundFill: 0.95,
-  seasonsFill: 0.94,
+  seasonsFill: 0.97,
   seasonsLat: 32,
-  solarFill: 0.97,
+  solarFill: 1,
   solarLat: 48,
+  /**
+   * On a portrait screen the diagrams are limited by the width: seen from higher above, the
+   * orbits' ellipses grow taller and use the free height.
+   */
+  seasonsLatPortrait: 58,
+  solarLatPortrait: 64,
   /** Diagrams seen from ecliptic longitude 180°: the June solstice on the right. */
   diagramLon: 180,
 });
 /** Engraved dashes of the overlay (Sun's light), CSS px; allocated once. */
 const DASH = [5, 4];
+/** « Les saisons »: the Earth's label merges with a mark's within this many days of it. */
+const SEASON_NEAR_DAYS = 20;
+/** Bodies of the solar system labelled from the Sun outwards: PLANETS indices, −1 the Earth. */
+const SOLAR_ORDER = [0, 1, -1, 2, 3, 4, 5, 6] as const;
+/** Angles (radians) tried around the outward direction for a label with a leader line. */
+const LEADER_FAN = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2] as const;
 /** Offsets of the Sun's rays from the Earth's centre line, in Earth radii on screen. */
 const SUN_RAYS = [-0.6, 0, 0.6] as const;
 const NO_DASH: number[] = [];
@@ -323,6 +341,8 @@ export class SpaceView {
   private readonly safe = { top: 0, right: 0, bottom: 0, left: 0 };
   /** Shift of the projection centre (CSS px) from the canvas centre, towards the safe area. */
   private readonly viewShift = { x: 0, y: 0, on: false };
+  /** The Earth's label merged with a near season mark, made once per (mark, days). */
+  private earthSeasonText = { kind: -1, days: NaN, text: "" };
   /** Formatted labels of the season marks, for the year they were made for. */
   private seasonTexts = { time: NaN, texts: ["", "", "", ""] };
   private readonly tripTmp = {
@@ -1118,17 +1138,19 @@ export class SpaceView {
       const r = GROUND_SUN_RADIUS + 0.3;
       return this.observerOrbit(fit(r, r, FRAMING.groundFill));
     } else if (id === "ecliptic") {
-      const lat = FRAMING.seasonsLat * DEG;
-      const halfW = SEASONS_SCALE * 1.02 + 1.2;
-      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2.4, FRAMING.seasonsFill);
+      const portrait = safeW < safeH;
+      orbit.lat = portrait ? FRAMING.seasonsLatPortrait : FRAMING.seasonsLat;
+      const lat = orbit.lat * DEG;
+      const halfW = SEASONS_SCALE * 1.02 + GHOST_EARTH_RADIUS;
+      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2.2 * Math.cos(lat), FRAMING.seasonsFill);
       orbit.lon = FRAMING.diagramLon;
-      orbit.lat = FRAMING.seasonsLat;
     } else {
-      const lat = FRAMING.solarLat * DEG;
-      const halfW = BACKDROP_RADIUS + 1.5;
-      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2, FRAMING.solarFill);
+      const portrait = safeW < safeH;
+      orbit.lat = portrait ? FRAMING.solarLatPortrait : FRAMING.solarLat;
+      const lat = orbit.lat * DEG;
+      const halfW = BACKDROP_RADIUS + 0.5;
+      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2 * Math.cos(lat), FRAMING.solarFill);
       orbit.lon = FRAMING.diagramLon;
-      orbit.lat = FRAMING.solarLat;
     }
     orbit.dist = Math.max(this.distMin(id), Math.min(this.distMax(id), orbit.dist));
     return orbit;
@@ -1871,9 +1893,11 @@ export class SpaceView {
     font("700 11px", "0.12em");
     const { here, sun, moon, pole } = this.frameTmp;
     const [lon, lat] = [this.observer.longitude * DEG, this.observer.latitude * DEG];
+    // On the marker (its surface point, so that a place on the far side is not labelled on the
+    // limb: label() skips points hidden by the globe).
     here
       .set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat))
-      .multiplyScalar(1.3)
+      .multiplyScalar(1.02)
       .applyMatrix4(this.earth.matrixWorld);
     const w = this.weights;
     // Points of view (#128): their own anchors first.
@@ -1943,7 +1967,7 @@ export class SpaceView {
     const { labels } = this.options;
     if (w.stars >= 0.5 && labels.rotation) {
       font("400 10px", "0.08em");
-      label(labels.rotation, a.spinTip, false, 8);
+      this.labelSpin(layout, labels.rotation);
     }
     if (w.earth >= 0.5 && this.bodies) {
       font("700 11px", "0.12em");
@@ -1951,85 +1975,222 @@ export class SpaceView {
       if (this.ephemerisOk) label(labels.moon, a.groundMoon, false, 16);
       this.drawSubSolarPoint();
     }
-    if (w.ecliptic >= 0.5 && this.pov.ready.seasons) {
-      this.reserveGlyph(layout, a.seasonsSun, 18);
-      // The season marks first: they are what the point of view is about.
-      const format = this.options.formatSeason;
-      if (format) {
-        const texts = this.seasonTexts;
-        const time = a.marks[0]!.date.getTime();
-        if (texts.time !== time) {
-          texts.time = time;
-          for (let i = 0; i < 4; i++) texts.texts[i] = format(a.marks[i]!.kind, a.marks[i]!.date);
+    if (w.ecliptic >= 0.5 && this.pov.ready.seasons) this.labelSeasons(layout, font);
+    if (w.heliocentric >= 0.5 && this.pov.ready.solar) this.labelSolarSystem(layout, font);
+  }
+
+  /**
+   * « La Terre tourne »: the rotation's label beside its arrow (above it, else on a side), clear
+   * of the globe and of « Vous êtes ici ».
+   */
+  private labelSpin(layout: LabelLayout, text: string): void {
+    const box = this.frameTmp.shift;
+    let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+    const p = this.frameTmp.b;
+    for (let i = 0; i < 8; i++) {
+      const t = (i / 8) * 2 * Math.PI;
+      p.set(SPIN_ARROW.radius * Math.cos(t), SPIN_ARROW.radius * Math.sin(t), SPIN_ARROW.height);
+      const s = this.screenOf(p, false);
+      if (!s) return;
+      [x0, x1, y0, y1] = [
+        Math.min(x0, s[0]),
+        Math.max(x1, s[0]),
+        Math.min(y0, s[1]),
+        Math.max(y1, s[1]),
+      ];
+    }
+    box.x = (x0 + x1) / 2;
+    box.y = (y0 + y1) / 2;
+    const ctx = this.ctx;
+    const t = text.toUpperCase();
+    const w = ctx.measureText(t).width;
+    const h = 12;
+    const r = layout.place([
+      { x: box.x - w / 2, y: y0 - 8 - h, w, h },
+      { x: x1 + 10, y: box.y - h / 2, w, h },
+      { x: x0 - 10 - w, y: box.y - h / 2, w, h },
+      { x: box.x - w / 2, y: y0 - 24 - h, w, h },
+    ]);
+    if (r) ctx.fillText(t, r.x, r.y + h / 2);
+  }
+
+  /**
+   * « Les saisons »: the four marks and the Earth, each labelled outwards from the Sun, with a
+   * leader line when it has to move away. When the Earth is within SEASON_NEAR_DAYS of a mark,
+   * the two merge: « Terre · équinoxe dans 13 j », and the ghost keeps no label of its own.
+   */
+  private labelSeasons(
+    layout: LabelLayout,
+    font: (weightSize: string, spacing: string) => void,
+  ): void {
+    const a = this.pov.anchors;
+    const { labels } = this.options;
+    const sun = this.screenOf(a.seasonsSun, false);
+    if (!sun) return;
+    const [sx, sy] = [sun[0], sun[1]];
+    this.reserveGlyph(layout, a.seasonsSun, 18);
+    // The Earths' discs first, so that no label covers one.
+    this.reserveGlyph(layout, ORIGIN, this.pixelRadius(ORIGIN, 1));
+    for (const m of a.marks)
+      this.reserveGlyph(layout, m.position, this.pixelRadius(m.position, GHOST_EARTH_RADIUS));
+    // Mark nearest in time to the date shown.
+    let near = -1;
+    let nearDays = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const days = (a.marks[i]!.date.getTime() - this.date.getTime()) / 86_400_000;
+      if (Math.abs(days) < Math.abs(nearDays)) [near, nearDays] = [i, days];
+    }
+    const merged = Math.abs(nearDays) <= SEASON_NEAR_DAYS && !!this.options.formatEarthSeason;
+    font("700 11px", "0.12em");
+    label: if (labels.earth) {
+      let text = labels.earth;
+      if (merged) {
+        const days = Math.round(nearDays);
+        const cache = this.earthSeasonText;
+        if (cache.kind !== near || cache.days !== days) {
+          cache.kind = near;
+          cache.days = days;
+          cache.text = this.options.formatEarthSeason!(a.marks[near]!.kind, days);
         }
-        font("400 10px", "0.06em");
-        for (let i = 0; i < 4; i++) {
-          const p = a.marks[i]!.position;
-          this.labelInside(layout, texts.texts[i]!, p, 4 + this.pixelRadius(p, GHOST_EARTH_RADIUS));
-        }
+        text = cache.text;
       }
-      font("700 11px", "0.12em");
-      label(labels.sun, a.seasonsSun, false, 28);
-      if (labels.earth)
-        label(labels.earth, this.earthLabelPoint(), false, 4 + this.pixelRadius(ORIGIN, 1));
-      if (labels.axis) {
-        const top = this.frameTmp.tilt.set(0, 0, 1.5 * this.axis.scale.z + 0.1);
-        label(labels.axis, top, false, 6);
+      const e = this.screenOf(ORIGIN, false);
+      if (!e) break label;
+      this.labelOutward(layout, text, e[0], e[1], this.pixelRadius(ORIGIN, 1), sx, sy);
+    }
+    const format = this.options.formatSeason;
+    if (format) {
+      const texts = this.seasonTexts;
+      const time = a.marks[0]!.date.getTime();
+      if (texts.time !== time) {
+        texts.time = time;
+        for (let i = 0; i < 4; i++) texts.texts[i] = format(a.marks[i]!.kind, a.marks[i]!.date);
+      }
+      font("400 10px", "0.06em");
+      for (let i = 0; i < 4; i++) {
+        if (merged && i === near) continue;
+        const p = a.marks[i]!.position;
+        const s = this.screenOf(p, false);
+        if (!s || this.hiddenByEarth(p, false)) continue;
+        const r = this.pixelRadius(p, GHOST_EARTH_RADIUS);
+        this.labelOutward(layout, texts.texts[i]!, s[0], s[1], r, sx, sy);
       }
     }
-    if (w.heliocentric >= 0.5 && this.pov.ready.solar) {
-      font("700 11px", "0.12em");
-      this.reserveGlyph(layout, a.solarSun, 14);
-      label(labels.sun, a.solarSun, false, 24);
-      if (labels.earth)
-        label(labels.earth, this.earthLabelPoint(), false, 4 + this.pixelRadius(ORIGIN, 1));
-      const names = this.options.planetNames;
-      if (names) {
-        font("700 10px", "0.12em");
-        for (let i = 0; i < PLANETS.length; i++)
-          label(
-            names[PLANETS[i]!],
-            a.planets[i]!,
-            false,
-            6 + this.pixelRadius(a.planets[i]!, a.planetRadius[i]!),
-          );
-      }
+    font("700 11px", "0.12em");
+    this.labelOutward(layout, labels.sun, sx, sy, 22, sx, sy - 1);
+    if (labels.axis) {
+      const top = this.frameTmp.tilt.set(0, 0, 1.5 * this.axis.scale.z + 0.1);
+      const s = this.screenOf(top, false);
+      if (s) this.labelOutward(layout, labels.axis, s[0], s[1], 4, sx, sy);
     }
   }
 
   /**
-   * A label beside a world point (right, left, below, above), the last two slid sideways to
-   * stay on screen: the marks at the ends of the seasons' orbit sit near the screen's edges.
+   * « Le système solaire »: the Sun, then every body from the Sun outwards, each labelled away
+   * from the Sun, with a leader line when the planets are crowded (the inner ones on a phone).
    */
-  private labelInside(layout: LabelLayout, text: string, p: THREE.Vector3, dx: number): void {
-    if (this.hiddenByEarth(p, false)) return;
-    const s = this.screenOf(p, false);
-    if (!s) return;
+  private labelSolarSystem(
+    layout: LabelLayout,
+    font: (weightSize: string, spacing: string) => void,
+  ): void {
+    const a = this.pov.anchors;
+    const { labels } = this.options;
+    const sun = this.screenOf(a.solarSun, false);
+    if (!sun) return;
+    const [sx, sy] = [sun[0], sun[1]];
+    this.reserveGlyph(layout, a.solarSun, 16);
+    // The planets' discs first, so that no label covers a planet.
+    for (let i = 0; i < PLANETS.length; i++)
+      this.reserveGlyph(layout, a.planets[i]!, this.pixelRadius(a.planets[i]!, a.planetRadius[i]!));
+    this.reserveGlyph(layout, ORIGIN, this.pixelRadius(ORIGIN, 1));
+    font("700 11px", "0.12em");
+    this.labelOutward(layout, labels.sun, sx, sy, 20, sx, sy - 1);
+    const names = this.options.planetNames;
+    font("700 10px", "0.12em");
+    for (let k = 0; k < SOLAR_ORDER.length; k++) {
+      const i: number = SOLAR_ORDER[k]!;
+      const earth = i < 0;
+      const text = earth ? labels.earth : names?.[PLANETS[i]!];
+      if (!text) continue;
+      const p = earth ? ORIGIN : a.planets[i]!;
+      if (!earth && this.hiddenByEarth(p, false)) continue;
+      const s = this.screenOf(p, false);
+      if (!s) continue;
+      const r = this.pixelRadius(p, earth ? 1 : a.planetRadius[i]!);
+      this.labelOutward(layout, text, s[0], s[1], r, sx, sy);
+    }
+  }
+
+  /**
+   * A label for a body at (x, y), radius r (CSS px): beside it if there is room, else pushed
+   * outwards along the direction away from (sx, sy) — fanned a little — with an engraved leader
+   * line back to the body. Uses the overlay's current font. Allocation-free.
+   */
+  private labelOutward(
+    layout: LabelLayout,
+    text: string,
+    x: number,
+    y: number,
+    r: number,
+    sx: number,
+    sy: number,
+  ): void {
     const ctx = this.ctx;
-    const [x, y] = s;
     const t = text.toUpperCase();
     const w = ctx.measureText(t).width;
     const h = 12;
+    let ux = x - sx;
+    let uy = y - sy;
+    const n = Math.hypot(ux, uy);
+    if (n < 1e-3) [ux, uy] = [0, -1];
+    else [ux, uy] = [ux / n, uy / n];
+    const gap = r + 6;
+    // Beside the body, on its outer side first.
+    // (LabelLayout keeps the rectangle it places: fresh ones each time, as label() does.)
+    const outer = ux >= 0;
+    // Above and below: centred, slid sideways to stay on screen (marks near the edges).
     const width = this.options.canvas.clientWidth;
-    const cx = Math.max(6, Math.min(width - 6 - w, x - w / 2));
-    const r = layout.place([
-      { x: x + dx, y: y - h / 2, w, h },
-      { x: x - dx - w, y: y - h / 2, w, h },
-      { x: cx, y: y + dx, w, h },
-      { x: cx, y: y - dx - h, w, h },
+    const cx = Math.max(8, Math.min(width - 8 - w, x - w / 2));
+    const r0 = layout.place([
+      { x: outer ? x + gap : x - gap - w, y: y - h / 2, w, h },
+      { x: outer ? x - gap - w : x + gap, y: y - h / 2, w, h },
+      { x: cx, y: uy > 0 ? y + gap : y - gap - h, w, h },
+      { x: cx, y: uy > 0 ? y - gap - h : y + gap, w, h },
     ]);
-    if (r) ctx.fillText(t, r.x, r.y + h / 2);
+    if (r0) {
+      ctx.fillText(t, r0.x, r0.y + h / 2);
+      return;
+    }
+    // Pushed outwards, with a leader line.
+    for (let k = 1; k <= 6; k++) {
+      for (const fan of LEADER_FAN) {
+        const c = Math.cos(fan);
+        const s = Math.sin(fan);
+        const dx = ux * c - uy * s;
+        const dy = ux * s + uy * c;
+        const d = gap + 12 * k;
+        const ex = x + dx * d;
+        const ey = y + dy * d;
+        const placed = layout.place([{ x: dx >= 0 ? ex + 2 : ex - 2 - w, y: ey - h / 2, w, h }]);
+        if (!placed) continue;
+        ctx.fillText(t, placed.x, placed.y + h / 2);
+        ctx.strokeStyle = this.options.theme.ink;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(x + dx * (r + 2), y + dy * (r + 2));
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        return;
+      }
+    }
   }
 
   /** Keeps labels off the disc of a Sun glyph (half-size `r` CSS px) at the world point p. */
   private reserveGlyph(layout: LabelLayout, p: THREE.Vector3, r: number): void {
     const s = this.screenOf(p, false);
     if (s) layout.place([{ x: s[0] - r, y: s[1] - r, w: 2 * r, h: 2 * r }]);
-  }
-
-  /** The point of the Earth's surface facing the camera: its labels' anchor, never hidden. */
-  private earthLabelPoint(): THREE.Vector3 {
-    return this.frameTmp.eclPole.copy(this.camera.position).normalize().multiplyScalar(1.001);
   }
 
   /** Apparent radius (CSS px) of a sphere of radius r at the world point p. */

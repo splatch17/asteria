@@ -333,5 +333,12 @@
   "space.season.marchEquinox": "Équinoxe · {date}",
   "space.season.juneSolstice": "Solstice · {date}",
   "space.season.septemberEquinox": "Équinoxe · {date}",
-  "space.season.decemberSolstice": "Solstice · {date}"
+  "space.season.decemberSolstice": "Solstice · {date}",
+  "space.seasonName.marchEquinox": "équinoxe",
+  "space.seasonName.juneSolstice": "solstice",
+  "space.seasonName.septemberEquinox": "équinoxe",
+  "space.seasonName.decemberSolstice": "solstice",
+  "space.earthSeason.before": "Terre · {season} dans {days, number} j",
+  "space.earthSeason.after": "Terre · {season} il y a {days, number} j",
+  "space.earthSeason.today": "Terre · {season} aujourd'hui"
 }

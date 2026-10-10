@@ -460,6 +460,12 @@
       },
       formatSeason: (kind: SeasonKind, d: Date) =>
         $_(`space.season.${kind}`, { values: { date: seasonFormat.format(d) } }),
+      formatEarthSeason: (kind: SeasonKind, days: number) => {
+        const season = $_(`space.seasonName.${kind}`);
+        if (days === 0) return $_("space.earthSeason.today", { values: { season } });
+        const key = days > 0 ? "space.earthSeason.before" : "space.earthSeason.after";
+        return $_(key, { values: { season, days: Math.abs(days) } });
+      },
       onInteract: pauseDemo,
       frame: spaceFrame,
       body: spaceBody,
