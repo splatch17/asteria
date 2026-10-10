@@ -86,6 +86,16 @@ déjà en anglais reçoivent un nom français d'usage courant (« Galaxie d'Andr
 leur désignation (M 13, NGC 869). Vérification contre les libellés français de Wikidata (CC0),
 comme pour les étoiles (#67) : à faire quand Wikidata sera joignable depuis le pipeline.
 
+**Affichage sur la carte (#101)** : calque « Ciel profond » (`sky-renderer/src/deepsky*.ts`),
+catalogue chargé à la demande (calque allumé ou recherche). Glyphes gravés par type, taille = axes
+d'OpenNGC projetés (minimum lisible), orientés selon l'angle de position ; visibles selon un rang
+(magnitude, bonus Messier et objets nommés) comparé à une limite qui dépend du champ ; niveau
+Découverte : Messier seuls. Fiche : magnitude du catalogue (V, sinon B), dimensions apparentes,
+constellation et une indication d'observation (œil nu ≤ 5,0 ; jumelles ≤ 8,0 ; petite lunette
+≤ 10,5 ; au-delà télescope ; une classe de plus pour un objet diffus de brillance de surface
+moyenne > 23,5 mag/arcsec²), règle documentée dans `apps/web/src/lib/deepsky.ts`. Aucune distance :
+le catalogue n'en donne pas.
+
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.
 - Niveau 1 embarqué (~mag 6.5, < 1 Mo) — ✅ format binaire `ASTS` v2 (#16, distances et vitesses radiales #75/#79) : `stars.bin` + `star-strings.json` + `constellation-lines.json` = 491 Ko (313 Ko gzip, v1 : 393 Ko / 262 Ko), décrit dans `packages/sky-data/README.md`, décodé par `@asteria/catalog` ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).

@@ -4,17 +4,21 @@
  * Text is compared in a normalised form: compatibility decomposition (NFKD), diacritics removed,
  * lower case, Greek letters spelled out ("α¹ Cen" → "alpha 1 cen"), letters and digits split
  * ("HIP27989" → "hip 27989"). Ranking: exact > prefix > word prefix > substring > one typo
- * (Damerau-Levenshtein ≤ 1, queries of 4 characters or more), then by importance (`weight`).
+ * (Damerau-Levenshtein ≤ 1, queries of 4 characters or more without digits), then by importance
+ * (`weight`).
  *
- * Entries are typed by `target`, so that deep-sky objects (#100) only add a member to the union.
+ * Entries are typed by `target`: deep-sky objects (#100, #101) are found by their names (French and
+ * English), designations ("M 31", "M31", "messier 31", "NGC 224") and ranked by magnitude.
  */
 import type { Planet } from "@asteria/astro-core";
+import type { DeepSkyTarget } from "@asteria/catalog";
 
 export type SearchTarget =
   | { kind: "star"; hip: number }
   | { kind: "constellation"; abbr: string }
   | { kind: "body"; body: "Sun" | "Moon" }
-  | { kind: "planet"; planet: Planet };
+  | { kind: "planet"; planet: Planet }
+  | DeepSkyTarget;
 
 export type SearchKind = SearchTarget["kind"];
 
@@ -24,6 +28,8 @@ export interface SearchEntry {
   label: string;
   /** Other names and designations, shown under the label. */
   details: string[];
+  /** What the entry is, when more precise than its kind (a deep-sky object's type). */
+  kind?: string;
   /** Lower is listed first among equal matches: a magnitude for stars, below them for bodies. */
   weight: number;
   /** Normalised search keys. */
@@ -54,7 +60,27 @@ export interface SearchSources {
   planets: readonly { planet: Planet; name: string }[];
   /** Label of a star known only by its Hipparcos number. */
   hipLabel: (hip: number) => string;
+  /** Deep-sky objects, once their catalogue has loaded (#101). */
+  deepSky?: readonly SearchDeepSky[];
 }
+
+/** The deep-sky fields the index reads (see lib/deepsky.ts, deepSkySearchSources). */
+export interface SearchDeepSky {
+  id: string;
+  /** Displayed name: the localised common name, else the first designation. */
+  label: string;
+  /** Localised type ("Galaxie"). */
+  kind: string;
+  /** "M 31", "NGC 224"… */
+  designations: readonly string[];
+  /** Localised and English common names. */
+  names: readonly string[];
+  mag?: number | undefined;
+  messier?: number | undefined;
+}
+
+/** Weight of a deep-sky object without magnitude: among the faint naked-eye stars. */
+const DEEP_SKY_DEFAULT_WEIGHT = 6;
 
 export interface SearchIndex {
   entries: SearchEntry[];
@@ -151,6 +177,17 @@ export function buildSearchIndex(src: SearchSources): SearchIndex {
     entries.push(entry);
     hipEntries.set(s.hip, entry);
   }
+  for (const o of src.deepSky ?? []) {
+    const messier = o.messier ? `Messier ${o.messier}` : undefined;
+    entries.push({
+      target: { kind: "deepsky", id: o.id },
+      label: o.label,
+      details: [...new Set([...o.designations, ...o.names])].filter((d) => d !== o.label),
+      kind: o.kind,
+      weight: o.mag ?? DEEP_SKY_DEFAULT_WEIGHT,
+      ...keysOf(o.label, ...o.names, ...o.designations, messier),
+    });
+  }
   return { entries, byHip, hipEntries, hipLabel: src.hipLabel };
 }
 
@@ -182,13 +219,21 @@ function sameTail(a: string, la: number, ia: number, b: string, lb: number, ib: 
   return true;
 }
 
+/**
+ * A typo is tolerated from four characters, and never in a number: "M 31" must not list M 41 and
+ * M 39, nor "58 Ori" 59 Ori (#101).
+ */
+function typoAllowed(query: string): boolean {
+  return query.length >= 4 && !/\d/.test(query);
+}
+
 /** Match quality of a query against a key: 0 exact … 4 one typo; -1 no match. */
 export function matchTier(query: string, key: string): number {
   if (key === query) return 0;
   if (key.startsWith(query)) return 1;
   if (key.includes(` ${query}`)) return 2;
   if (key.includes(query)) return 3;
-  if (query.length < 4) return -1;
+  if (!typoAllowed(query)) return -1;
   const n = query.length;
   return withinOneEdit(query, key) || (key.length > n && withinOneEdit(query, key, n)) ? 4 : -1;
 }
@@ -218,7 +263,7 @@ export function search(index: SearchIndex, query: string, limit = MAX_RESULTS): 
         const t = matchTier(q, key);
         if (t >= 0 && (tier < 0 || t < tier)) tier = t;
       }
-    } else if (q.length >= 4) {
+    } else if (typoAllowed(q)) {
       // Most entries do not contain the query: only the typo test remains for them.
       const n = q.length;
       for (const key of entry.keys)

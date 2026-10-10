@@ -6,6 +6,7 @@ import {
   search,
   withinOneEdit,
   type SearchSources,
+  type SearchDeepSky,
   type SearchStar,
 } from "./search";
 
@@ -193,5 +194,109 @@ describe("search", () => {
     for (let round = 0; round < 5; round++)
       for (let i = 1; i <= typed.length; i++, n++) search(big, typed.slice(0, i));
     expect((performance.now() - start) / n).toBeLessThan(5); // ≈ 0.6 ms on a desktop CPU
+  });
+});
+
+describe("search: deep-sky objects (#101)", () => {
+  // Designations, names and magnitudes of OpenNGC v20260501 (#100); French names: content.
+  const deepSky: SearchDeepSky[] = [
+    {
+      id: "M31",
+      label: "Galaxie d'Andromède",
+      kind: "Galaxie",
+      designations: ["M 31", "NGC 224"],
+      names: ["Galaxie d'Andromède", "Andromeda Galaxy"],
+      mag: 3.44,
+      messier: 31,
+    },
+    {
+      id: "M42",
+      label: "Nébuleuse d'Orion",
+      kind: "Nébuleuse et amas",
+      designations: ["M 42", "NGC 1976"],
+      names: ["Nébuleuse d'Orion", "Great Orion Nebula", "Orion Nebula"],
+      mag: 4,
+      messier: 42,
+    },
+    {
+      id: "M3",
+      label: "M 3",
+      kind: "Amas globulaire",
+      designations: ["M 3", "NGC 5272"],
+      names: [],
+      mag: 6.39,
+      messier: 3,
+    },
+    {
+      id: "M33",
+      label: "Galaxie du Triangle",
+      kind: "Galaxie",
+      designations: ["M 33", "NGC 598"],
+      names: ["Galaxie du Triangle", "Triangulum Galaxy", "Triangulum Pinwheel"],
+      mag: 5.79,
+      messier: 33,
+    },
+    {
+      id: "NGC869",
+      label: "NGC 869",
+      kind: "Amas ouvert",
+      designations: ["NGC 869"],
+      names: [],
+      mag: 3.7,
+    },
+    {
+      id: "B33",
+      label: "Nébuleuse de la Tête de Cheval",
+      kind: "Nébuleuse obscure",
+      designations: ["B 33"],
+      names: ["Nébuleuse de la Tête de Cheval", "Horsehead Nebula"],
+    },
+  ];
+  const sky = buildSearchIndex({ ...SOURCES, deepSky });
+  const found = (q: string) => search(sky, q).map((r) => r.entry.target);
+  const first = (q: string) => search(sky, q)[0]?.entry;
+  const ids = (q: string) =>
+    found(q)
+      .filter((t) => t.kind === "deepsky")
+      .map((t) => t.id);
+
+  it("finds Messier numbers in every usual spelling", () => {
+    for (const q of ["M31", "M 31", "m31", "messier 31", "Messier31"])
+      expect(found(q)[0], q).toEqual({ kind: "deepsky", id: "M31" });
+  });
+
+  it("finds NGC numbers with or without a space", () => {
+    for (const q of ["NGC 224", "ngc224"]) expect(first(q)?.label, q).toBe("Galaxie d'Andromède");
+    expect(first("NGC 869")?.label).toBe("NGC 869");
+  });
+
+  it("finds French and English common names", () => {
+    expect(first("andromede")?.label).toBe("Galaxie d'Andromède");
+    expect(first("andromeda galaxy")?.label).toBe("Galaxie d'Andromède");
+    expect(first("horsehead")?.label).toBe("Nébuleuse de la Tête de Cheval");
+    expect(first("tete de cheval")?.label).toBe("Nébuleuse de la Tête de Cheval");
+  });
+
+  it("tolerates no typo in a number", () => {
+    expect(ids("M 32")).toEqual([]);
+    expect(ids("messier 32")).toEqual([]);
+  });
+
+  it("keeps an exact match first: M 3 before M 31 and M 33", () => {
+    expect(ids("M3")).toEqual(["M3", "M31", "M33"]);
+  });
+
+  it("ranks by magnitude within a tier, after the constellation of the same name", () => {
+    expect(first("orion")?.label).toBe("Orion");
+    expect(search(sky, "galaxie").map((r) => r.entry.label)).toEqual([
+      "Galaxie d'Andromède",
+      "Galaxie du Triangle",
+    ]);
+  });
+
+  it("shows the type and the other designations", () => {
+    const m31 = first("M31")!;
+    expect(m31.kind).toBe("Galaxie");
+    expect(m31.details).toEqual(["M 31", "NGC 224", "Andromeda Galaxy"]);
   });
 });

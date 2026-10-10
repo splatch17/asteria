@@ -30,6 +30,7 @@
     constellation: "lines",
     planet: "planets",
     body: "sun",
+    deepsky: "deepsky",
   };
   const iconOf = (t: SearchTarget): IconName =>
     t.kind === "body" && t.body === "Moon" ? "moon" : ICONS[t.kind];
@@ -128,8 +129,8 @@
           <span class="text">
             <span class="name"><Designation text={entry.label} /></span>
             <span class="meta"
-              >{kindOf(entry.target)}{#each entry.details as d (d)}<span class="detail"
-                  ><Designation text={d} /></span
+              >{entry.kind ?? kindOf(entry.target)}{#each entry.details as d (d)}<span
+                  class="detail"><Designation text={d} /></span
                 >{/each}</span
             >
           </span>
