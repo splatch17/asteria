@@ -263,5 +263,14 @@
   "frame.earth.expert": "Repère terrestre tournant de l'angle GMST autour de l'axe des pôles (nutation et mouvement du pôle négligés).",
   "frame.ecliptic.discovery": "Le plan où la Terre tourne autour du Soleil est à plat : on voit que l'axe de la Terre est penché, c'est ce qui fait les saisons.",
   "frame.ecliptic.amateur": "Le pôle de l'écliptique est en haut : l'axe de la Terre est incliné de {angle}° sur le plan de son orbite, d'où les saisons.",
-  "frame.ecliptic.expert": "Repère écliptique moyen de la date : rotation de l'obliquité moyenne ε = {angle}° (IAU 2006) autour de la direction de l'équinoxe."
+  "frame.ecliptic.expert": "Repère écliptique moyen de la date : rotation de l'obliquité moyenne ε = {angle}° (IAU 2006) autour de la direction de l'équinoxe.",
+  "frame.body.discovery": "La caméra s'envole vers l'astre choisi ({body}) et tourne autour, éclairé par le Soleil, à sa vraie taille et à sa vraie distance de la Terre.",
+  "frame.body.amateur": "On tourne autour de l'astre choisi ({body}), à sa position réelle à la date affichée, son pôle Nord en haut ; touchez un autre astre pour y aller.",
+  "frame.body.expert": "Repère inertiel centré sur l'astre, pôle Nord IAU en haut ; position géocentrique astrométrique corrigée du temps de lumière (astronomy-engine), précessée à l'équinoxe de la date.",
+  "frame.body.pick": "Astre à rejoindre",
+  "frame.body.distance": "{km, number} km de la Terre",
+  "frame.body.lightSeconds": "lumière {s, number} s",
+  "frame.body.lightMinutes": "lumière {min, number} min",
+  "frame.body.lightHours": "lumière {h, number} h {min, number} min",
+  "frame.body.scale": "L'astre et la Terre sont à l'échelle réelle ; le Soleil, la Lune et les planètes vus au loin sont agrandis pour rester visibles."
 }

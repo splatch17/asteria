@@ -28,7 +28,7 @@ const raDec = (v: THREE.Vector3) => ({
 });
 
 describe("reference frame list", () => {
-  it("offers four entries in the selector, star-fixed first; two are not available yet", () => {
+  it("offers five entries in the selector, star-fixed first; heliocentric not available yet", () => {
     expect(REFERENCE_FRAMES.map((f) => f.id)).toEqual([
       "stars",
       "earth",
@@ -40,9 +40,11 @@ describe("reference frame list", () => {
       "stars",
       "earth",
       "ecliptic",
+      "body",
     ]);
     expect(isReferenceFrameId("body")).toBe(true);
-    expect(isAvailableFrame("body")).toBe(false);
+    expect(isAvailableFrame("body")).toBe(true);
+    expect(isAvailableFrame("heliocentric")).toBe(false);
     expect(isAvailableFrame("earth")).toBe(true);
     expect(isAvailableFrame("galactic")).toBe(false);
     expect(frameOf("heliocentric").id).toBe("stars");

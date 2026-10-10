@@ -45,6 +45,19 @@ import { sphericalGrid } from "./grids";
 import { RealisticLayer, type SpaceTextureName } from "./space-realistic";
 import { moonAxes, planetAxes, sunwardDirection, type SpaceStyle } from "./space-style";
 import {
+  BODY_TARGETS,
+  BodyFrame,
+  bodyPole,
+  bodyRadius,
+  bodyViewDirection,
+  bodyViewDistance,
+  hiddenBySphere,
+  isBodyTarget,
+  worldPosition,
+  type BodyTarget,
+} from "./body-frame";
+import { BodyGlobe, bodyKind } from "./body-globe";
+import {
   FLIGHT_MS,
   FlightPath,
   LANDING_VIEW,
@@ -72,14 +85,7 @@ import {
   type ReferenceFrameId,
 } from "./reference-frames";
 import { GestureInput } from "./gesture-input";
-import {
-  earthPanLimit,
-  easeOut,
-  panScale,
-  raySphere,
-  wrapDegrees,
-  zoomAnchorShift,
-} from "./gestures";
+import { easeOut, panLimit, panScale, raySphere, wrapDegrees, zoomAnchorShift } from "./gestures";
 
 export type { SpaceTextureName } from "./space-realistic";
 
@@ -119,6 +125,8 @@ export interface SpaceViewOptions {
   formatObliquity?: (degrees: number) => string;
   /** Initial reference frame (default: star-fixed); unavailable frames are ignored. */
   frame?: ReferenceFrameId;
+  /** Body orbited by the body-centred frame (#123), default the Moon. */
+  body?: BodyTarget;
   /** Localised planet names, drawn as labels. */
   planetNames?: Record<Planet, string>;
   /** Formats the date of a monthly mark on the selected planet's path (localised by the caller). */
@@ -161,6 +169,11 @@ const DIST_MIN = 1.6;
 const DIST_MAX = 40;
 /** Duration of the recentring and reset tweens, ms. */
 const RECENTRE_MS = 600;
+/** Shortest duration of a trip to or from a body (#123), ms (unless instant). */
+export const BODY_TRANSITION_MS = 1600;
+const ORIGIN = new THREE.Vector3();
+/** Apparent radius (CSS px) from which a body's globe replaces its glyph (body frame). */
+const GLOBE_MIN_PX = 6;
 
 /** Orbit camera of the Earth view, in the current reference frame (see reference-frames.ts). */
 type EarthOrbit = FrameOrbit;
@@ -211,16 +224,63 @@ export class SpaceView {
   /** Slerp from the camera's pose when the frame changed (frozen) to the new frame's pose. */
   private frameTween: {
     from: ReferenceFrameId;
+    /** Body the camera left (body-centred frame), or null. */
+    fromBody: BodyTarget | null;
+    /** Camera distance to its target when the change started (interpolated geometrically). */
+    dist: number;
     start: number;
     duration: number;
     /** Eased progress, updated each frame. */
     k: number;
+    /** Raw time fraction 0 … 1, updated each frame. */
+    t: number;
     readonly quat: THREE.Quaternion;
     readonly target: THREE.Vector3;
   } | null = null;
   private readonly frameTweenState = {
     quat: new THREE.Quaternion(),
     target: new THREE.Vector3(),
+  };
+  // --- Body-centred frame (#123), see body-frame.ts and body-globe.ts
+  private readonly bodyFrame = new BodyFrame("Moon");
+  /** Globe of the target body; and of the body being left, during a transition. */
+  private globe3d: BodyGlobe;
+  private fadingGlobe: BodyGlobe;
+  /** World positions (Earth radii, light-time corrected): Sun, Moon, planets (PLANETS order). */
+  private readonly worldPos = Array.from(
+    { length: 1 + BODY_TARGETS.length },
+    () => new THREE.Vector3(),
+  );
+  private worldPosOk = false;
+  /** Sky glyph directions as given (geocentric): Sun and Moon, then the planets. */
+  private readonly geoBodyDirs = new Float32Array(6);
+  private readonly geoPlanetDirs = new Float32Array(3 * PLANETS.length);
+  /** The glyph directions currently hold the camera-relative blend. */
+  private skyBlended = false;
+  /** Planet magnitudes as given (a planet drawn as a globe is hidden from the glyphs). */
+  private readonly planetMags = new Float32Array(PLANETS.length).fill(99);
+  /** Kinds (0 = Moon, 1 … 7 = planets) drawn as globes, whose glyphs are hidden; −1: none. */
+  private globeKindA = -1;
+  private globeKindB = -1;
+  private globesApplied = false;
+  /** The first refresh in the body frame places the camera round the body. */
+  private pendingBodyOrbit = false;
+  /** Where the camera was round the Earth before leaving for a body: back there on return. */
+  private readonly earthReturn = { dir: new THREE.Vector3(0, 0, 1), dist: ORBIT_RADIUS };
+  private readonly tripTmp = {
+    look: new THREE.Quaternion(),
+    dest: new THREE.Vector3(),
+    up: new THREE.Vector3(),
+    m: new THREE.Matrix4(),
+  };
+  private readonly bodyTmp = {
+    a: new THREE.Vector3(),
+    b: new THREE.Vector3(),
+    c: new THREE.Vector3(),
+    d: new THREE.Vector3(),
+    o: new THREE.Vector3(),
+    sky: new THREE.Vector3(),
+    rel: new THREE.Vector3(),
   };
   /** Ecliptic plane ring, ecliptic pole line and tilt arc, in ecliptic frame axes. */
   private readonly eclipticGuide = new THREE.Group();
@@ -529,7 +589,21 @@ export class SpaceView {
     );
     this.eclipticGuide.visible = false;
 
+    // Globes of the body-centred frame (#123), hidden until it is chosen.
+    const engravedUniforms = {
+      uInk: this.uniforms.uInk,
+      uBase: this.uniforms.uBase,
+      uDpr: this.uniforms.uDpr,
+    };
+    this.globe3d = new BodyGlobe(engravedUniforms);
+    this.fadingGlobe = new BodyGlobe(engravedUniforms);
+    const body = options.body && isBodyTarget(options.body) ? options.body : "Moon";
+    this.bodyFrame.body = body;
+    this.globe3d.setBody(body);
+
     this.scene.add(
+      this.globe3d.object,
+      this.fadingGlobe.object,
       this.earth,
       this.axis,
       this.eclipticGuide,
@@ -559,6 +633,7 @@ export class SpaceView {
     this.resize();
     this.setStyle(options.style ?? "engraving");
     if (options.frame && isAvailableFrame(options.frame)) this.frameId = options.frame;
+    this.pendingBodyOrbit = this.frameId === "body";
   }
 
   // --- public API
@@ -571,6 +646,9 @@ export class SpaceView {
     for (const o of this.engraved) o.visible = !realistic;
     this.real?.setVisible(realistic);
     this.globe.material = realistic && this.real ? this.real.globeMaterial : this.engravedGlobe;
+    this.globe3d.setRealistic(realistic);
+    this.fadingGlobe.setRealistic(realistic);
+    this.globesApplied = false;
     this.renderer.setClearColor(realistic ? "#000000" : this.options.theme.sky);
     this.update();
   }
@@ -638,13 +716,15 @@ export class SpaceView {
     } else {
       this.planets = PLANETS.map(() => null);
       const mags = this.planetPoints.geometry.getAttribute("aMag") as THREE.BufferAttribute;
-      for (let i = 0; i < PLANETS.length; i++) mags.setX(i, 99); // left out: hidden by the shader
+      this.planetMags.fill(99); // left out: hidden by the shader
       for (const p of planets) {
         const i = PLANETS.indexOf(p.name);
         this.planets[i] = unitVector(p.ra, p.dec);
-        mags.setX(i, p.magnitude);
+        this.planetMags[i] = p.magnitude;
       }
+      for (let i = 0; i < PLANETS.length; i++) mags.setX(i, this.planetMags[i]!);
       mags.needsUpdate = true;
+      this.globesApplied = false;
     }
     this.update();
   }
@@ -708,7 +788,7 @@ export class SpaceView {
   setOrbit(orbit: Partial<{ lon: number; lat: number; dist: number }>): void {
     Object.assign(this.orbit, orbit);
     this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat));
-    this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.orbit.dist));
+    this.orbit.dist = Math.max(this.distMin(), Math.min(this.distMax(), this.orbit.dist));
     this.clampPan();
     this.input.stopInertia();
     this.camTween = null;
@@ -725,30 +805,26 @@ export class SpaceView {
     { duration = FRAME_TRANSITION_MS }: { duration?: number } = {},
   ): void {
     if (id === this.frameId || !isAvailableFrame(id)) return;
-    if (this.stale) this.refresh();
-    this.input.stopInertia();
-    this.camTween = null;
-    // The camera now (mid-transition included), frozen as the slerp's start.
-    this.placeCamera();
-    const state = this.frameTweenState;
-    state.quat.copy(this.camera.quaternion);
-    state.target.copy(this.poseTarget);
-    const from = this.frameId;
-    this.frameId = id;
-    this.updateFrame();
-    // Same camera position and target, expressed in the new frame.
-    orbitInFrame(
-      this.camera.position,
-      this.poseTarget,
-      this.frameQuat,
-      this.frameOrigin,
-      this.orbit,
-    );
-    this.frameTween =
-      duration > 0 && !this.flight
-        ? { from, start: performance.now(), duration, k: 0, ...state }
-        : null;
-    this.dirty = true;
+    this.changeFrame(id, this.bodyFrame.body, duration);
+  }
+
+  /**
+   * Body orbited by the body-centred frame (#123). In that frame the camera travels to it (in
+   * `duration` ms, at least BODY_TRANSITION_MS; 0 jumps, for reduced motion); otherwise it is
+   * kept for the next switch to that frame.
+   */
+  setBodyTarget(body: BodyTarget, { duration = BODY_TRANSITION_MS }: { duration?: number } = {}) {
+    if (!isBodyTarget(body) || body === this.bodyFrame.body) return;
+    if (this.frameId === "body") {
+      this.changeFrame("body", body, duration);
+      return;
+    }
+    this.bodyFrame.body = body;
+    this.globe3d.setBody(body);
+  }
+
+  getBodyTarget(): BodyTarget {
+    return this.bodyFrame.body;
   }
 
   getFrame(): ReferenceFrameId {
@@ -770,7 +846,10 @@ export class SpaceView {
    */
   resetView(instant = false): void {
     if (this.flight) return;
-    this.moveTo(this.observerOrbit(ORBIT_RADIUS), instant);
+    this.moveTo(
+      this.frameId === "body" ? this.bodyOrbit() : this.observerOrbit(ORBIT_RADIUS),
+      instant,
+    );
   }
 
   /**
@@ -780,7 +859,10 @@ export class SpaceView {
    */
   flyFromSky(view: ViewState, options: FlightOptions = {}): void {
     this.prepareFlight();
-    this.flightPath.setup(this.horizon, view, null, ORBIT_RADIUS, this.frameUp);
+    // In the body frame the flight ends round the Earth, celestial north up; the trip to the
+    // body follows (endFlight).
+    const up = this.frameId === "body" ? Z_AXIS : this.frameUp;
+    this.flightPath.setup(this.horizon, view, null, ORBIT_RADIUS, up);
     this.beginFlight("out", options);
   }
 
@@ -861,6 +943,8 @@ export class SpaceView {
     // The globe's material not in use (engraved or realistic) is outside the scene graph.
     this.engravedGlobe.dispose();
     this.real?.globeMaterial.dispose();
+    this.globe3d.dispose();
+    this.fadingGlobe.dispose();
     this.renderer.dispose();
   }
 
@@ -883,7 +967,7 @@ export class SpaceView {
 
   /** Frame rotation, target and pole at the current date. */
   private updateFrame(): void {
-    const frame = frameOf(this.frameId);
+    const frame = this.frameId === "body" ? this.bodyFrame : frameOf(this.frameId);
     frame.orientation(this.date, this.frameQuat);
     frame.target(this.date, this.frameOrigin);
     this.frameUp.set(0, 0, 1).applyQuaternion(this.frameQuat);
@@ -893,8 +977,13 @@ export class SpaceView {
   private stepFrameTween(now: number): void {
     const tw = this.frameTween;
     if (!tw) return;
-    tw.k = flightEase((now - tw.start) / tw.duration);
-    if (tw.k >= 1) this.frameTween = null;
+    tw.t = Math.min(1, Math.max(0, (now - tw.start) / tw.duration));
+    tw.k = flightEase(tw.t);
+    if (tw.k >= 1) {
+      this.frameTween = null;
+      // The globe of the body left disappears, its glyph comes back.
+      if (tw.fromBody) this.update();
+    }
     this.dirty = true;
   }
 
@@ -935,10 +1024,13 @@ export class SpaceView {
     this.dirty = true;
   }
 
-  /** Keeps the pan within reach: the Earth's centre stays well inside the screen. */
+  /**
+   * Keeps the pan within reach: the centre of the frame's target (the Earth, or the body in the
+   * body-centred frame) stays well inside the screen.
+   */
   private clampPan(): void {
     const o = this.orbit;
-    const max = earthPanLimit(o.dist, ORBIT_FOV, this.camera.aspect);
+    const max = panLimit(o.dist, ORBIT_FOV, this.camera.aspect);
     const n = Math.hypot(o.tx, o.ty, o.tz);
     if (n <= max) return;
     const k = max / n;
@@ -980,7 +1072,7 @@ export class SpaceView {
       },
       orbit: (dx: number, dy: number) => {
         // Dragging turns the globe under the finger (the camera orbits the other way).
-        const k = (60 / Math.max(1, canvas.clientHeight)) * (this.orbit.dist / 4);
+        const k = (60 / Math.max(1, canvas.clientHeight)) * (this.orbit.dist / (4 * this.radius()));
         this.orbit.lon -= dx * k;
         this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + dy * k));
         this.dirty = true;
@@ -1022,12 +1114,13 @@ export class SpaceView {
       .unproject(this.camera)
       .sub(o)
       .normalize();
-    const t = raySphere(o.x, o.y, o.z, dir.x, dir.y, dir.z);
+    const c = this.targetCentre();
+    const t = raySphere(o.x - c.x, o.y - c.y, o.z - c.z, dir.x, dir.y, dir.z, this.radius());
     if (t < 0) {
       this.resetView();
       return;
     }
-    dir.multiplyScalar(t).add(o); // the point of the globe, on the unit sphere
+    dir.multiplyScalar(t).add(o).sub(c); // the point of the globe, from its centre
     const { lon, lat } = directionInFrame(dir, this.frameQuat, { lon: 0, lat: 0 });
     const clamped = Math.max(-89, Math.min(89, lat));
     this.moveTo({ lon, lat: clamped, dist: this.orbit.dist, tx: 0, ty: 0, tz: 0 }, false);
@@ -1051,6 +1144,9 @@ export class SpaceView {
     real.setSelected(this.selectedBody);
     this.scene.add(...real.objects);
     this.real = real;
+    this.globe3d.useRealistic(real.surfaceUniforms());
+    this.fadingGlobe.useRealistic(real.surfaceUniforms());
+    this.globesApplied = false;
     const load = this.options.loadTexture;
     if (!load) return;
     for (const name of ["earth-day", "moon", "planets"] as const) {
@@ -1163,8 +1259,10 @@ export class SpaceView {
     if (!f) return;
     this.flight = null;
     if (f.direction === "out") {
-      // Hand over to the orbit camera exactly where the flight ends.
-      this.orbit = this.observerOrbit(ORBIT_RADIUS);
+      // Hand over to the orbit camera exactly where the flight ends; in the body frame, travel
+      // on to the body from there.
+      if (this.frameId === "body") this.tripFromEarth(f.duration > 0 ? BODY_TRANSITION_MS : 0);
+      else this.orbit = this.observerOrbit(ORBIT_RADIUS);
     }
     this.dirty = true;
     f.options.onDone?.();
@@ -1180,10 +1278,33 @@ export class SpaceView {
     orbitPose(this.frameQuat, this.frameOrigin, this.orbit, position, quaternion, target);
     const tw = this.frameTween;
     if (tw) {
-      quaternion.slerpQuaternions(tw.quat, quaternion, tw.k);
-      target.lerpVectors(tw.target, target, tw.k);
-      // Back from the target along the slerped view axis, at the orbit's distance.
-      position.set(0, 0, this.orbit.dist).applyQuaternion(quaternion).add(target);
+      // A trip to or from a body (#123) first turns towards the destination, then travels;
+      // a frame change round the Earth does both together.
+      const trip = tw.fromBody !== null || this.frameId === "body";
+      const move = trip ? flightEase((tw.t - 0.15) / 0.85) : tw.k;
+      const { look, dest, up } = this.tripTmp;
+      dest.copy(target);
+      up.copy(this.frameUp);
+      look.copy(quaternion);
+      quaternion.slerpQuaternions(tw.quat, look, move);
+      // A trip covers the distance geometrically (the same number of frames from 1 000 000 km
+      // to 100 000 km as from 100 000 km to 10 000 km), so that a far planet grows steadily
+      // instead of appearing in the last frames.
+      const span = tw.target.distanceTo(dest);
+      const eps = trip && span > 0 ? this.orbit.dist / (span + this.orbit.dist) : 1;
+      const remaining = eps < 1 ? (eps ** move - eps) / (1 - eps) : 1 - move;
+      target.lerpVectors(dest, tw.target, remaining);
+      // Back from the target along the slerped view axis, the distance interpolated
+      // geometrically (the same for a frame change round the Earth, 4 → 1.1 for a trip to the
+      // Moon, so that the approach slows down near the body).
+      const d = tw.dist > 0 ? tw.dist * (this.orbit.dist / tw.dist) ** move : this.orbit.dist;
+      position.set(0, 0, d).applyQuaternion(quaternion).add(target);
+      if (trip) {
+        // Looking at the destination from where the camera is (its final pose at the end).
+        this.tripTmp.m.lookAt(position, dest, up);
+        look.setFromRotationMatrix(this.tripTmp.m);
+        quaternion.slerpQuaternions(tw.quat, look, flightEase(tw.t / 0.4));
+      }
     }
     this.setFov(ORBIT_FOV);
     this.camera.updateMatrixWorld();
@@ -1357,6 +1478,16 @@ export class SpaceView {
     this.pathPoints.visible =
       this.layers.planets && this.ephemerisOk && this.pathPoints.geometry.drawRange.count > 0;
     if (this.real && !engraved) this.refreshRealistic(prec);
+    // Geocentric glyph directions, before the body frame's camera-relative blend (render).
+    this.geoBodyDirs.set(this.bodyPoints.geometry.getAttribute("aDir").array as Float32Array);
+    this.geoPlanetDirs.set(this.planetPoints.geometry.getAttribute("aDir").array as Float32Array);
+    this.skyBlended = false;
+    this.globesApplied = false;
+    this.refreshBodies(prec);
+    if (this.pendingBodyOrbit && this.frameId === "body" && this.worldPosOk) {
+      this.pendingBodyOrbit = false;
+      this.orbit = this.bodyOrbit();
+    }
   }
 
   /** Planets are drawn (layer on, data given, date within the ephemeris range). */
@@ -1414,12 +1545,11 @@ export class SpaceView {
     if (!posed) this.placeCamera();
     this.camera.updateMatrixWorld();
     const dist = this.camera.position.length();
-    // Near the ground (flight) the ground below the eye is closer than the usual near plane.
-    const near = Math.min(0.01, Math.max(1e-4, (dist - 1) * 0.5));
-    if (near !== this.camera.near) {
-      this.camera.near = near;
-      this.camera.updateProjectionMatrix();
-    }
+    this.updateClipping(dist);
+    this.blendSky();
+    this.applyGlobes();
+    this.globe3d.setCamera(this.camera.position);
+    this.fadingGlobe.setCamera(this.camera.position);
     // Mix with zoom: engraved from afar, relief shows through when close.
     this.uniforms.uDetail.value = globeDetail(dist);
     // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar.
@@ -1465,18 +1595,22 @@ export class SpaceView {
     return point;
   }
 
-  /** True when the segment camera → world point passes through the globe. */
+  /**
+   * True when the segment camera → world point (or the direction at infinity) passes through the
+   * Earth's globe or a body's globe shown by the body-centred frame (#123).
+   */
   private hiddenByEarth(p: THREE.Vector3, atInfinity: boolean): boolean {
-    const o = this.camera.position;
-    const d = this.frameTmp.b.copy(p);
-    if (!atInfinity) d.sub(o);
-    d.normalize();
-    const b = o.dot(d);
-    const c = o.lengthSq() - 1;
-    const disc = b * b - c;
-    if (disc < 0) return false;
-    const t = -b - Math.sqrt(disc);
-    return t > 0 && (atInfinity || t < p.distanceTo(o) - 1e-3);
+    const cam = this.camera.position;
+    const tmp = this.bodyTmp;
+    if (hiddenBySphere(cam, p, atInfinity, ORIGIN, 1, tmp)) return true;
+    for (let i = 0; i < 2; i++) {
+      const g = i === 0 ? this.globe3d : this.fadingGlobe;
+      // A globe still smaller than its glyph (globeShown) does not hide anything yet.
+      if (!g.object.visible || !this.isGlobe(bodyKind(g.getBody()))) continue;
+      const r = bodyRadius(g.getBody());
+      if (hiddenBySphere(cam, p, atInfinity, g.object.position, r, tmp)) return true;
+    }
+    return false;
   }
 
   /**
@@ -1530,7 +1664,8 @@ export class SpaceView {
     if (this.observerMarker.visible) label(labels.here, here, false);
     if (this.bodies) {
       label(labels.sun, this.dirAt(0, sun), true, 20);
-      if (this.ephemerisOk) label(labels.moon, this.dirAt(1, moon), true, this.labelOffset(0, 18));
+      if (this.ephemerisOk && !this.isGlobe(0))
+        label(labels.moon, this.dirAt(1, moon), true, this.labelOffset(0, 18));
     }
     const names = this.options.planetNames;
     if (this.planetsShown() && this.planets && names) {
@@ -1538,7 +1673,7 @@ export class SpaceView {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       const d = new THREE.Vector3();
       this.planets.forEach((p, i) => {
-        if (!p) return;
+        if (!p || this.isGlobe(i + 1)) return;
         label(
           names[PLANETS[i]!],
           d.fromBufferAttribute(dirs, i),
@@ -1615,11 +1750,13 @@ export class SpaceView {
         .applyMatrix3(this.precession);
     } else if (marked.kind === "planet") {
       if (!this.planetsShown() || !this.planets?.[marked.index]) return;
+      if (this.isGlobe(marked.index + 1)) return; // the globe itself is the mark
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       dir.fromBufferAttribute(dirs, marked.index);
       radius = this.labelOffset(marked.index + 1, STAR_MARKER_RADIUS + 2) - 2;
     } else {
       if (!this.bodies || (marked.kind === "moon" && !this.ephemerisOk)) return;
+      if (marked.kind === "moon" && this.isGlobe(0)) return;
       this.dirAt(marked.kind === "sun" ? 0 : 1, dir);
       const disc = this.uniforms.uBodySize.value / 2 + MARKER_GAP;
       radius = marked.kind === "sun" ? disc : this.labelOffset(0, disc + 2) - 2;
@@ -1643,6 +1780,8 @@ export class SpaceView {
 
   /** Sun, Moon or planet under a tap (CSS px), unless hidden behind the globe. */
   private pick(x: number, y: number): SkySelection | null {
+    const onGlobe = this.pickGlobe(x, y);
+    if (onGlobe) return onGlobe;
     let best: SkySelection | null = null;
     let bestDist = Infinity;
     const consider = (dir: THREE.Vector3, radius: number, selection: SkySelection) => {
@@ -1659,12 +1798,13 @@ export class SpaceView {
     if (this.bodies) {
       const r = Math.max(22, this.uniforms.uBodySize.value / 2);
       consider(this.dirAt(0), r, { kind: "body", body: "Sun" });
-      if (this.ephemerisOk) consider(this.dirAt(1), radius(0, r), { kind: "body", body: "Moon" });
+      if (this.ephemerisOk && !this.isGlobe(0))
+        consider(this.dirAt(1), radius(0, r), { kind: "body", body: "Moon" });
     }
     if (this.planetsShown() && this.planets) {
       const dirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
       this.planets.forEach((p, i) => {
-        if (p)
+        if (p && !this.isGlobe(i + 1))
           consider(new THREE.Vector3().fromBufferAttribute(dirs, i), radius(i + 1, 22), {
             kind: "planet",
             planet: PLANETS[i]!,
@@ -1674,12 +1814,309 @@ export class SpaceView {
     return best;
   }
 
+  // --- Body-centred frame (#123)
+
+  /**
+   * Changes the frame, or the body of the body frame: the camera's pose now is frozen as the
+   * start of the slerp; it ends on the new frame's orbit. Round the Earth the camera keeps its
+   * place; into the body frame it goes to the body's default view; back from it, to where it was
+   * round the Earth.
+   */
+  private changeFrame(id: ReferenceFrameId, body: BodyTarget, duration: number): void {
+    if (this.stale) this.refresh();
+    this.input.stopInertia();
+    this.camTween = null;
+    // The camera now (mid-transition included), frozen as the slerp's start.
+    this.placeCamera();
+    const state = this.frameTweenState;
+    state.quat.copy(this.camera.quaternion);
+    state.target.copy(this.poseTarget);
+    const dist = this.camera.position.distanceTo(this.poseTarget);
+    const from = this.frameId;
+    const fromBody = from === "body" ? this.bodyFrame.body : null;
+    if (!fromBody && id === "body") this.rememberEarthView();
+    if (fromBody) {
+      // The globe of the body left stays drawn during the transition.
+      [this.globe3d, this.fadingGlobe] = [this.fadingGlobe, this.globe3d];
+    }
+    this.frameId = id;
+    this.bodyFrame.body = body;
+    this.globe3d.setBody(body);
+    this.pendingBodyOrbit = false;
+    const ms = id === "body" || fromBody ? Math.max(duration, BODY_TRANSITION_MS) : duration;
+    this.frameTween =
+      duration > 0 && !this.flight
+        ? { from, fromBody, dist, start: performance.now(), duration: ms, k: 0, t: 0, ...state }
+        : null;
+    this.refresh(); // the new frame, positions and globes
+    if (id === "body") this.orbit = this.bodyOrbit();
+    else if (fromBody) this.orbit = this.earthOrbitBack();
+    else {
+      // Same camera position and target, expressed in the new frame.
+      orbitInFrame(
+        this.camera.position,
+        this.poseTarget,
+        this.frameQuat,
+        this.frameOrigin,
+        this.orbit,
+      );
+    }
+    this.dirty = true;
+  }
+
+  /** After a flight out of the sky in the body frame: from the Earth's orbit to the body. */
+  private tripFromEarth(duration: number): void {
+    const state = this.frameTweenState;
+    state.quat.copy(this.camera.quaternion);
+    state.target.set(0, 0, 0); // the flight ends looking at the Earth's centre
+    this.rememberEarthView();
+    this.frameTween =
+      duration > 0
+        ? {
+            from: "stars",
+            fromBody: null,
+            dist: this.camera.position.length(),
+            start: performance.now(),
+            duration,
+            k: 0,
+            t: 0,
+            ...state,
+          }
+        : null;
+    this.orbit = this.bodyOrbit();
+    this.update();
+  }
+
+  private rememberEarthView(): void {
+    this.earthReturn.dir.copy(this.camera.position).normalize();
+    this.earthReturn.dist = this.camera.position.length();
+  }
+
+  /** Back round the Earth from a body: where the camera was before leaving, no pan. */
+  private earthOrbitBack(): EarthOrbit {
+    const at = directionInFrame(this.earthReturn.dir, this.frameQuat, { lon: 0, lat: 0 });
+    const dist = Math.max(DIST_MIN, Math.min(DIST_MAX, this.earthReturn.dist));
+    return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
+  }
+
+  /**
+   * Default view of the body (body frame): 50° off the Sun towards the Earth, raised towards
+   * the pole, at a distance where it fills the screen (bodyViewDirection, bodyViewDistance).
+   */
+  private bodyOrbit(): EarthOrbit {
+    if (this.stale) this.refresh();
+    const body = this.bodyFrame.body;
+    const dist = bodyViewDistance(body, ORBIT_FOV, this.camera.aspect);
+    if (!this.worldPosOk) return { lon: 0, lat: 20, dist, tx: 0, ty: 0, tz: 0 };
+    const { a: sun, b: toEarth, c: pole, d: dir } = this.bodyTmp;
+    const centre = this.worldPos[bodyKind(body) + 1]!;
+    sun.copy(this.worldPos[0]!).sub(centre).normalize();
+    toEarth.copy(centre).negate().normalize();
+    bodyPole(body, this.precession, pole);
+    bodyViewDirection(sun, toEarth, pole, dir);
+    const at = directionInFrame(dir, this.frameQuat, { lon: 0, lat: 0 });
+    return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
+  }
+
+  /** Radius (Earth radii) of the frame's target: the body in the body frame, else the Earth. */
+  private radius(): number {
+    return this.frameId === "body" ? bodyRadius(this.bodyFrame.body) : 1;
+  }
+
+  private distMin(): number {
+    return DIST_MIN * this.radius();
+  }
+
+  private distMax(): number {
+    return DIST_MAX * this.radius();
+  }
+
+  /** Centre (world) of the frame's target: the body's globe, or the Earth's. */
+  private targetCentre(): THREE.Vector3 {
+    return this.frameId === "body" ? this.globe3d.object.position : ORIGIN;
+  }
+
+  /** Weight of the body frame: 1 in it, blended during a transition to or from it. */
+  private bodyWeight(): number {
+    const tw = this.frameTween;
+    const on = this.frameId === "body" ? 1 : 0;
+    if (!tw) return on;
+    const was = tw.fromBody ? 1 : 0;
+    return was + (on - was) * tw.k;
+  }
+
+  /**
+   * Positions of the Sun, the Moon and the planets (world, Earth radii), and the globes' poses,
+   * while the body frame is shown or being left. Date-dependent: run by refresh().
+   */
+  private refreshBodies(prec: THREE.Matrix3): void {
+    const tw = this.frameTween;
+    const inFrame = this.frameId === "body";
+    const leaving = !!tw?.fromBody && (!inFrame || tw.fromBody !== this.bodyFrame.body);
+    this.globe3d.setVisible(inFrame);
+    this.fadingGlobe.setVisible(leaving);
+    this.worldPosOk = false;
+    if (!inFrame && !leaving) return;
+    worldPosition("Sun", this.date, prec, this.worldPos[0]!);
+    for (let k = 0; k < BODY_TARGETS.length; k++)
+      worldPosition(BODY_TARGETS[k]!, this.date, prec, this.worldPos[k + 1]!);
+    this.worldPosOk = true;
+    if (inFrame) this.poseGlobe(this.globe3d, prec);
+    if (leaving) this.poseGlobe(this.fadingGlobe, prec);
+  }
+
+  /** A globe at its body's position, lit from the Sun, its axes as the sprites' (space-style). */
+  private poseGlobe(globe: BodyGlobe, prec: THREE.Matrix3): void {
+    const body = globe.getBody();
+    const centre = this.worldPos[bodyKind(body) + 1]!;
+    const { a: sun, b: pole, c: prime } = this.bodyTmp;
+    sun.copy(this.worldPos[0]!).sub(centre).normalize();
+    bodyPole(body, prec, pole);
+    if (body === "Moon") {
+      // Near side towards the Earth (moonAxes): the prime meridian at the sub-Earth point.
+      prime.copy(centre).negate().normalize();
+      prime.addScaledVector(pole, -prime.dot(pole)).normalize();
+    } else {
+      const [x, y, z] = planetAxes(body, this.date).prime;
+      prime.set(x, y, z).applyMatrix3(prec).normalize();
+    }
+    globe.setPose(centre, sun, pole, prime);
+  }
+
+  /**
+   * The globe stands for its body once its disc is at least GLOBE_MIN_PX in radius: farther (at
+   * the start of a trip to Saturn, at true scale it is a fraction of a pixel), the body keeps
+   * its glyph and label.
+   */
+  private globeShown(globe: BodyGlobe): boolean {
+    if (!globe.object.visible) return false;
+    const d = this.camera.position.distanceTo(globe.object.position);
+    const r = bodyRadius(globe.getBody());
+    const focalPx = this.options.canvas.clientHeight / 2 / Math.tan((this.camera.fov * DEG) / 2);
+    return d <= r || (r / Math.sqrt(d * d - r * r)) * focalPx >= GLOBE_MIN_PX;
+  }
+
+  /** Kind 0 (Moon) or 1 … 7 (planets) drawn as a globe now: its glyph and label are hidden. */
+  private isGlobe(kind: number): boolean {
+    return kind === this.globeKindA || kind === this.globeKindB;
+  }
+
+  /** Hides the glyphs of the bodies drawn as globes (engraved and realistic), once per change. */
+  private applyGlobes(): void {
+    const a = this.globeShown(this.globe3d) ? bodyKind(this.globe3d.getBody()) : -1;
+    const b = this.globeShown(this.fadingGlobe) ? bodyKind(this.fadingGlobe.getBody()) : -1;
+    if (this.globesApplied && a === this.globeKindA && b === this.globeKindB) return;
+    this.globesApplied = true;
+    this.globeKindA = a;
+    this.globeKindB = b;
+    this.real?.setGlobeBodies(a, b);
+    // Sun = point 0, Moon = point 1 (hidden out of the ephemeris range, or as a globe).
+    this.bodyPoints.geometry.setDrawRange(0, this.ephemerisOk && !this.isGlobe(0) ? 2 : 1);
+    const mags = this.planetPoints.geometry.getAttribute("aMag") as THREE.BufferAttribute;
+    for (let i = 0; i < PLANETS.length; i++)
+      mags.setX(i, this.isGlobe(i + 1) ? 99 : this.planetMags[i]!);
+    mags.needsUpdate = true;
+  }
+
+  /**
+   * Sky glyphs of the Sun, the Moon and the planets: seen from the camera in the body frame
+   * (positions minus the camera: from Jupiter the Sun is 5° from where the Earth sees it),
+   * geocentric otherwise, blended during a transition. Allocation-free.
+   */
+  private blendSky(): void {
+    const w = this.worldPosOk ? this.bodyWeight() : 0;
+    if (w === 0 && !this.skyBlended) return;
+    const out = this.bodyTmp.sky;
+    const real = this.real;
+    const bodyDirs = this.bodyPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+    for (let i = 0; i < 2; i++) {
+      this.blendDir(this.geoBodyDirs, i, this.worldPos[i]!, w, out);
+      bodyDirs.setXYZ(i, out.x, out.y, out.z);
+      if (real && i === 0) real.setSunDirection(out);
+      else if (real) real.setDirection(0, out);
+    }
+    bodyDirs.needsUpdate = true;
+    const planetDirs = this.planetPoints.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+    for (let j = 0; j < PLANETS.length; j++) {
+      this.blendDir(this.geoPlanetDirs, j, this.worldPos[j + 2]!, w, out);
+      planetDirs.setXYZ(j, out.x, out.y, out.z);
+      real?.setDirection(j + 1, out);
+    }
+    planetDirs.needsUpdate = true;
+    this.skyBlended = w > 0;
+  }
+
+  private blendDir(
+    geo: Float32Array,
+    i: number,
+    position: THREE.Vector3,
+    w: number,
+    out: THREE.Vector3,
+  ): void {
+    out.set(geo[3 * i]!, geo[3 * i + 1]!, geo[3 * i + 2]!);
+    if (w === 0) return;
+    const rel = this.bodyTmp.rel.copy(position).sub(this.camera.position).normalize();
+    out
+      .multiplyScalar(1 - w)
+      .addScaledVector(rel, w)
+      .normalize();
+  }
+
+  /**
+   * Near and far planes: the near plane half-way to the closest surface (the Earth's, or a body
+   * globe's), at most 0.01 round the Earth as before; the far plane beyond the Earth and the
+   * globes (the sky sits on it whatever its distance).
+   */
+  private updateClipping(earthDist: number): void {
+    let surface = earthDist - 1;
+    let far = Math.max(100, earthDist + 2);
+    let globes = false;
+    for (let i = 0; i < 2; i++) {
+      const g = i === 0 ? this.globe3d : this.fadingGlobe;
+      if (!g.object.visible) continue;
+      globes = true;
+      const r = bodyRadius(g.getBody());
+      const d = this.camera.position.distanceTo(g.object.position);
+      surface = Math.min(surface, d - r);
+      far = Math.max(far, d + 3 * r);
+    }
+    // Near the ground (flight) the ground below the eye is closer than the usual near plane.
+    const near = Math.max(1e-4, Math.min(globes ? Infinity : 0.01, surface * 0.5));
+    if (near !== this.camera.near || far !== this.camera.far) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /** Tap on the globe of the body orbited: that body. */
+  private pickGlobe(x: number, y: number): SkySelection | null {
+    if (this.frameId !== "body" || !this.globe3d.object.visible) return null;
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    const o = this.camera.position;
+    const dir = this.bodyTmp.d
+      .set((2 * x) / Math.max(1, w) - 1, 1 - (2 * y) / Math.max(1, h), 0.5)
+      .unproject(this.camera)
+      .sub(o)
+      .normalize();
+    const c = this.globe3d.object.position;
+    const body = this.globe3d.getBody();
+    const t = raySphere(o.x - c.x, o.y - c.y, o.z - c.z, dir.x, dir.y, dir.z, bodyRadius(body));
+    if (t < 0) return null;
+    return body === "Moon" ? { kind: "body", body: "Moon" } : { kind: "planet", planet: body };
+  }
+
   private zoom(factor: number): void {
     const requested = this.orbit.dist * factor;
-    this.orbit.dist = Math.max(DIST_MIN, Math.min(DIST_MAX, requested));
+    this.orbit.dist = Math.max(this.distMin(), Math.min(this.distMax(), requested));
     this.dirty = true;
-    // Zooming in past the closest distance on "you are here": into the sky (#37).
-    if (!this.options.onEnterSky || !this.overZoom.push(DIST_MIN / requested, performance.now()))
+    // Zooming in past the closest distance on "you are here": into the sky (#37). Not round
+    // another body.
+    if (
+      this.frameId === "body" ||
+      !this.options.onEnterSky ||
+      !this.overZoom.push(DIST_MIN / requested, performance.now())
+    )
       return;
     this.placeCamera();
     const gst = greenwichMeanSiderealTime(this.date);

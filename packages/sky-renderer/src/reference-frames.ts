@@ -14,7 +14,9 @@
  *   is measured from the CIO); using the same angle keeps the place exactly still.
  * - "ecliptic": x = vernal equinox, z = ecliptic pole of date; the Earth's axis appears tilted by
  *   the mean obliquity of date (IAU 2006, astro-core meanObliquity).
- * - "heliocentric" and "body": announced in the selector, not available yet (#123, #124).
+ * - "body" (#123): the camera orbits the Moon or a planet, at its real distance and size, its
+ *   north pole up (body-frame.ts: BodyFrame, owned by the view, which knows the chosen body).
+ * - "heliocentric": announced in the selector, not available yet (#124).
  *
  * Pure three.js maths, allocation-free once set up: safe to run every frame.
  */
@@ -30,8 +32,8 @@ export const REFERENCE_FRAMES: readonly { id: ReferenceFrameId; available: boole
   { id: "stars", available: true },
   { id: "earth", available: true },
   { id: "ecliptic", available: true },
-  { id: "heliocentric", available: false }, // TODO(#123): heliocentric frame
-  { id: "body", available: false }, // TODO(#124): body-centred frame
+  { id: "heliocentric", available: false }, // TODO(#124): heliocentric frame
+  { id: "body", available: true },
 ];
 
 export const DEFAULT_REFERENCE_FRAME: ReferenceFrameId = "stars";
@@ -77,7 +79,10 @@ export const FRAMES: Readonly<Record<"stars" | "earth" | "ecliptic", ReferenceFr
   },
 };
 
-/** The frame for an id; unavailable ones fall back to the star-fixed frame. */
+/**
+ * The frame for an id; unavailable ones fall back to the star-fixed frame, and so does "body",
+ * whose frame depends on the chosen body (a BodyFrame owned by the view).
+ */
 export function frameOf(id: ReferenceFrameId): ReferenceFrame {
   return id === "earth" || id === "ecliptic" ? FRAMES[id] : FRAMES.stars;
 }

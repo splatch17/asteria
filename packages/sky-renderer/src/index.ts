@@ -15,3 +15,4 @@ export * from "./mini-globe";
 export * from "./figures";
 export * from "./highlight";
 export * from "./reference-frames";
+export * from "./body-frame";

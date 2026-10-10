@@ -1,18 +1,27 @@
 <script lang="ts">
-  // Reference frame selector of the Earth view (#122): four entries, the frames of later
-  // sub-tickets shown disabled ("bientôt"). Opens beside the dials column.
+  // Reference frame selector of the Earth view (#122): five entries, the frames of later
+  // sub-tickets shown disabled ("bientôt"). Opens beside the dials column. The body-centred
+  // frame (#123) has a sub-list: the Moon and the planets, one tap travels there.
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
-  import { REFERENCE_FRAMES, type ReferenceFrameId } from "@asteria/sky-renderer";
+  import { REFERENCE_FRAMES, type BodyTarget, type ReferenceFrameId } from "@asteria/sky-renderer";
 
   let {
     frame,
+    body,
+    bodies,
+    onbody,
     top,
     onselect,
     onclose,
     toggle,
   }: {
     frame: ReferenceFrameId;
+    /** Body of the body-centred frame, and the bodies offered, with their localised names. */
+    body: BodyTarget;
+    bodies: { id: BodyTarget; name: string }[];
+    /** A body is chosen in the sub-list (switches to the body-centred frame). */
+    onbody: (body: BodyTarget) => void;
     /** CSS `top` of the panel. */
     top: string;
     onselect: (id: ReferenceFrameId) => void;
@@ -76,6 +85,18 @@
           <span class="soon">{$_("frame.soon")}</span>
         {/if}
       </button>
+      {#if entry.id === "body" && entry.available}
+        <div class="bodies" role="radiogroup" aria-label={$_("frame.body.pick")}>
+          {#each bodies as b (b.id)}
+            <button
+              class="body"
+              role="radio"
+              aria-checked={frame === "body" && body === b.id}
+              onclick={() => onbody(b.id)}>{b.name}</button
+            >
+          {/each}
+        </div>
+      {/if}
     {/each}
   </div>
 </div>
@@ -165,6 +186,37 @@
     color: var(--ast-fg);
   }
   .choice[aria-checked="true"] .mark {
+    background: var(--ast-fg);
+    border-color: var(--ast-fg);
+  }
+  /* Sub-list of the body-centred frame: a grid of small engraved tabs, 4 per row. */
+  .bodies {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 0 12px 6px 40px;
+  }
+  .body {
+    min-height: 36px;
+    padding: 0 2px;
+    font: 500 9px/1 var(--ast-font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+    background: transparent;
+    border: 1px solid var(--ast-hairline);
+    border-radius: var(--ast-radius);
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .body:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: 1px;
+  }
+  .body[aria-checked="true"] {
+    color: var(--ast-bg);
     background: var(--ast-fg);
     border-color: var(--ast-fg);
   }

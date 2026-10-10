@@ -13,6 +13,7 @@ import {
   realSunVert,
 } from "./space-real-shaders";
 import type { CatalogStar } from "./sky-map";
+import type { SurfaceUniforms } from "./body-globe";
 
 /** Textures of the realistic style, loaded on demand (see packages/sky-data/build_space.py). */
 export type SpaceTextureName = "earth-day" | "moon" | "planets";
@@ -60,6 +61,7 @@ export class RealisticLayer {
   private selected = -1;
   private planetsShown = true;
   private hasSun = false;
+  private readonly globeBodies = [-1, -1];
 
   constructor(shared: SharedUniforms, stars: CatalogStar[], motion: StarMotion) {
     const placeholder = new THREE.Texture();
@@ -158,6 +160,44 @@ export class RealisticLayer {
       o.frustumCulled = false;
       o.visible = false;
     }
+  }
+
+  /** Texture and night-ink uniforms of the bodies' surfaces, shared with the body globe (#123). */
+  surfaceUniforms(): SurfaceUniforms {
+    const u = this.uniforms;
+    return {
+      uMoonTex: u.uMoonTex,
+      uHasMoon: u.uHasMoon,
+      uAtlas: u.uAtlas,
+      uHasAtlas: u.uHasAtlas,
+      uMono: u.uMono,
+      uMonoInk: u.uMonoInk,
+    };
+  }
+
+  /**
+   * Bodies (0 = Moon, 1 … 7 = planets) drawn as globes by the body-centred frame (#123): their
+   * sprites are hidden. −1: none.
+   */
+  setGlobeBodies(a: number, b: number): void {
+    if (a === this.globeBodies[0] && b === this.globeBodies[1]) return;
+    this.globeBodies[0] = a;
+    this.globeBodies[1] = b;
+    this.updateSizes();
+  }
+
+  /** Direction (world) of one body's sprite, without touching its light or axes. */
+  setDirection(index: number, dir: THREE.Vector3): void {
+    const a = this.bodies.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+    a.setXYZ(index, dir.x, dir.y, dir.z);
+    a.needsUpdate = true;
+  }
+
+  /** Sun direction (world) of the sprite, without changing the light. */
+  setSunDirection(dir: THREE.Vector3): void {
+    const a = this.sun.geometry.getAttribute("aDir") as THREE.BufferAttribute;
+    a.setXYZ(0, dir.x, dir.y, dir.z);
+    a.needsUpdate = true;
   }
 
   setVisible(visible: boolean): void {
@@ -267,7 +307,7 @@ export class RealisticLayer {
       const mag = this.magnitudes[i]!;
       let s = 0;
       let k = 0;
-      if (mag < 50 && (i === 0 || this.planetsShown)) {
+      if (mag < 50 && !this.globeBodies.includes(i) && (i === 0 || this.planetsShown)) {
         if (i === 0) s = this.selected === 0 ? MOON_SELECTED : MOON_SIZE;
         else {
           const selected = this.selected === i;

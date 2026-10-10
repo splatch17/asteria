@@ -367,11 +367,13 @@ export function rotateScreen(dx: number, dy: number, rad: number, out: Point2): 
 }
 
 /**
- * Largest pan of the Earth view's target (Earth radii) that keeps the Earth's centre well
- * inside the screen: `margin` of the shorter half-extent, at camera distance `distance`,
- * vertical field of view `fovDeg` and aspect w/h.
+ * Largest pan of the Earth view's target (Earth radii) that keeps the centre of the body
+ * orbited (the Earth, or the Moon or a planet in the body-centred frame, #123) well inside the
+ * screen: `margin` of the shorter half-extent, at camera distance `distance` from the target,
+ * vertical field of view `fovDeg` and aspect w/h. The body's radius enters through `distance`,
+ * whose limits scale with it.
  */
-export function earthPanLimit(distance: number, fovDeg: number, aspect: number, margin = 0.6) {
+export function panLimit(distance: number, fovDeg: number, aspect: number, margin = 0.6) {
   const half = Math.tan((fovDeg * Math.PI) / 360);
   return margin * distance * half * Math.min(1, aspect);
 }

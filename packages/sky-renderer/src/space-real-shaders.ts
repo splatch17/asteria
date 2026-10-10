@@ -11,7 +11,7 @@ const atInfinity = /* glsl */ `
   }
 `;
 
-const finish = /* glsl */ `
+export const finish = /* glsl */ `
   uniform float uMono;
   uniform vec3 uMonoInk;
   vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
@@ -103,6 +103,65 @@ export const realSunFrag = /* glsl */ `
  * direction, pole and prime meridian are expressed in it by the vertex shader.
  * Atlas layout mirrors packages/sky-data/build_space.py (8 cells of 128 rows, 8 rows padding).
  */
+/**
+ * Surfaces of the Moon (k = 0) and the planets (k = 1 … 7, PLANETS order + 1): textures (Moon
+ * map, planet atlas with Saturn's rings in its last row), fallback colours, Saturn's rings.
+ * Shared by the sprites at infinity and the body-centred globe (#123).
+ */
+export const bodySurface = /* glsl */ `
+  uniform sampler2D uMoonTex;
+  uniform sampler2D uAtlas;
+  uniform float uHasMoon;
+  uniform float uHasAtlas;
+  const float PI = 3.14159265359;
+  const float CELLS = 8.0;
+  const float CELL = 128.0;
+  const float PAD = 8.0;
+  const float RING_SPRITE = 2.4;  // Saturn's sprite half-size, in Saturn radii
+  const float RING_TEX_IN = 1.171;
+  const float RING_TEX_OUT = 2.336;
+  const float RING_IN = 1.239;    // C ring inner edge
+  const float RING_OUT = 2.27;    // A ring outer edge
+
+  // Mean colours (sRGB) used until the textures are loaded, or if they fail to load.
+  vec3 fallback(float k) {
+    if (k < 0.5) return vec3(0.55, 0.54, 0.52);
+    if (k < 1.5) return vec3(0.55, 0.53, 0.5);
+    if (k < 2.5) return vec3(0.9, 0.82, 0.62);
+    if (k < 3.5) return vec3(0.76, 0.42, 0.24);
+    if (k < 4.5) return vec3(0.82, 0.74, 0.62);
+    if (k < 5.5) return vec3(0.86, 0.78, 0.58);
+    if (k < 6.5) return vec3(0.66, 0.85, 0.88);
+    return vec3(0.3, 0.45, 0.85);
+  }
+
+  // Surface colour (sRGB) at the unit normal n, body axes P (pole), M (prime meridian), E (east).
+  vec3 surfaceAt(vec3 n, vec3 P, vec3 M, vec3 E, float k) {
+    float lon = atan(dot(n, E), dot(n, M));
+    float lat = asin(clamp(dot(n, P), -1.0, 1.0));
+    vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
+    vec3 c = fallback(k);
+    if (k < 0.5) {
+      if (uHasMoon > 0.5) c = texture2D(uMoonTex, uv).rgb;
+    } else if (uHasAtlas > 0.5) {
+      float row = (k - 1.0) * CELL + PAD + uv.y * (CELL - 2.0 * PAD);
+      c = texture2D(uAtlas, vec2(uv.x, row / (CELLS * CELL))).rgb;
+    }
+    return c;
+  }
+
+  // Saturn's rings at radius r (Saturn radii): colour (rgb) and opacity (a).
+  vec4 ring(float r) {
+    if (r < RING_IN || r > RING_OUT) return vec4(0.0);
+    if (uHasAtlas < 0.5) return vec4(0.8, 0.72, 0.6, 0.6);
+    float u = (r - RING_TEX_IN) / (RING_TEX_OUT - RING_TEX_IN);
+    float base = 7.0 * CELL;
+    vec3 colour = texture2D(uAtlas, vec2(u, (base + 32.0) / (CELLS * CELL))).rgb;
+    float alpha = texture2D(uAtlas, vec2(u, (base + 96.0) / (CELLS * CELL))).r;
+    return vec4(colour, alpha);
+  }
+`;
+
 export const realBodyVert = /* glsl */ `
   ${atInfinity}
   uniform float uDpr;
@@ -142,10 +201,6 @@ export const realBodyVert = /* glsl */ `
 export const realBodyFrag = /* glsl */ `
   precision highp float;
   ${finish}
-  uniform sampler2D uMoonTex;
-  uniform sampler2D uAtlas;
-  uniform float uHasMoon;
-  uniform float uHasAtlas;
   varying vec3 vL;
   varying vec3 vP;
   varying vec3 vM;
@@ -154,52 +209,8 @@ export const realBodyFrag = /* glsl */ `
   varying float vPx;
   varying float vGlow;
 
-  const float PI = 3.14159265359;
-  const float CELLS = 8.0;
-  const float CELL = 128.0;
-  const float PAD = 8.0;
-  const float RING_SPRITE = 2.4;  // Saturn's sprite half-size, in Saturn radii
-  const float RING_TEX_IN = 1.171;
-  const float RING_TEX_OUT = 2.336;
-  const float RING_IN = 1.239;    // C ring inner edge
-  const float RING_OUT = 2.27;    // A ring outer edge
-
-  // Mean colours (sRGB) used until the textures are loaded, or if they fail to load.
-  vec3 fallback(float k) {
-    if (k < 0.5) return vec3(0.55, 0.54, 0.52);
-    if (k < 1.5) return vec3(0.55, 0.53, 0.5);
-    if (k < 2.5) return vec3(0.9, 0.82, 0.62);
-    if (k < 3.5) return vec3(0.76, 0.42, 0.24);
-    if (k < 4.5) return vec3(0.82, 0.74, 0.62);
-    if (k < 5.5) return vec3(0.86, 0.78, 0.58);
-    if (k < 6.5) return vec3(0.66, 0.85, 0.88);
-    return vec3(0.3, 0.45, 0.85);
-  }
-
-  vec3 surface(vec3 n, float k) {
-    float lon = atan(dot(n, vE), dot(n, vM));
-    float lat = asin(clamp(dot(n, vP), -1.0, 1.0));
-    vec2 uv = vec2(lon / (2.0 * PI) + 0.5, 0.5 - lat / PI);
-    vec3 c = fallback(k);
-    if (k < 0.5) {
-      if (uHasMoon > 0.5) c = texture2D(uMoonTex, uv).rgb;
-    } else if (uHasAtlas > 0.5) {
-      float row = (k - 1.0) * CELL + PAD + uv.y * (CELL - 2.0 * PAD);
-      c = texture2D(uAtlas, vec2(uv.x, row / (CELLS * CELL))).rgb;
-    }
-    return c;
-  }
-
-  // Saturn's rings at radius r (Saturn radii): colour (rgb) and opacity (a).
-  vec4 ring(float r) {
-    if (r < RING_IN || r > RING_OUT) return vec4(0.0);
-    if (uHasAtlas < 0.5) return vec4(0.8, 0.72, 0.6, 0.6);
-    float u = (r - RING_TEX_IN) / (RING_TEX_OUT - RING_TEX_IN);
-    float base = 7.0 * CELL;
-    vec3 colour = texture2D(uAtlas, vec2(u, (base + 32.0) / (CELLS * CELL))).rgb;
-    float alpha = texture2D(uAtlas, vec2(u, (base + 96.0) / (CELLS * CELL))).r;
-    return vec4(colour, alpha);
-  }
+  ${bodySurface}
+  vec3 surface(vec3 n, float k) { return surfaceAt(n, vP, vM, vE, k); }
 
   void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;

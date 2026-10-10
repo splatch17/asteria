@@ -11,8 +11,11 @@
     type SpaceStyle,
     type ViewState,
     type ReferenceFrameId,
+    type BodyTarget,
     isSpaceStyle,
     isAvailableFrame,
+    isBodyTarget,
+    BODY_TARGETS,
     DEFAULT_REFERENCE_FRAME,
     FRAME_TRANSITION_MS,
     DEFAULT_SPACE_LAYERS,
@@ -25,6 +28,7 @@
     PLANETS,
     bodyPosition,
     constellationOf,
+    geocentricPosition,
     meanObliquity,
     moonPhase,
     propagateStar,
@@ -121,6 +125,11 @@
     isAvailableFrame(urlFrame)
       ? urlFrame
       : readSetting("asteria.spaceFrame", DEFAULT_REFERENCE_FRAME, isAvailableFrame),
+  );
+  // Body orbited by the body-centred frame (#123), remembered; `?body=` for captures.
+  const urlBody = new URLSearchParams(location.search).get("body");
+  let spaceBody = $state<BodyTarget>(
+    isBodyTarget(urlBody) ? urlBody : readSetting("asteria.spaceBody", "Moon", isBodyTarget),
   );
   let frameOpen = $state(false);
   let frameButton = $state<HTMLButtonElement>();
@@ -381,9 +390,15 @@
       formatObliquity: (deg) =>
         $_("space.obliquity", { values: { angle: angleFormat.format(deg) } }),
       frame: spaceFrame,
+      body: spaceBody,
       planetNames: planetNames(),
       formatPathMark: (d) => pathMarkFormat.format(d),
-      onSelect: (s) => (selection = s),
+      onSelect: (s) => {
+        selection = s;
+        // Body-centred frame (#123): a tap on the Moon or a planet travels to it.
+        const body = targetOf(s);
+        if (spaceFrame === "body" && body) spaceBody = body;
+      },
       onEnterSky: () => flyToSky(),
       style: spaceStyle,
       monochrome: night,
@@ -847,6 +862,11 @@
   $effect(() => {
     space?.setSelection(selection);
   });
+  // Before the frame: a switch to the body frame goes straight to the chosen body.
+  $effect(() => {
+    space?.setBodyTarget(spaceBody, { duration: frameDuration() });
+    if (urlBody === null) writeSetting("asteria.spaceBody", spaceBody);
+  });
   $effect(() => {
     space?.setFrame(spaceFrame, { duration: frameDuration() });
     if (urlFrame === null) writeSetting("asteria.spaceFrame", spaceFrame);
@@ -858,6 +878,49 @@
     }
   });
 
+  /** The Moon or the planet of a selection (body-centred frame, #123). */
+  function targetOf(s: SkySelection | null): BodyTarget | null {
+    if (s?.kind === "planet") return s.planet;
+    if (s?.kind === "body" && s.body === "Moon") return "Moon";
+    return null;
+  }
+
+  /** A body is chosen in the selector's sub-list: the body-centred frame, round it. */
+  function chooseBody(body: BodyTarget) {
+    spaceBody = body;
+    chooseFrame("body");
+  }
+
+  /** Name of the body orbited (body-centred frame). */
+  const targetName = (body: BodyTarget) =>
+    body === "Moon" ? $_("body.Moon") : $_(`planet.${body}`);
+
+  /**
+   * Scale caption of the body-centred frame (#123): distance and light time from the Earth at
+   * the displayed date; the body and the Earth are to scale, the other glyphs enlarged.
+   */
+  const bodyScale = $derived.by(() => {
+    if (spaceFrame !== "body" || mode !== "space") return null;
+    const { distanceKm, lightTimeS } = geocentricPosition(spaceBody, date);
+    const km = Number(distanceKm.toPrecision(3));
+    const light =
+      lightTimeS < 60
+        ? $_("frame.body.lightSeconds", { values: { s: Math.round(lightTimeS * 10) / 10 } })
+        : lightTimeS < 3600
+          ? $_("frame.body.lightMinutes", { values: { min: Math.round(lightTimeS / 60) } })
+          : $_("frame.body.lightHours", {
+              values: {
+                h: Math.floor(lightTimeS / 3600),
+                min: Math.round((lightTimeS % 3600) / 60),
+              },
+            });
+    return {
+      name: targetName(spaceBody),
+      distance: $_("frame.body.distance", { values: { km } }),
+      light,
+    };
+  });
+
   /** A frame is chosen in the selector: switch, and say in one sentence what it shows. */
   function chooseFrame(id: ReferenceFrameId) {
     frameOpen = false;
@@ -867,7 +930,7 @@
     // Level read now: it may have changed in the 3D view since start-up.
     const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     const angle = angleFormat.format(meanObliquity(date));
-    frameNote = $_(`frame.${id}.${level}`, { values: { angle } });
+    frameNote = $_(`frame.${id}.${level}`, { values: { angle, body: targetName(spaceBody) } });
     clearTimeout(frameNoteTimer);
     frameNoteTimer = setTimeout(() => (frameNote = null), 9000);
   }
@@ -1170,6 +1233,9 @@
 {#if frameOpen && mode === "space"}
   <FramePanel
     frame={spaceFrame}
+    body={spaceBody}
+    bodies={BODY_TARGETS.map((id) => ({ id, name: targetName(id) }))}
+    onbody={chooseBody}
     top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
     onselect={chooseFrame}
     onclose={() => (frameOpen = false)}
@@ -1245,6 +1311,14 @@
 {/if}
 
 <GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
+
+{#if bodyScale && !flying && !selection}
+  <!-- Body-centred frame (#123): where the body is, and what is (not) to scale. -->
+  <p class="hud scale-note" style:bottom={aboveControls} aria-live="polite">
+    <span class="note-title">{bodyScale.name} · {bodyScale.distance} · {bodyScale.light}</span>
+    {$_("frame.body.scale")}
+  </p>
+{/if}
 
 {#if status !== "ready"}
   <div class="status" role={status === "error" ? "alert" : "status"}>
@@ -1491,6 +1565,25 @@
     letter-spacing: 0;
     height: auto;
     display: block;
+  }
+  .scale-note {
+    left: max(16px, env(safe-area-inset-left));
+    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
+    max-width: 340px;
+    margin: 0;
+    padding: 6px 8px;
+    height: auto;
+    display: block;
+    border: 1px solid var(--ast-hairline);
+    background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
+    font: 10px/1.45 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
+    text-transform: none;
+    letter-spacing: 0;
+    pointer-events: none;
+  }
+  .scale-note .note-title {
+    margin-bottom: 2px;
   }
   .toast.note {
     color: var(--ast-fg-muted);
