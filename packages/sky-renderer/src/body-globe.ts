@@ -174,7 +174,8 @@ export class BodyGlobe {
   private body: BodyTarget = "Moon";
   private readonly quat = new THREE.Quaternion();
 
-  constructor(engraved: EngravedUniforms) {
+  /** `segments`: longitude segments of the sphere (half as many in latitude). */
+  constructor(engraved: EngravedUniforms, segments = 96) {
     const placeholder = new THREE.Texture();
     this.local = {
       uSun: { value: new THREE.Vector3(1, 0, 0) },
@@ -195,7 +196,7 @@ export class BodyGlobe {
       globe: this.globeMaterial(engravedGlobeFrag, uniforms),
       rings: this.ringMaterial(engravedRingFrag, uniforms, false),
     };
-    this.sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 48), this.engraved.globe);
+    this.sphere = new THREE.Mesh(new THREE.SphereGeometry(1, segments, segments / 2), this.engraved.globe);
     this.rings = new THREE.Mesh(
       new THREE.RingGeometry(SATURN_RINGS.inner, SATURN_RINGS.outer, 192, 1),
       this.engraved.rings,
@@ -238,14 +239,17 @@ export class BodyGlobe {
     this.object.visible = visible;
   }
 
-  /** Centre (world, Earth radii), sunward direction, pole and prime meridian (world, unit). */
+  /**
+   * Centre (world, Earth radii), sunward direction, pole and prime meridian (world, unit), and
+   * the drawn radius (the body's true radius unless a diagram enlarges it, #128).
+   */
   setPose(
     centre: THREE.Vector3,
     sunward: THREE.Vector3,
     pole: THREE.Vector3,
     prime: THREE.Vector3,
+    r = bodyRadius(this.body),
   ): void {
-    const r = bodyRadius(this.body);
     this.object.position.copy(centre);
     this.object.scale.setScalar(r);
     this.local.uRadius.value = r;
