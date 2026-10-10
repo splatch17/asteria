@@ -221,7 +221,10 @@ export class FlightPath {
   private readonly mapQuat = new THREE.Quaternion();
   /** Rotation from the zenith to the orbit's direction (identity when leaving the sky). */
   private readonly swing = new THREE.Quaternion();
+  /** Map heading less the azimuth of `orbitUp` seen from above the observer, degrees. */
   private heading = 0;
+  /** Top of the screen at the orbit (celestial north, or the reference frame's pole, #122). */
+  private readonly orbitUp = new THREE.Vector3(0, 0, 1);
   private startFov = 90;
   private orbitDist = ORBIT_RADIUS;
   private readonly tmp = {
@@ -235,19 +238,25 @@ export class FlightPath {
 
   /**
    * `view`: the sky map's view at s = 0. `orbitDir`: unit direction of the camera at s = 1
-   * (null: above the observer). `orbitDist`: its distance, Earth radii.
+   * (null: above the observer). `orbitDist`: its distance, Earth radii. `orbitUp`: the world
+   * direction at the top of the screen at s = 1 (the Earth view's reference frame pole, #122).
    */
   setup(
     basis: Readonly<HorizonBasis>,
     view: ViewState,
     orbitDir: THREE.Vector3 | null = null,
     orbitDist = ORBIT_RADIUS,
+    orbitUp: THREE.Vector3 = CELESTIAL_NORTH,
   ): this {
     this.basis.north.copy(basis.north);
     this.basis.east.copy(basis.east);
     this.basis.up.copy(basis.up);
+    this.orbitUp.copy(orbitUp);
     mapViewQuaternion(view, this.basis, this.mapQuat);
-    this.heading = wrap180(view.azimuth);
+    // Looking down at the observer with orbitUp at the top, the top of the screen is at this
+    // azimuth (0 for celestial north): the turn to the map's heading is measured from it.
+    const upAzimuth = Math.atan2(orbitUp.dot(basis.east), orbitUp.dot(basis.north)) / DEG;
+    this.heading = wrap180(view.azimuth - upAzimuth);
     this.startFov = perspectiveFovForStereo(view.fov);
     this.orbitDist = orbitDist;
     if (orbitDir) this.swing.setFromUnitVectors(this.basis.up, orbitDir);
@@ -268,14 +277,14 @@ export class FlightPath {
     q.slerpQuaternions(id, this.swing, smoothstep(0.3, 1, s));
     dir.copy(up).applyQuaternion(q);
     position.copy(dir).multiplyScalar(flightRadius(s, this.orbitDist));
-    // Orientation of the orbit camera there (looking at the centre, celestial north up)…
+    // Orientation of the orbit camera there (looking at the centre, orbitUp up)…
     fwd.copy(position).negate();
-    lookQuaternion(fwd, CELESTIAL_NORTH, q2);
+    lookQuaternion(fwd, this.orbitUp, q2);
     // … turned about the vertical to the map's heading, so the pitch keeps the heading.
     turn.setFromAxisAngle(up, -this.heading * DEG);
     q2.premultiply(turn);
     quaternion.slerpQuaternions(this.mapQuat, q2, smoothstep(0, 0.6, s));
-    // Then back to celestial north up, high in the climb.
+    // Then back to orbitUp up, high in the climb.
     turn.setFromAxisAngle(up, this.heading * DEG * smoothstep(0.45, 1, s));
     quaternion.premultiply(turn);
     return this.startFov + (ORBIT_FOV - this.startFov) * smoothstep(0, 0.55, s);
