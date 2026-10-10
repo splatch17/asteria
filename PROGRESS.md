@@ -8,23 +8,33 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
-| #99 | Barre de recherche | Claude | `feat/99-search` | 2026-10-08 |
+| #101 | Ciel profond sur la carte et dans la recherche | Claude (agent) | `feat/101-deepsky-map` | 2026-10-09 |
+| #123 | Vue Terre : référentiel centré sur un astre | Claude (agent) | `feat/123-body-centred-frame` | 2026-10-10 |
 | #98 | Décalage de la visée capteurs (S23) | Claude (en attente de mesures porteur) | `fix/98-pointing-offset` | 2026-10-08 |
 
 ## ⛔ Blocages / décisions en attente
 - Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
 - Choix final des polices et du style de figure (ticket #4)
+- #98 visée décalée : besoin des observations du porteur (sens, ampleur, constance, navigateur) ; déclinaison magnétique (WMM) absente, ≈ 1–2° en France
+- Figures Stellarium : versions de licence non précisées par la source (Free Art License 1.3 et CC BY-SA 4.0 retenues), à confirmer
 
 ## ⏭️ Prochaines étapes
-1. Tester sur S23 la vague du 2026-10-02 : visée (Brave), vol Ciel ↔ Terre, vue 3D, style réaliste, voir à travers la Terre, icônes ; puis tutoriel (#68)
-2. Finitions : transition (#87), lisibilité de la vue 3D (#86), dégradé d'horizon réaliste sur la carte (reste de #55)
-3. Traînées d'étoiles (#39) ; déclinaison magnétique (WMM) pour la visée
-4. Génitifs latins des 88 constellations (source IAU à documenter) ; distances publiées pour Antarès, Alnilam, Alnitak, Wezen…
-5. Locale anglaise (catalogue `en.json`, contenu `packages/content/en/`)
-6. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
+1. Tester sur S23 la vague du 2026-10-09 : recherche + surbrillance, étoiles de jour, figures des constellations, gestes 3D, référentiels ; mesurer le temps par image (figures, gestes, référentiels)
+2. Référentiels : #123 (centré sur un astre, en cours) puis #124 (héliocentrique)
+3. Figures : #110 (choix du style), #108 (Urania's Mirror), #109 (al-Sûfî), #119 (Télescope)
+4. Finitions : transition (#87), lisibilité de la vue 3D (#86), dégradé d'horizon réaliste sur la carte (reste de #55) ; flèche de guidage hors écran vers l'objet sélectionné ; bouton retour Android pour la recherche
+5. Traînées d'étoiles (#39) ; déclinaison magnétique (WMM) pour la visée
+6. Génitifs latins des 88 constellations (source IAU à documenter) ; vérification en ligne des noms et constantes du ciel profond (SIMBAD/Wikidata, bloqués depuis le conteneur)
+7. Locale anglaise (catalogue `en.json`, contenu `packages/content/en/`)
+8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
-- 2026-10-08 — #99 Recherche (branche `feat/99-search`, PR à ouvrir) : bouton loupe en tête de la colonne de cadrans, panneau plein écran (combobox + liste, flèches/Entrée/Échap, nuit rouge) ; index en mémoire (`lib/search.ts`) des étoiles nommées (noms français + IAU), désignations Bayer (« α Ori », « alpha Ori », « α¹ Cen ») et Flamsteed (« 58 Ori »), « HIP n » exact, 88 constellations (français, latin, abréviation), Soleil, Lune, 7 planètes ; insensible casse/accents, classement exact > préfixe > début de mot > sous-chaîne > une faute (Damerau-Levenshtein ≤ 1 dès 4 caractères), puis éclat ; ≈ 0,6 ms par frappe sur PC pour 9 000 étoiles. Sélection → fiche ouverte et carte tournée vers l'objet, même sous l'horizon ; en mode visée, sélection seule. Reste : flèche de guidage en visée, génitifs latins (« alpha Orionis », pas de source de données), ciel profond (#100).
+- 2026-10-10 — #122 Référentiels de la vue Terre (PR #125) : sélecteur (fixé sur les étoiles, lié à la Terre, plan de l'écliptique ; héliocentrique et centré sur un astre « Bientôt »), transition slerp 800 ms (instantanée en mouvement réduit), phrase pédagogique par niveau, repères pointillés de l'écliptique ; `meanObliquity` IAU 2006 dans astro-core (SOFA `iauObl06` < 0,001″). Découpage de #105 en #122/#123/#124.
+- 2026-10-09 — #107 Gestes tactiles des vues 3D (PR #121) : 1 doigt orbite avec inertie, 2 doigts déplacer/pincer vers les doigts/pivoter, double toucher centrer ou revenir, bouton recentrer, astuce de première utilisation ; angle d'ouverture de la vue 3D corrigé (38°).
+- 2026-10-09 — #95/#96 Figures illustrées des constellations Stellarium / Johan Meuris (PR #120) : pipeline `build_figures.py` (commit épinglé, licence contrôlée, atlas WebP 360 Ko), calage affine sur 3 étoiles d'ancrage (< 0,01″), trame 1-bit Bayer, calque « Figures des constellations » ; 84/85 figures (Télescope : #119).
+- 2026-10-09 — #117 Rotation de la carte instantanée en mouvement réduit, NaN corrigé (PR #118). #115 Déploiement : cache des téléchargements restauré + reprises Gaia (PR #116), 2 h → 1 min 30.
+- 2026-10-09 — #103 Surbrillance de l'objet recherché (réticule gravé, anneaux d'arrivée, constellation ressortie et ciel voilé) ; #104 étoiles des constellations plus visibles (lignes interrompues avant les étoiles) ; #106 étoiles et noms visibles de jour (calque « ciel réaliste de jour » en option) ; #100 catalogue du ciel profond OpenNGC (PR #111–#114).
+- 2026-10-08 — #99 Recherche : étoiles, désignations Bayer/Flamsteed, HIP, 88 constellations, Soleil, Lune, planètes ; tolérance d'une faute ; ≈ 0,6 ms par frappe.
 - 2026-10-02 — #37 Transition continue Ciel ↔ Terre : un seul trajet de caméra (`flight.ts`), dézoom au-delà de 200° → espace, zoom sur « vous êtes ici » → carte, même animation pour le bouton ; vue Terre préchargée et préparée (shaders/textures). #38 Mini-globe (canvas 2D tramé, terminateur à la date, toucher → vol, calque `miniGlobe`). #80 Bandeau pédagogique au-dessus de la bulle du curseur (PR #85). Suivi : #87.
 - 2026-10-02 — #8 Vue 3D d'une constellation : bouton dans la fiche, transition depuis la projection de la carte, distances réelles (#82 prioritaire, sinon parallaxe ±1σ), incertitudes signalées, barres ±1σ en Expert, niveaux Découverte/Amateur/Expert, nuit rouge, chunk à part 12 Ko gzip (PR #84). Suivi lisibilité : #86.
 - 2026-10-02 — #75 Distances de référence (Gaia DR3 corrigé du point zéro si G > 6 et RUWE < 1,4 ; publiées pour Deneb et Bételgeuse, documentées) et #79 vitesses radiales (Gaia DR3 / BSC5) dans le catalogue ASTS v2 ; noms IAU décodés en UTF-8 (338 noms) (PR #82). Correctif déploiement NumPy 2 (PR #83).
