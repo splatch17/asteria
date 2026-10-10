@@ -115,6 +115,11 @@
     <path d={sparkle(12.6, 3, 2.4)} class="fill" />
   {:else if name === "range"}
     <path d="M4 2.5 H12 M4 13.5 H12 M5 2.5 C5 6 11 10 11 13.5 M11 2.5 C11 6 5 10 5 13.5" />
+  {:else if name === "frame"}
+    <!-- A globe on a tilted axis over a dashed plane: change the reference frame (#122). -->
+    <path d="M1.2 10.2 H14.8" class="thin" stroke-dasharray="1.5 1.2" />
+    <circle cx="8" cy="8" r="3.6" />
+    <path d="M5.6 1.6 L10.4 14.4" />
   {:else if name === "search"}
     <!-- A magnifier: find an object in the sky (#99). -->
     <circle cx="6.8" cy="6.8" r="4.3" />

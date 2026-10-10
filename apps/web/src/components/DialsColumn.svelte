@@ -20,6 +20,9 @@
     onstyle,
     onsearch,
     onrecentre,
+    onframe,
+    frameOpen = false,
+    frameButton = $bindable(),
     searchOpen,
     searchButton = $bindable(),
     element = $bindable(),
@@ -45,6 +48,10 @@
     onsearch: () => void;
     /** Earth view: back to its starting view (#107). */
     onrecentre: () => void;
+    /** Earth view: opens the reference frame selector (#122). */
+    onframe: () => void;
+    frameOpen?: boolean;
+    frameButton?: HTMLButtonElement | undefined;
     searchOpen: boolean;
     searchButton?: HTMLButtonElement | undefined;
     element?: HTMLElement | undefined;
@@ -143,6 +150,18 @@
       title={$_("gestures.recentre")}
     >
       <Icon name="recentre" size={ICON} />
+    </button>
+    <button
+      class="dial"
+      bind:this={frameButton}
+      onclick={onframe}
+      aria-haspopup="dialog"
+      aria-expanded={frameOpen}
+      aria-controls="frame-panel"
+      aria-label={$_("frame.open")}
+      title={$_("frame.open")}
+    >
+      <Icon name="frame" size={ICON} />
     </button>
     <button
       class="dial"

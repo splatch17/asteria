@@ -215,6 +215,31 @@ describe("flight path", () => {
     }
   });
 
+  it("ends with another pole up (reference frame, #122), keeping the pitch pure", () => {
+    // Ecliptic pole of 2026 in the equator of date (ε ≈ 23.436°).
+    const eps = 23.436 * DEG;
+    const eclipticPole = new THREE.Vector3(0, -Math.sin(eps), Math.cos(eps));
+    const view = { azimuth: 150, altitude: 35, fov: 200 };
+    const path = new FlightPath().setup(basis, view, null, ORBIT_RADIUS, eclipticPole);
+    path.pose(1, pos, quat);
+    const expected = lookQuaternion(pos.clone().negate(), eclipticPole, new THREE.Quaternion());
+    expect(quat.angleTo(expected)).toBeLessThan(1e-6);
+    // Same start and the same pure pitch as with celestial north up.
+    const right = horizontal(basis, view.azimuth + 90, 0);
+    for (const s of [0, 0.1, 0.25, 0.4]) {
+      path.pose(s, pos, quat);
+      close(rightOf(quat), right, 1e-6);
+    }
+    // And no jump on the way.
+    const q0 = new THREE.Quaternion();
+    path.pose(0, pos, q0);
+    for (let s = 0.005; s <= 1; s += 0.005) {
+      path.pose(s, pos, quat);
+      expect(quat.angleTo(q0)).toBeLessThan(3 * DEG);
+      q0.copy(quat);
+    }
+  });
+
   it("lands from an orbit off the zenith and reaches that orbit at s = 1", () => {
     const orbitDir = horizontal(basis, 90, 70); // the camera seen from the observer: east, high
     const orbit = orbitDir.clone().multiplyScalar(6);
