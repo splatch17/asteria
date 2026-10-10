@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   longTermPrecessionMatrix,
+  meanObliquity,
   applyMat3,
   equatorialToHorizontal,
   equatorialToHorizontalMatrix,
@@ -83,5 +84,30 @@ describe("long-term precession", () => {
     const years = 360 / (5028.796195 / 3600 / 100);
     const { dec } = toRaDec(applyMat3(longTermPrecessionMatrix(years / 100), polaris));
     expect(dec).toBeCloseTo(89.2641, 6);
+  });
+});
+
+describe("meanObliquity", () => {
+  it("is 84381.406″ at J2000.0 (IAU 2006)", () => {
+    const eps = meanObliquity(new Date("2000-01-01T12:00:00Z"));
+    // tolerance 0.001″
+    expect(Math.abs(eps * 3600 - 84381.406)).toBeLessThan(1e-3);
+  });
+
+  it("matches SOFA iauObl06 (2400000.5 + 54388.0 → 0.4090749229387258204 rad)", () => {
+    // SOFA test suite (t_sofa_c.c). MJD 54388.0 = 2007-10-15T00:00; TT read as UT: the ~65 s
+    // of ΔT change ε by ~1e-6″. Tolerance 0.001″.
+    const eps = meanObliquity(new Date("2007-10-15T00:00:00Z"));
+    expect(Math.abs(eps - 0.4090749229387258 * DEG) * 3600).toBeLessThan(1e-3);
+  });
+
+  it("puts the north ecliptic pole of J2000 at Dec +66°33′38.594″ (90° − ε0)", () => {
+    const dec = 90 - meanObliquity(new Date("2000-01-01T12:00:00Z"));
+    // tolerance 0.01″
+    expect(Math.abs(dec - (66 + 33 / 60 + 38.594 / 3600)) * 3600).toBeLessThan(0.01);
+  });
+
+  it("falls back to the long-term model's constant beyond ±5 centuries", () => {
+    expect(meanObliquity(new Date("-010000-01-01T00:00:00Z"))).toBeCloseTo(23.4392911, 9);
   });
 });

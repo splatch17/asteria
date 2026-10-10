@@ -45,6 +45,23 @@ const OBLIQUITY_J2000 = 23.4392911 * RAD;
 const GENERAL_PRECESSION = 5028.796195 * ARCSEC;
 
 /**
+ * Mean obliquity of the ecliptic of `date` in degrees: angle between the mean equator and the
+ * ecliptic of date, i.e. between the celestial pole and the ecliptic pole.
+ * Within ±5 centuries: IAU 2006 (Capitaine et al. 2003, IERS Conventions 2010 eq. 5.40),
+ * ε_A = 84381.406″ − 46.836769″·t − …, t in Julian centuries since J2000.0 (UT used for TT).
+ * Beyond: the long-term precession model keeps the J2000 ecliptic and obliquity (see
+ * precessionMatrix), so this returns that same constant, consistent with the precessed sky.
+ */
+export function meanObliquity(date: Date): number {
+  const t = (julianDate(date) - JD_J2000) / 36_525;
+  if (Math.abs(t) > IAU1976_VALID_CENTURIES) return OBLIQUITY_J2000 / RAD;
+  const arcsec =
+    84381.406 +
+    t * (-46.836769 + t * (-0.0001831 + t * (0.0020034 + t * (-0.000000576 + t * -0.0000434))));
+  return arcsec / 3600;
+}
+
+/**
  * Precession J2000.0 → mean equator and equinox of `date`.
  * Within ±5 centuries: IAU 1976 (Meeus eq. 21.2–21.4, arcsecond-level).
  * Beyond: simplified long-term model (uniform rotation about the J2000 ecliptic pole);
