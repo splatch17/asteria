@@ -23,6 +23,7 @@
     onscrub,
     ontoggle,
     onspeed,
+    showPlay = true,
   }: {
     range: TimeRange;
     offset: number;
@@ -35,6 +36,8 @@
     onscrub: (value: number) => void;
     ontoggle: () => void;
     onspeed: () => void;
+    /** Off when the play button sits elsewhere (the time line of #130). */
+    showPlay?: boolean;
   } = $props();
 
   let dragging = $state(false);
@@ -61,14 +64,16 @@
 </script>
 
 <div class="scrubber frame">
-  <button
-    class="play"
-    onclick={ontoggle}
-    aria-label={playing ? $_("time.pause") : $_("time.play")}
-    aria-pressed={playing}
-  >
-    <Icon name={playing ? "pause" : "play"} />
-  </button>
+  {#if showPlay}
+    <button
+      class="play"
+      onclick={ontoggle}
+      aria-label={playing ? $_("time.pause") : $_("time.play")}
+      aria-pressed={playing}
+    >
+      <Icon name={playing ? "pause" : "play"} />
+    </button>
+  {/if}
 
   <div class="track">
     {#if dragging || playing}

@@ -41,3 +41,13 @@ body {
     linear-gradient(var(--c) 0 0) bottom right / 1px var(--l);
   background-repeat: no-repeat;
 }
+
+/* Read by screen readers only. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

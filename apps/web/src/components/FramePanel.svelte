@@ -141,8 +141,8 @@
   .frames {
     position: fixed;
     z-index: 3;
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
-    width: min(300px, calc(100vw - 2 * max(16px, env(safe-area-inset-left)) - 56px));
+    right: max(16px, env(safe-area-inset-right));
+    width: min(320px, calc(100vw - 2 * max(16px, env(safe-area-inset-left))));
     box-sizing: border-box;
     padding: 4px 0 6px;
     outline: none;
