@@ -70,7 +70,7 @@
     position: fixed;
     z-index: 3;
     left: max(16px, env(safe-area-inset-left));
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
+    right: max(16px, env(safe-area-inset-right));
     max-width: 320px;
     margin: 0 auto;
     padding: 10px 12px;

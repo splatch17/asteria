@@ -72,16 +72,17 @@
   } from "./lib/fullscreen";
   import Icon from "./components/Icon.svelte";
   import TimeScrubber, { BUBBLE_RISE } from "./components/TimeScrubber.svelte";
-  import LayersPanel from "./components/LayersPanel.svelte";
   import ConstellationSheet from "./components/ConstellationSheet.svelte";
   import InfoPanel, { type InfoRow } from "./components/InfoPanel.svelte";
   import Designation from "./components/Designation.svelte";
   import SkyHeader from "./components/SkyHeader.svelte";
-  import DialsColumn from "./components/DialsColumn.svelte";
+  import TimeBar from "./components/TimeBar.svelte";
+  import MenuSheet from "./components/MenuSheet.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import SearchPanel from "./components/SearchPanel.svelte";
   import GestureTip from "./components/GestureTip.svelte";
   import FramePanel from "./components/FramePanel.svelte";
+  import { immersiveAfterTap, pointingShortcut } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
@@ -156,7 +157,6 @@
     isBodyTarget(urlBody) ? urlBody : readSetting("asteria.spaceBody", "Moon", isBodyTarget),
   );
   let frameOpen = $state(false);
-  let frameButton = $state<HTMLButtonElement>();
   /** Short explanation of the frame just chosen, for the public level (#122). */
   let frameNote = $state<string | null>(null);
   let frameNoteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -188,7 +188,6 @@
   });
   const setLayer = (key: LayerKey, value: boolean) => (viewLayers[mode][key] = value);
   const showPlanets = $derived(viewLayers[mode].planets);
-  let layersOpen = $state(false);
   let creditsOpen = $state(false);
   /** Constellation 3D view (#8): the figure, the catalogue and the map's view it starts from. */
   let view3d = $state.raw<{
@@ -220,7 +219,6 @@
     if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     if (mode === "sky") map?.start();
   }
-  let layersButton = $state<HTMLButtonElement>();
   let selection = $state<SkySelection | null>(null);
   const selected = $derived(selection?.kind === "star" ? selection.star : null);
   const selectedBody = $derived(selection?.kind === "body" ? selection.body : null);
@@ -383,6 +381,73 @@
     azimuth: () => viewAzimuth,
   });
 
+  // --- Single menu, time line and immersive mode (#130)
+  let menuOpen = $state(false);
+  let menuButton = $state<HTMLButtonElement>();
+  /** Time controls (slider, range, now) unfolded above the time line. */
+  let timeOpen = $state(false);
+  /** Immersive mode: an empty-sky tap fades the header and the time line out (not remembered). */
+  let immersive = $state(false);
+  /** Earth view caption unfolded (a single line at rest). */
+  let captionOpen = $state(false);
+  /** Sensor pointing next to the search where it can work (phone, HTTPS); else in the menu. */
+  const pointingDirect = pointingShortcut({
+    coarse: matchMedia("(pointer: coarse)").matches,
+    secure: isSecureContext,
+    orientationEvents: "DeviceOrientationEvent" in window,
+    absoluteSensor: "AbsoluteOrientationSensor" in window,
+  });
+  function openMenu() {
+    timeOpen = false;
+    frameOpen = false;
+    immersive = false;
+    menuOpen = true;
+  }
+  function closeMenu() {
+    menuOpen = false;
+    menuButton?.focus();
+  }
+  /** Runs a menu action that opens something else: the menu closes first, without refocus. */
+  const fromMenu = (action: () => void) => () => {
+    menuOpen = false;
+    action();
+  };
+  /** Something was open when the finger went down: the tap that follows only closes it. */
+  let overlayAtDown = false;
+  function notePointerDown() {
+    overlayAtDown = menuOpen || frameOpen || timeOpen || searchOpen || captionOpen;
+  }
+  // Capture, registered before any panel's own outside-tap listener: sees the state before it.
+  addEventListener("pointerdown", notePointerDown, true);
+  /**
+   * A tap ended on the map or the Earth view, before its selection is applied: an object is
+   * selected as before; an empty tap closes what is open, or deselects; only an empty tap with
+   * nothing open or selected hides the interface, and any tap shows it again (lib/hud.ts).
+   */
+  function onViewTap(s: SkySelection | null) {
+    immersive = immersiveAfterTap({
+      hit: s !== null,
+      selected: selection !== null,
+      overlay: overlayAtDown,
+      immersive,
+    });
+    if (s === null) {
+      timeOpen = false;
+      captionOpen = false;
+    }
+  }
+  /** Keyboard: Escape folds the time controls or leaves immersive mode; Tab shows the interface. */
+  function onHudKey(e: KeyboardEvent) {
+    if (e.key === "Tab") immersive = false;
+    if (e.key !== "Escape" || menuOpen || frameOpen || searchOpen || creditsOpen) return;
+    if (timeOpen) {
+      timeOpen = false;
+      lineElement?.querySelector<HTMLElement>("[aria-controls='time-controls']")?.focus();
+    } else if (captionOpen) captionOpen = false;
+    else if (immersive) immersive = false;
+  }
+  addEventListener("keydown", onHudKey);
+
   // --- Fullscreen (#59)
   let fullscreenEnv = $state(readFullscreenEnvironment());
   const fullscreenAvailable = $derived(showFullscreenButton(fullscreenEnv));
@@ -472,6 +537,7 @@
       planetNames: planetNames(),
       formatPathMark: (d) => pathMarkFormat.format(d),
       onSelect: (s) => {
+        onViewTap(s); // before the selection changes (#130)
         selection = s;
         // Body-centred frame (#123): a tap on the Moon or a planet travels to it; in the solar
         // system (#128), a tap on a planet visits it.
@@ -654,7 +720,10 @@
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
-        onSelect: select,
+        onSelect: (s) => {
+          onViewTap(s);
+          select(s);
+        },
         onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
@@ -705,7 +774,8 @@
       ...(Number.isFinite(view[1]) && { altitude: view[1] }),
       ...(Number.isFinite(view[2]) && { fov: view[2] }),
     });
-    if (params.get("panel") === "layers") layersOpen = true; // captures
+    if (params.get("panel") === "menu" || params.get("panel") === "layers") menuOpen = true; // captures
+    if (params.get("panel") === "time") timeOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
     const hip = Number(params.get("star")); // captures: ?star=<HIP> opens the star's sheet
     const star = hip ? catalog?.stars.find((s) => s.hip === hip) : undefined;
@@ -772,7 +842,7 @@
       void ensureDeepSky().then((objects) => {
         if (objects) searchIndex = buildIndex();
       });
-    layersOpen = false;
+    timeOpen = false;
     searchOpen = true;
   }
   function closeSearch() {
@@ -874,39 +944,49 @@
     map?.setSelection(selection);
   });
 
-  // Grid and ecliptic graduations are not written under the HUD (header, dials, time controls).
+  // Labels (graduations, names) are not written under the HUD: header line, time line (and its
+  // unfolded controls), mini-globe. In immersive mode nothing is in the way (#130).
   let header = $state<HTMLElement>();
-  let compass = $state<HTMLElement>();
   let bottomNav: HTMLElement;
+  /** The time line itself (folded): what the Earth view's framing keeps clear (#130). */
+  let lineElement = $state<HTMLElement>();
   let globeButton = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
   const hudBlocks = () =>
-    [header, compass, bottomNav, globeButton].filter((el) => el !== undefined && el !== null);
+    [header, bottomNav, globeButton].filter((el) => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
-    const rects = hudBlocks()
-      .map((el) => el.getBoundingClientRect())
-      .filter((r) => r.width > 0) // hidden (mini-globe in the Earth view)
-      .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
+    const rects = immersive
+      ? []
+      : hudBlocks()
+          .map((el) => el.getBoundingClientRect())
+          .filter((r) => r.width > 0) // hidden (mini-globe in the Earth view)
+          .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
     map?.setHudExclusions(rects);
     space?.setHudExclusions(rects);
     space?.setSafeArea(spaceSafeArea());
   }
+  $effect(() => {
+    void immersive;
+    if (status === "ready") tick().then(updateGraduationExclusions);
+  });
   /**
-   * Caption of the points of view (#128), raised above the scrubber's bubble during playback:
-   * kept free below the scene on narrow screens, whether shown or not (beside it on wide ones).
+   * Caption of the points of view (#128), one line above the time line on narrow screens: kept
+   * free below the scene, whether shown or not (beside it on wide ones).
    */
-  const captionReserve = () => (innerWidth < 700 ? 64 + BUBBLE_RISE : 12);
+  const captionReserve = () => (innerWidth < 700 ? 40 : 12);
   /**
-   * Insets of the Earth view's scene (#128): below the header, left of the dials column, above
-   * the time controls and the caption. The points of view are framed in the rest.
+   * Insets of the Earth view's scene (#128): below the header line, above the time line and the
+   * caption (#130: no column on the right any more). The points of view are framed in the rest.
+   * Measured on the folded interface, so that unfolding the time controls or going immersive
+   * does not make the scene jump.
    */
   function spaceSafeArea() {
-    const [w, h] = [innerWidth, innerHeight];
-    const top = (header?.getBoundingClientRect().bottom ?? 100) + 10;
-    const right = w - (compass?.getBoundingClientRect().left ?? w - 72) + 6;
-    const bottom = h - (bottomNav?.getBoundingClientRect().top ?? h - 150) + captionReserve();
-    return { top, right, bottom, left: 16 };
+    const h = innerHeight;
+    const top = (header?.getBoundingClientRect().bottom ?? 36) + 10;
+    const lineTop = lineElement?.getBoundingClientRect().top ?? h - 60;
+    const bottom = h - lineTop + captionReserve();
+    return { top, right: 16, bottom, left: 16 };
   }
   function observeHud() {
     hudObserver = new ResizeObserver(updateGraduationExclusions);
@@ -920,9 +1000,7 @@
     hudObserver.observe(el);
     return () => hudObserver?.unobserve(el);
   });
-  // It sits under the dials column: it moves (without resizing) when the column grows.
   $effect(() => {
-    void dialsHeight;
     void globeButton;
     if (status === "ready") tick().then(updateGraduationExclusions);
   });
@@ -944,10 +1022,9 @@
       )
       .catch((e: unknown) => console.warn("mini-globe images", e));
   });
-  let controlsHeight = $state(140);
-  let dialsHeight = $state(148);
-  let headerHeight = $state(90);
-  /** Sheets and panels stay above the time controls, whatever their measured height. */
+  let controlsHeight = $state(44);
+  let headerHeight = $state(20);
+  /** Sheets and panels stay above the time line (or its controls), whatever their height. */
   const aboveControls = $derived(
     `calc(max(16px, env(safe-area-inset-bottom)) + ${controlsHeight + 8}px)`,
   );
@@ -960,6 +1037,8 @@
     pointer.stop();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
     removeEventListener("pointerup", restoreFullscreen, true);
+    removeEventListener("pointerdown", notePointerDown, true);
+    removeEventListener("keydown", onHudKey);
     stopPlaying();
     clearInterval(clock);
     map?.dispose();
@@ -1058,7 +1137,7 @@
   /** A frame is chosen in the selector: switch, and say in one sentence what it shows. */
   function chooseFrame(id: ReferenceFrameId) {
     frameOpen = false;
-    frameButton?.focus();
+    menuButton?.focus();
     if (!isAvailableFrame(id)) return;
     spaceFrame = id;
     // Level read now: it may have changed in the 3D view since start-up.
@@ -1397,7 +1476,7 @@
     mode === "sky" &&
       status === "ready" &&
       !viewLayers.sky.realisticDaylight &&
-      !layersOpen &&
+      !menuOpen &&
       starsHiddenByDaylight(bodies.sun.altitude),
   );
   // A demonstration of the Earth view (#128) has its own caption: no playback hint over it.
@@ -1444,41 +1523,12 @@
 <SkyHeader
   bind:element={header}
   bind:height={headerHeight}
-  title={mode === "sky"
-    ? `#02 // ${$_("map.title")}`
-    : `#03 // ${$_("space.title")} · ${placeName}`}
+  index={mode === "sky" ? "#02" : "#03"}
+  title={mode === "sky" ? $_("map.title") : flying ? $_("space.title") : povTitle}
+  place={placeName}
   loading={spaceLoading}
-  place={mode === "space" && !flying ? povTitle : placeName}
-  {coords}
-  {time}
-  {live}
-  {relative}
   {locating}
-/>
-
-<DialsColumn
-  bind:element={compass}
-  bind:height={dialsHeight}
-  {mode}
-  fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
-  {locating}
-  pointing={pointer.state === "on" || pointer.state === "waiting"}
-  northDisabled={pointer.state === "on"}
-  rotation={-viewAzimuth - viewRoll}
-  realistic={spaceStyle === "realistic"}
-  onfullscreen={toggleFullscreen}
-  onview={toggleSpace}
-  onlocate={locate}
-  onnorth={faceNorth}
-  onpoint={() => pointer.toggle()}
-  onstyle={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
-  onsearch={openSearch}
-  onrecentre={() => space?.resetView()}
-  onframe={() => (frameOpen = !frameOpen)}
-  {frameOpen}
-  bind:frameButton
-  {searchOpen}
-  bind:searchButton
+  hidden={immersive}
 />
 
 {#if frameOpen && mode === "space"}
@@ -1490,7 +1540,7 @@
     top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
     onselect={chooseFrame}
     onclose={() => (frameOpen = false)}
-    toggle={frameButton}
+    toggle={menuButton}
   />
 {/if}
 
@@ -1500,9 +1550,9 @@
 
 {#if globeLayer}
   <MiniGlobe
-    hidden={!showGlobe}
+    hidden={!showGlobe || immersive}
     bind:element={globeButton}
-    top={`calc(max(16px, env(safe-area-inset-top)) + ${dialsHeight + 12}px)`}
+    top="max(16px, env(safe-area-inset-top))"
     images={globeImages}
     {place}
     sun={bodies.sun}
@@ -1563,16 +1613,22 @@
 
 <GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
 
-{#if povCaption && !flying && !selection}
-  <!-- Points of view (#128): what stays fixed, what moves; what is (not) to scale. -->
-  <p
+{#if povCaption && !flying && !selection && !immersive}
+  <!-- Points of view (#128): what stays fixed, what moves; what is (not) to scale. One line at
+       rest (#130), the whole caption on a tap. -->
+  <button
     class="hud scale-note"
-    style:bottom={playing ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)` : aboveControls}
-    aria-live="polite"
+    class:open={captionOpen}
+    style:bottom={timeOpen && playing
+      ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)`
+      : aboveControls}
+    aria-expanded={captionOpen}
+    title={captionOpen ? undefined : $_("caption.expand")}
+    onclick={() => (captionOpen = !captionOpen)}
   >
     <span class="note-title">{povCaption.title}</span>
-    {#if povCaption.detail}{povCaption.detail}{/if}
-  </p>
+    {#if povCaption.detail && captionOpen}<span class="detail">{povCaption.detail}</span>{/if}
+  </button>
 {/if}
 
 {#if status !== "ready"}
@@ -1672,7 +1728,7 @@
       brightest={info.brightest}
       visibility={info.visibility}
       daylight={bodies.sun.altitude > -6}
-      top={`calc(max(16px, env(safe-area-inset-top)) + ${Math.max(headerHeight, dialsHeight) + 8}px)`}
+      top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
       bottom={aboveControls}
       onclose={() => (selection = null)}
       onstar={info.star
@@ -1705,92 +1761,117 @@
     <Credits
       onclose={() => {
         creditsOpen = false;
-        layersButton?.focus();
+        menuButton?.focus();
       }}
     />
   {/await}
 {/if}
 
-<nav
-  class="hud bottom"
-  bind:this={bottomNav}
-  style:--controls-h={`${controlsHeight}px`}
-  style:--dials-h={`${dialsHeight}px`}
->
-  {#if layersOpen}
-    <LayersPanel
-      view={mode}
-      layers={viewLayers[mode]}
-      onchange={setLayer}
-      onclose={() => (layersOpen = false)}
-      oncredits={() => {
-        layersOpen = false;
-        creditsOpen = true;
-      }}
-      toggle={layersButton}
-      unavailable={mode === "sky" ? unavailableLayers : []}
-    />
-  {/if}
+<p class="sr-only" role="status">{immersive ? $_("hud.hidden") : ""}</p>
+
+<!-- Bottom of the interface (#130): one time line; the slider unfolds above it on a tap. -->
+<nav class="hud bottom" class:hidden={immersive} bind:this={bottomNav}>
   <div class="controls" bind:clientHeight={controlsHeight}>
-    <!-- Shown during playback, when the scrubber's bubble rises above it: kept clear (#80). -->
-    {#if hint}<p class="hint" class:quiet={!playing} style:margin-bottom={`${BUBBLE_RISE - 8}px`}>
+    <!-- Kept clear of the scrubber's bubble when it rises during playback (#80). -->
+    {#if hint}<p
+        class="hint"
+        class:quiet={!playing}
+        style:margin-bottom={timeOpen && playing ? `${BUBBLE_RISE - 8}px` : undefined}
+      >
         {hint}
       </p>{/if}
-    <TimeScrubber
-      {range}
-      {offset}
+    <TimeBar
       {playing}
-      {relative}
-      target={time}
-      speedKey={RANGES[range].speeds[speedIndex]!.key}
-      onscrub={scrub}
       ontoggle={togglePlay}
-      onspeed={cycleSpeed}
-    />
-    <div class="row">
-      <div class="group frame">
-        <button onclick={cycleRange} title={$_("time.rangeChange")}
-          ><Icon name="range" />{$_(`time.range.${range}`)}</button
-        >
-        <button aria-pressed={live} onclick={goLive} title={$_("time.backToNow")}
-          ><Icon name="now" />{$_("time.now")}</button
-        >
-      </div>
-      <div class="group frame">
-        <button
-          bind:this={layersButton}
-          aria-expanded={layersOpen}
-          aria-controls="layers-panel"
-          onclick={() => (layersOpen = !layersOpen)}
-          class="icon"
-          aria-label={$_("layers.open")}
-          title={$_("layers.open")}><Icon name="layers" size={18} /></button
-        >
-
-        <button
-          aria-pressed={night}
-          onclick={() => (night = !night)}
-          class="icon"
-          aria-label={$_("night.toggle")}
-          title={$_("night.toggle")}><Icon name="night" size={18} /></button
-        >
-      </div>
-    </div>
-    {#if night}
-      <label class="group frame dim">
-        <span>{$_("night.brightness")}</span>
-        <input
-          class="slider"
-          type="range"
-          min={MIN_DIM}
-          max="1"
-          step="0.05"
-          bind:value={brightness}
+      {time}
+      {live}
+      {relative}
+      {timeOpen}
+      ontime={() => {
+        timeOpen = !timeOpen;
+        immersive = false;
+      }}
+      search={mode === "sky"}
+      {searchOpen}
+      onsearch={openSearch}
+      bind:searchButton
+      pointing={pointingDirect && mode === "sky"
+        ? pointer.state === "on" || pointer.state === "waiting"
+        : null}
+      onpoint={() => pointer.toggle()}
+      {menuOpen}
+      onmenu={() => (menuOpen ? closeMenu() : openMenu())}
+      bind:menuButton
+      bind:lineElement
+    >
+      {#snippet expanded()}
+        <TimeScrubber
+          {range}
+          {offset}
+          {playing}
+          {relative}
+          target={time}
+          speedKey={RANGES[range].speeds[speedIndex]!.key}
+          onscrub={scrub}
+          ontoggle={togglePlay}
+          onspeed={cycleSpeed}
+          showPlay={false}
         />
-      </label>
-    {/if}
+        <div class="group frame">
+          <button onclick={cycleRange} title={$_("time.rangeChange")}
+            ><Icon name="range" />{$_(`time.range.${range}`)}</button
+          >
+          <button aria-pressed={live} onclick={goLive} title={$_("time.backToNow")}
+            ><Icon name="now" />{$_("time.now")}</button
+          >
+        </div>
+      {/snippet}
+    </TimeBar>
   </div>
 </nav>
+
+{#if menuOpen}
+  <MenuSheet
+    {mode}
+    onview={(m) => {
+      menuOpen = false;
+      if (m !== mode) toggleSpace();
+    }}
+    rotation={-viewAzimuth - viewRoll}
+    northDisabled={pointer.state === "on"}
+    onnorth={faceNorth}
+    pointing={pointer.state === "on" || pointer.state === "waiting"}
+    onpoint={fromMenu(() => pointer.toggle())}
+    {povTitle}
+    visiting={spaceFrame === "body" ? targetName(spaceBody) : null}
+    onpov={fromMenu(() => (frameOpen = true))}
+    onvisit={fromMenu(() => (frameOpen = true))}
+    onrecentre={fromMenu(() => space?.resetView())}
+    layers={viewLayers[mode]}
+    onlayer={setLayer}
+    unavailable={mode === "sky" ? unavailableLayers : []}
+    {placeName}
+    {coords}
+    {locating}
+    onlocate={locate}
+    {time}
+    {live}
+    {relative}
+    ontime={fromMenu(() => (timeOpen = true))}
+    onnow={goLive}
+    {night}
+    onnight={() => (night = !night)}
+    bind:brightness
+    minBrightness={MIN_DIM}
+    realistic={spaceStyle === "realistic"}
+    onrealistic={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
+    fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
+    onfullscreen={toggleFullscreen}
+    oncredits={fromMenu(() => (creditsOpen = true))}
+    onhide={fromMenu(() => (immersive = true))}
+    onclose={closeMenu}
+  />
+{/if}
 
 <style>
   canvas {
@@ -1824,10 +1905,10 @@
     z-index: 1;
     pointer-events: none;
   }
-  /* Left of the dials column (44 px + 12 px gap), below the header. */
+  /* Below the header line, centred (#130: no column on the right any more). */
   .toast {
     left: max(16px, env(safe-area-inset-left));
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
+    right: max(16px, env(safe-area-inset-right));
     margin: 0 auto;
     max-width: 320px;
     padding: 10px 12px;
@@ -1841,10 +1922,12 @@
     height: auto;
     display: block;
   }
+  /* One line at rest (#130); a tap shows the whole caption. */
   .scale-note {
     left: max(16px, env(safe-area-inset-left));
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
-    max-width: 340px;
+    right: max(16px, env(safe-area-inset-right));
+    max-width: 420px;
+    min-height: 28px;
     margin: 0;
     padding: 6px 8px;
     height: auto;
@@ -1853,12 +1936,29 @@
     background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
     font: 10px/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
+    text-align: left;
     text-transform: none;
     letter-spacing: 0;
-    pointer-events: none;
   }
   .scale-note .note-title {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scale-note.open .note-title {
     margin-bottom: 2px;
+    white-space: normal;
+  }
+  .scale-note .detail {
+    display: block;
+  }
+  /* Wide screens: the caption sits at the bottom left, beside the centred time line. */
+  @media (min-width: 900px) {
+    .scale-note {
+      right: auto;
+      width: min(340px, calc(50vw - 240px));
+    }
   }
   .toast.note {
     color: var(--ast-fg-muted);
@@ -1919,6 +2019,23 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    transition:
+      opacity 220ms var(--ast-ease-out),
+      visibility 0s;
+  }
+  /* Immersive mode (#130): faded out, then out of the way of taps and of the keyboard. */
+  .bottom.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 220ms var(--ast-ease-out),
+      visibility 0s 220ms;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .bottom,
+    .bottom.hidden {
+      transition: none;
+    }
   }
   .controls {
     display: flex;
@@ -1948,30 +2065,6 @@
     padding: 0 14px;
     cursor: pointer;
   }
-  .row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    width: 100%;
-    max-width: 420px;
-    justify-content: space-between;
-  }
-  .row .group {
-    flex-wrap: nowrap;
-  }
-  .row button {
-    padding: 0 7px;
-    white-space: nowrap;
-  }
-  /* Icon-only toggles: 44 × 44 px touch targets */
-  .row button.icon {
-    padding: 0;
-    min-width: 44px;
-    justify-content: center;
-  }
-  .row button.icon:not([aria-pressed="true"], [aria-expanded="true"]) {
-    color: var(--ast-fg);
-  }
   .hint {
     max-width: 420px;
     margin: 0;
@@ -1987,47 +2080,6 @@
     font-size: 10px;
     border-color: transparent;
   }
-  .dim {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    font-size: 11px;
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  /* Fully themed slider: native tracks are white/grey, which would break night vision */
-  .slider {
-    appearance: none;
-    width: 100px;
-    height: 20px;
-    background: transparent;
-  }
-  .slider::-webkit-slider-runnable-track {
-    height: 1px;
-    background: var(--ast-fg);
-  }
-  .slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-top: -6px;
-    border: 0;
-    border-radius: 0;
-    background: var(--ast-fg);
-  }
-  .slider::-moz-range-track {
-    height: 1px;
-    background: var(--ast-fg);
-  }
-  .slider::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border: 0;
-    border-radius: 0;
-    background: var(--ast-fg);
-  }
   .group button:disabled {
     opacity: 0.4;
     cursor: default;
@@ -2035,8 +2087,11 @@
   .group button:last-child {
     border-right: 0;
   }
-  button[aria-pressed="true"],
-  button[aria-expanded="true"] {
+  .group button {
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+  .group button[aria-pressed="true"] {
     color: var(--ast-bg);
     background: var(--ast-fg);
   }

@@ -31,4 +31,7 @@ export type IconName =
   | "moon"
   | "deepsky"
   | "recentre"
-  | "frame";
+  | "frame"
+  | "menu"
+  | "help"
+  | "north";

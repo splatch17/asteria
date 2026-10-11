@@ -451,7 +451,7 @@
     background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
     border: 1px solid var(--ast-hairline);
   }
-  /* Round button, as the dials of the sky map (DialsColumn). */
+  /* Round button (as the former dials column of the sky map). */
   .dial {
     display: grid;
     place-items: center;
