@@ -13,13 +13,7 @@
   style:width={`${size}px`}
   style:height={`${size}px`}
 >
-  {#if frame === "stars"}
-    <!-- The Earth lit from the left and its rotation arrow -->
-    <circle cx="16" cy="17" r="8" />
-    <path class="fill" d="M16 9 A8 8 0 0 0 16 25 Z" />
-    <path d="M10 6.5 A8 3 0 1 0 22 6.5" />
-    <path d="M22 6.5 l-2.6 -0.6 M22 6.5 l-1.2 2.3" />
-  {:else if frame === "ecliptic"}
+  {#if frame === "ecliptic"}
     <!-- The Sun, the orbit, two Earths with the same tilted axis -->
     <ellipse cx="16" cy="17" rx="13" ry="6" />
     <circle class="fill" cx="16" cy="17" r="2.6" />

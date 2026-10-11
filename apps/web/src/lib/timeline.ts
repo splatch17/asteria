@@ -138,14 +138,15 @@ export function offsetParts(
 
 /**
  * Demonstration of each point of view of the Earth view (#128): the range and the speed played
- * on entering it, so that its phenomenon shows within seconds (the Earth's rotation at 1 s = 1 h,
- * the seasons at 1 s = 1 week). None for « Le système solaire » (#131: explored freely, the
- * time slider moves the planets) nor for « Visiter un astre ».
+ * on entering it, so that its phenomenon shows within seconds (the seasons at 1 s = 1 week).
+ * None for « Le système solaire » (#131: explored freely, the time slider moves the planets)
+ * nor for « Visiter un astre ». "rotation" (#139): played when the camera is attached to the
+ * Earth or a body, so that the sky is seen turning round it (1 s = 1 h).
  */
 export const POINT_OF_VIEW_DEMOS: Readonly<
   Record<string, { range: TimeRange; speed: string } | undefined>
 > = Object.freeze({
-  stars: { range: "48h", speed: "time.speed.1h" },
+  rotation: { range: "48h", speed: "time.speed.1h" },
   ecliptic: { range: "1y", speed: "time.speed.1w" },
 });
 

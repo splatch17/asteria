@@ -39,17 +39,17 @@ describe("earthRotationAngle", () => {
   const RAD = 180 / Math.PI;
   const wrap = (deg: number) => ((((deg + 180) % 360) + 360) % 360) - 180;
 
-  it("matches SOFA iauEra00(2400000.5, 54388.0) = 0.4022837240028158102 rad (within 1e-9 rad)", () => {
+  it("matches SOFA iauEra00(2400000.5, 54388.0) = 0.40228372400281581 rad (within 1e-9 rad)", () => {
     // MJD 54388.0 = 2007-10-15T00:00:00 UT1.
     const era = earthRotationAngle(new Date("2007-10-15T00:00:00Z"));
-    expect(Math.abs(era / RAD - 0.4022837240028158102)).toBeLessThan(1e-9);
+    expect(Math.abs(era / RAD - 0.40228372400281581)).toBeLessThan(1e-9);
   });
 
   it("differs from GMST by the IAU 2006 precession in RA (SOFA iauGmst06, within 0.01″)", () => {
-    // SOFA iauGmst06(2400000.5, 53736.0, 2400000.5, 53736.0) = 1.754174971870091203 rad.
+    // SOFA iauGmst06(2400000.5, 53736.0, 2400000.5, 53736.0) = 1.7541749718700912 rad.
     const date = new Date("2006-01-01T00:00:00Z");
     const gmst = greenwichMeanSiderealTime(date);
-    expect(Math.abs(wrap(gmst - 1.754174971870091203 * RAD)) * 3600).toBeLessThan(0.01);
+    expect(Math.abs(wrap(gmst - 1.7541749718700912 * RAD)) * 3600).toBeLessThan(0.01);
     // GMST − ERA = 0.014506″ + 4612.156534″ t + 1.3915817″ t² … (IERS Conventions 2010, 5.32).
     const t = (julianDate(date) - 2_451_545) / 36_525;
     const drift = (0.014506 + 4612.156534 * t + 1.3915817 * t * t) / 3600;

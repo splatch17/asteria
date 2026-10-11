@@ -92,7 +92,9 @@ describe("point of view demonstrations (#128)", () => {
       expect(i).toBeGreaterThanOrEqual(0);
       return RANGES[demo.range].speeds[i]!.value;
     };
-    expect(speed("stars")).toBe(HOUR);
+    // « La Terre tourne » is gone (#139): the rotation is shown once attached to the Earth.
+    expect(POINT_OF_VIEW_DEMOS.stars).toBeUndefined();
+    expect(speed("rotation")).toBe(HOUR);
     expect(speed("ecliptic")).toBe(7 * DAY);
     // « Le système solaire » is explored freely (#131), « Vu du sol » is gone.
     expect(POINT_OF_VIEW_DEMOS.heliocentric).toBeUndefined();

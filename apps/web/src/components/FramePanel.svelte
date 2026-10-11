@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Point of view selector of the Earth view (#122, #128, #131): four cards, each with an engraved
+  // Point of view selector of the Earth view (#122, #128, #131, #139): three cards, each with an engraved
   // pictogram (#135: cards rather than a list; the one-line hint is read out under them). Opens
   // under the header. « Visiter un astre » (#123) has a sub-grid: the Moon and the planets, one tap
   // travels there.
@@ -140,10 +140,10 @@
   h3 {
     margin-top: 10px;
   }
-  /* Two by two cards: an engraved pictogram over the name. */
+  /* Three cards in a row (#139): an engraved pictogram over the name. */
   .cards {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
   }
   .choice {

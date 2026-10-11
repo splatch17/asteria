@@ -12,8 +12,12 @@
     type SpaceStyle,
     type ViewState,
     type ReferenceFrameId,
+    type RestFrameId,
     type BodyTarget,
     isSpaceStyle,
+    isRestFrameId,
+    rotationPeriodHours,
+    REST_FRAMES,
     isAvailableFrame,
     isBodyTarget,
     BODY_TARGETS,
@@ -80,6 +84,7 @@
   import SearchPanel from "./components/SearchPanel.svelte";
   import GestureTip from "./components/GestureTip.svelte";
   import FramePanel from "./components/FramePanel.svelte";
+  import RestFrameChip from "./components/RestFrameChip.svelte";
   import { immersiveAfterTap, pointingShortcut } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
@@ -155,6 +160,12 @@
     isBodyTarget(urlBody) ? urlBody : readSetting("asteria.spaceBody", "Moon", isBodyTarget),
   );
   let frameOpen = $state(false);
+  /**
+   * What stays still in the Earth view (#139), told by the view: the stars, the Sun, the Earth
+   * or a body; `restFocus` is the Moon or planet visited or looked at (the "body" choice).
+   */
+  let spaceRest = $state<RestFrameId>("stars");
+  let restFocus = $state<BodyTarget | null>(null);
   /** Short explanation of the frame just chosen, for the public level (#122). */
   let frameNote = $state<string | null>(null);
   let frameNoteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -352,7 +363,7 @@
    * from the date shown, using the time controls (the scrubber follows). None with reduced
    * motion: the points of view then show a static state (ghost positions, traces).
    */
-  function startDemo(id: ReferenceFrameId) {
+  function startDemo(id: string) {
     const spec = POINT_OF_VIEW_DEMOS[id];
     if (!spec || reducedMotion.matches) {
       if (demo) stopPlaying();
@@ -519,7 +530,6 @@
         pole: $_("space.pole"),
         earth: $_("space.earth"),
         axis: $_("space.axis"),
-        rotation: $_("space.rotation"),
       },
       formatSeason: (kind: SeasonKind, d: Date) =>
         $_(`space.season.${kind}`, { values: { date: seasonFormat.format(d) } }),
@@ -554,6 +564,10 @@
         frameNote = null;
       },
       exitDuration: frameDuration,
+      onRestChange: (rest, focus) => {
+        spaceRest = rest;
+        restFocus = focus;
+      },
       style: spaceStyle,
       monochrome: night,
       loadTexture: (name) => getImage(`space/${name}.webp`),
@@ -809,6 +823,12 @@
       const note = params.get("frameNote"); // captures: ?frameNote=1 shows the explanation
       if (note === "1") chooseFrame(spaceFrame);
       if (params.get("demo") === "1") startDemo(spaceFrame); // captures: the demonstration
+      // Captures: ?rest=earth (what stays still, #139), at once; ?restDemo=1 plays the rotation.
+      const rest = params.get("rest");
+      if (isRestFrameId(rest)) {
+        space?.setRestFrame(rest, { duration: 0 });
+        if (params.get("restDemo") === "1") startDemo("rotation");
+      }
     }
     clock = setInterval(() => {
       if (live) goLive();
@@ -1169,6 +1189,49 @@
     if (mode === "space") startDemo(id);
   }
 
+  /**
+   * What stays still (#139): the camera moves to the new rest frame; attached to the Earth or a
+   * body, the rotation is played (1 s = 1 h) so that the sky is seen turning round it.
+   */
+  function chooseRest(id: RestFrameId) {
+    space?.setRestFrame(id, { duration: frameDuration() });
+    if (id === "earth" || id === "body") startDemo("rotation");
+    else pauseDemo();
+  }
+
+  /** Sidereal rotation period of a body, « 24 h 37 min », « 58,6 j », retrograde said. */
+  function periodText(body: BodyTarget): string {
+    const signed = rotationPeriodHours(body);
+    const hours = Math.abs(signed);
+    const minutes = Math.round(hours * 60);
+    const text =
+      hours < 48
+        ? $_("rest.period.hours", { values: { h: Math.floor(minutes / 60), min: minutes % 60 } })
+        : $_("rest.period.days", { values: { d: Number((hours / 24).toPrecision(3)) } });
+    return signed < 0 ? $_("rest.period.retrograde", { values: { period: text } }) : text;
+  }
+
+  /** The rest frames offered by the chip (#139), localised; the body's named when known. */
+  const restOptions = $derived(
+    REST_FRAMES.map((id) => {
+      const focus = restFocus ? targetName(restFocus) : null;
+      if (id === "body")
+        return {
+          id,
+          name: focus ?? $_("rest.body"),
+          hint: focus ? $_("rest.body.hint", { values: { body: focus } }) : $_("rest.body.none"),
+          disabled: !focus,
+        };
+      const visit = id === "earth" && spaceFrame === "body";
+      return {
+        id,
+        name: $_(`rest.${id}`),
+        hint: visit ? $_("rest.earth.visit") : $_(`rest.${id}.hint`),
+        disabled: visit,
+      };
+    }),
+  );
+
   /** Title of the Earth view's header: the point of view shown (#128). */
   const povTitle = $derived(
     spaceFrame === "body"
@@ -1177,16 +1240,25 @@
   );
 
   /**
-   * Caption of the point of view (#128): « Fixe : … · Bouge : … » for the level, then what is
-   * (not) to scale.
+   * Caption of the point of view (#128, #139): what stays still and what moves, for the rest
+   * frame and the level (« Les saisons » keeps its own with the stars still), then what is (not)
+   * to scale.
    */
   const povCaption = $derived.by(() => {
     if (mode !== "space") return null;
+    const body = restFocus ?? spaceBody;
     const values = {
       angle: angleFormat.format(meanObliquity(date)),
-      body: targetName(spaceBody),
+      body: targetName(body),
+      period: periodText(body),
     };
-    const title = $_(`frame.${spaceFrame}.caption.${userLevel}`, { values });
+    const key =
+      spaceFrame === "ecliptic" && spaceRest === "stars"
+        ? `frame.ecliptic.caption.${userLevel}`
+        : spaceFrame === "body" && spaceRest !== "body"
+          ? `rest.visit.${spaceRest}.caption.${userLevel}`
+          : `rest.${spaceRest}.caption.${userLevel}`;
+    const title = $_(key, { values });
     let detail = "";
     if (spaceFrame === "ecliptic") detail = $_(`frame.ecliptic.scale.${userLevel}`);
     else if (spaceFrame === "heliocentric") detail = $_(`frame.heliocentric.scale.${userLevel}`);
@@ -1522,6 +1594,11 @@
   const showVisitBack = $derived(
     mode === "space" && spaceFrame === "body" && !flying && !immersive && !!space,
   );
+  /** Bottom of the point of view's caption, and its height: the rest chip sits above it. */
+  const captionBottom = $derived(
+    timeOpen && playing ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)` : aboveControls,
+  );
+  let captionHeight = $state(28);
   const toastTop = $derived(
     `calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16 + (showVisitBack ? 26 : 0)}px)`,
   );
@@ -1656,9 +1733,8 @@
   <button
     class="hud scale-note"
     class:open={captionOpen}
-    style:bottom={timeOpen && playing
-      ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)`
-      : aboveControls}
+    style:bottom={captionBottom}
+    bind:offsetHeight={captionHeight}
     aria-expanded={captionOpen}
     title={captionOpen ? undefined : $_("caption.expand")}
     onclick={() => (captionOpen = !captionOpen)}
@@ -1666,6 +1742,15 @@
     <span class="note-title">{povCaption.title}</span>
     {#if povCaption.detail && captionOpen}<span class="detail">{povCaption.detail}</span>{/if}
   </button>
+  {#if space}
+    <!-- What stays still (#139): a chip over the caption, its choices in a small popover. -->
+    <RestFrameChip
+      rest={spaceRest}
+      options={restOptions}
+      bottom={`calc(${captionBottom} + ${captionHeight + 8}px)`}
+      onselect={chooseRest}
+    />
+  {/if}
 {/if}
 
 {#if status !== "ready"}
