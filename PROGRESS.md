@@ -8,6 +8,7 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
+| #135 | Menu visuel : tuiles, cartes des points de vue, « Plus de réglages » replié (captures `docs/design/menu-visual/`, à valider par le porteur) | Claude (agent) | `feat/135-menu-visual` | 2026-10-11 |
 | #101 | Ciel profond sur la carte et dans la recherche | Claude (agent) | `feat/101-deepsky-map` | 2026-10-09 |
 | #123 | Vue Terre : référentiel centré sur un astre | Claude (agent) | `feat/123-body-centred-frame` | 2026-10-10 |
 | #98 | Décalage de la visée capteurs (S23) | Claude (en attente de mesures porteur) | `fix/98-pointing-offset` | 2026-10-08 |
