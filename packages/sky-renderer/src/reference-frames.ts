@@ -8,19 +8,19 @@
  * and the frame's rotation (frame → world, a function of the date) turns them into the world.
  *
  * Each frame is also a point of view telling one phenomenon (#128, see points-of-view.ts):
- * - "stars" — La Terre tourne (star-fixed, default): the world frame itself; celestial north up,
- *   the Earth turns under a fixed day/night line.
  * - "ecliptic" — Les saisons: x = vernal equinox, z = ecliptic pole of date (mean obliquity of
  *   date, IAU 2006, astro-core meanObliquity); the camera orbits the Sun at its true place and
  *   distance (#131), round which the Earth goes, its axis keeping its direction in space.
- * - "heliocentric" — Le système solaire (#124, #131): the same axes and the same true-scale
- *   scene, framed on the whole system.
+ * - "heliocentric" — Le système solaire (#124, #131, default since #139): the same axes and the
+ *   same true-scale scene, framed on the whole system.
  * - "body" — Visiter un astre (#123): the camera orbits the Moon or a planet, at its real
  *   distance and size, its north pole up (body-frame.ts: BodyFrame, owned by the view, which
  *   knows the chosen body).
  *
- * « Vu du sol » (the Earth-fixed frame of #122/#128) was removed in #131: a saved "earth" frame
- * is no longer valid and falls back to the default.
+ * « Vu du sol » (the Earth-fixed frame of #122/#128) was removed in #131, « La Terre tourne »
+ * (the star-fixed "stars" point of view) in #139: a saved "earth" or "stars" frame is no longer
+ * valid and falls back to the default. What the camera is attached to (the stars, the Sun, the
+ * Earth or a body) is now chosen within the true-scale scene: see rest-frames.ts.
  *
  * Pure three.js maths; orientations are allocation-free (the Sun-centred targets call
  * astronomy-engine, once per date change).
@@ -31,17 +31,16 @@ import { trueScalePosition } from "./points-of-view";
 
 const DEG = Math.PI / 180;
 
-export type ReferenceFrameId = "stars" | "ecliptic" | "heliocentric" | "body";
+export type ReferenceFrameId = "ecliptic" | "heliocentric" | "body";
 
 /** The frames (points of view) in the selector's order; `available`: false until they land. */
 export const REFERENCE_FRAMES: readonly { id: ReferenceFrameId; available: boolean }[] = [
-  { id: "stars", available: true },
   { id: "ecliptic", available: true },
   { id: "heliocentric", available: true },
   { id: "body", available: true },
 ];
 
-export const DEFAULT_REFERENCE_FRAME: ReferenceFrameId = "stars";
+export const DEFAULT_REFERENCE_FRAME: ReferenceFrameId = "heliocentric";
 
 /**
  * Duration of the move between two points of view, ms (0 with reduced motion: chosen by the
@@ -89,8 +88,16 @@ const sunTarget = (d: Date, out: THREE.Vector3) =>
 /** Frames whose definition does not depend on a chosen body. */
 export type FixedFrameId = Exclude<ReferenceFrameId, "body">;
 
+/**
+ * The world frame itself (mean equator and equinox of date, round the Earth): the fallback of
+ * the body-centred frame before its body is known, and the frame of the flights (#37).
+ */
+export const EQUATORIAL: Readonly<Omit<ReferenceFrame, "id">> = {
+  orientation: (_d, out) => out.identity(),
+  target: geocentre,
+};
+
 export const FRAMES: Readonly<Record<FixedFrameId, ReferenceFrame>> = {
-  stars: { id: "stars", orientation: (_d, out) => out.identity(), target: geocentre },
   ecliptic: {
     id: "ecliptic",
     orientation: eclipticOfDate,
@@ -104,11 +111,11 @@ export const FRAMES: Readonly<Record<FixedFrameId, ReferenceFrame>> = {
 };
 
 /**
- * The frame for an id; "body" falls back to the star-fixed frame: its frame depends on the
- * chosen body (a BodyFrame owned by the view).
+ * The frame for an id; "body" falls back to the equatorial frame round the Earth: its frame
+ * depends on the chosen body (a BodyFrame owned by the view).
  */
-export function frameOf(id: ReferenceFrameId): ReferenceFrame {
-  return id === "body" ? FRAMES.stars : FRAMES[id];
+export function frameOf(id: ReferenceFrameId): Omit<ReferenceFrame, "id"> {
+  return id === "body" ? EQUATORIAL : FRAMES[id];
 }
 
 /** Orbit camera in a frame: angles (degrees), distance and pan of the target (Earth radii). */

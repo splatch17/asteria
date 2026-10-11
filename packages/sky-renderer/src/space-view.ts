@@ -44,7 +44,13 @@ import {
 } from "./sky-map";
 import { sphericalGrid } from "./grids";
 import { RealisticLayer, type SpaceTextureName } from "./space-realistic";
-import { moonAxes, planetAxes, sunwardDirection, type SpaceStyle } from "./space-style";
+import {
+  PLANET_ROTATION,
+  moonAxes,
+  planetAxes,
+  sunwardDirection,
+  type SpaceStyle,
+} from "./space-style";
 import {
   BODY_TARGETS,
   BodyFrame,
@@ -55,6 +61,7 @@ import {
   bodyViewDistance,
   hiddenBySphere,
   isBodyTarget,
+  precession,
   worldPosition,
   type BodyTarget,
 } from "./body-frame";
@@ -83,11 +90,20 @@ import {
   frameOf,
   isAvailableFrame,
   isSunCentred,
+  orbitInFrame,
   orbitPose,
   type FrameOrbit,
   type ReferenceFrameId,
 } from "./reference-frames";
-import { PovScene, SCENE_INDEX, SPIN_ARROW, type PovWeights } from "./pov-scene";
+import { PovScene, SCENE_INDEX, type PovWeights } from "./pov-scene";
+import {
+  DEFAULT_REST_FRAME,
+  bodyFixedRotation,
+  earthFixedRotation,
+  primeMeridian,
+  restFrameOffered,
+  type RestFrameId,
+} from "./rest-frames";
 import {
   AU,
   GLOBE_MIN_PX,
@@ -97,6 +113,7 @@ import {
   markerOpacity,
   scaleBar,
   travelFraction,
+  trueScalePosition,
   type ScaleBar,
 } from "./points-of-view";
 import { GestureInput } from "./gesture-input";
@@ -144,10 +161,9 @@ export interface SpaceViewOptions {
     sun: string;
     moon: string;
     pole: string;
-    /** Points of view (#128): the Earth in the solar system, its axis, its rotation. */
+    /** Points of view (#128): the Earth in the solar system, its axis. */
     earth?: string;
     axis?: string;
-    rotation?: string;
   };
   /**
    * Text of the true-scale scene's scale bar (#131), e.g. "1 ua", "100 000 km" (localised by the
@@ -197,6 +213,12 @@ export interface SpaceViewOptions {
   onFrameChange?: (id: ReferenceFrameId) => void;
   /** Duration (ms) of the way back from a visit by pinching out (#134); 0: crossfade. */
   exitDuration?: () => number;
+  /**
+   * The rest frame (#139) or the body it can be attached to changed (the user's choice, a new
+   * point of view, a body looked at): `focus` is the Moon or the planet visited or looked at,
+   * offered as the "body" rest frame (null: none).
+   */
+  onRestChange?: (rest: RestFrameId, focus: BodyTarget | null) => void;
 }
 
 /** A flight between the sky map's point of view and the orbit (#37), see flight.ts. */
@@ -238,10 +260,10 @@ const FRAME_IDS = REFERENCE_FRAMES.map((f) => f.id);
  * and the camera's elevation above the ecliptic in the true-scale scene (degrees).
  */
 const FRAMING = Object.freeze({
+  /** A globe looked at (a tap on the Earth, a rest frame attached to it) fills this share. */
   earthFill: 0.55,
-  /** The Earth moved away from the Sun's side, Earth radii. */
-  earthShift: 0.4,
-  earthLat: 20,
+  /** Soleil (#139): the camera at least this high above the ecliptic, to see the orbits. */
+  sunLat: 25,
   /** « Les saisons »: the Earth's orbit (aphelion 1.0167 au) and room for the marks' dates. */
   seasonsFill: 0.78,
   seasonsLat: 32,
@@ -322,7 +344,10 @@ export class SpaceView {
   private readonly frameUp = new THREE.Vector3(0, 0, 1);
   /** Slerp from the camera's pose when the frame changed (frozen) to the new frame's pose. */
   private frameTween: {
-    from: ReferenceFrameId;
+    /** Point of view left (null: none, after a flight from the sky). */
+    from: ReferenceFrameId | null;
+    /** A change of rest frame (#139) within the point of view: a plain slerp, no trip. */
+    rest: boolean;
     /** Body the camera left (body-centred frame), or null. */
     fromBody: BodyTarget | null;
     /** Camera distance to its target when the change started (interpolated geometrically). */
@@ -347,6 +372,24 @@ export class SpaceView {
     quat: new THREE.Quaternion(),
     target: new THREE.Vector3(),
     shift: new THREE.Vector3(),
+  };
+  // --- Rest frame (#139), see rest-frames.ts
+  private rest: RestFrameId = DEFAULT_REST_FRAME;
+  /** Body the "body" rest frame turns with. */
+  private restBody: BodyTarget | null = null;
+  /** "sun" rest frame during a visit: the frame's origin minus the Sun (world), held fixed. */
+  private readonly restOffset = new THREE.Vector3();
+  /** Last state told to the caller (onRestChange). */
+  private readonly restTold = { rest: "" as string, focus: null as BodyTarget | null };
+  private readonly restTmp = {
+    prec: new THREE.Matrix3(),
+    pole: new THREE.Vector3(),
+    j2000: new THREE.Vector3(),
+    prime: new THREE.Vector3(),
+    sun: new THREE.Vector3(),
+    cam: new THREE.Vector3(),
+    look: new THREE.Vector3(),
+    orbit: { lon: 0, lat: 0, dist: 1, tx: 0, ty: 0, tz: 0 } as FrameOrbit,
   };
   /**
    * Share (0 … 1) of the light-time offset applied to the visited globe in this frame: 0 at its
@@ -407,9 +450,8 @@ export class SpaceView {
   private readonly pov: PovScene;
   /** Weight of each point of view: 1 when shown, blended during a transition. */
   private readonly weights: PovWeights = {
-    stars: 1,
     ecliptic: 0,
-    heliocentric: 0,
+    heliocentric: 1,
     body: 0,
   };
   private reducedMotion = false;
@@ -1025,6 +1067,26 @@ export class SpaceView {
     return this.bodyFrame.body;
   }
 
+  /**
+   * Chooses what the camera is attached to (#139, rest-frames.ts): the stars, the Sun, the
+   * Earth, or the Moon or planet visited or looked at. The camera moves continuously to the new
+   * frame in `duration` ms (0 jumps, crossfaded under reduced motion): attached to a body it
+   * comes to look at it (no farther than a framing of its globe); attached to the Sun it frames
+   * the Sun and the orbit of what it looked at. A frame not offered now is ignored.
+   */
+  setRestFrame(id: RestFrameId, { duration = FRAME_TRANSITION_MS }: { duration?: number } = {}) {
+    if (this.flight) return;
+    if (this.stale) this.refresh();
+    const focus = this.restFocus();
+    if (!restFrameOffered(id, this.frameId, focus)) return;
+    if (id === this.rest && (id !== "body" || focus === this.restBody)) return;
+    this.changeRest(id, id === "body" ? focus : null, duration);
+  }
+
+  getRestFrame(): RestFrameId {
+    return this.rest;
+  }
+
   getFrame(): ReferenceFrameId {
     return this.frameId;
   }
@@ -1044,7 +1106,7 @@ export class SpaceView {
    */
   resetView(instant = false): void {
     if (this.flight) return;
-    this.moveTo(this.defaultOrbit(), instant);
+    this.moveTo(this.homeOrbit(), instant);
   }
 
   /**
@@ -1077,6 +1139,8 @@ export class SpaceView {
    * view must be running (start()); input is ignored until the flight ends.
    */
   flyFromSky(view: ViewState, options: FlightOptions = {}): void {
+    // The Earth view always opens with the stars still (#139).
+    this.resetRest();
     this.prepareFlight();
     // In the body frame the flight ends round the Earth, celestial north up; the trip to the
     // body follows (endFlight).
@@ -1209,12 +1273,225 @@ export class SpaceView {
     return { lon: at.lon, lat: Math.max(-89, Math.min(89, at.lat)), dist, tx: 0, ty: 0, tz: 0 };
   }
 
-  /** Frame rotation, target and pole at the current date. */
+  /**
+   * Frame rotation, target and pole at the current date: the point of view's, or the rest
+   * frame's when the camera is attached to the Earth or a body (turning with it), or to the Sun
+   * during a visit (#139).
+   */
   private updateFrame(): void {
-    const frame = this.frameId === "body" ? this.bodyFrame : frameOf(this.frameId);
-    frame.orientation(this.date, this.frameQuat);
-    frame.target(this.date, this.frameOrigin);
-    this.frameUp.set(0, 0, 1).applyQuaternion(this.frameQuat);
+    const visit = this.frameId === "body";
+    const q = this.frameQuat;
+    const o = this.frameOrigin;
+    if (this.rest === "earth" && !visit) {
+      earthFixedRotation(this.date, q);
+      o.set(0, 0, 0);
+    } else if (this.rest === "body" && this.restBody) {
+      this.bodyFixedFrame(this.restBody, visit, q, o);
+    } else {
+      const frame = visit ? this.bodyFrame : frameOf(this.frameId);
+      frame.orientation(this.date, q);
+      frame.target(this.date, o);
+      if (this.rest === "sun" && visit) o.copy(this.sunWorld()).add(this.restOffset);
+    }
+    this.frameUp.set(0, 0, 1).applyQuaternion(q);
+  }
+
+  /** The Sun's place (world, light-time corrected, as the visit's), in restTmp.sun. */
+  private sunWorld(): THREE.Vector3 {
+    const t = this.restTmp;
+    return worldPosition("Sun", this.date, precession(this.date, t.prec), t.sun);
+  }
+
+  /**
+   * Axes turning with a body (z = its pole, x = its prime meridian; the Moon's at the mean
+   * sub-Earth point) and its centre: where the visit draws it, or the true-scale scene.
+   */
+  private bodyFixedFrame(
+    body: BodyTarget,
+    visit: boolean,
+    q: THREE.Quaternion,
+    o: THREE.Vector3,
+  ): void {
+    const t = this.restTmp;
+    const prec = precession(this.date, t.prec);
+    if (visit || body === "Moon") worldPosition(body, this.date, prec, o);
+    else trueScalePosition(body, this.date, prec, o);
+    if (body === "Moon") {
+      bodyPole("Moon", prec, t.pole);
+      t.prime.copy(o).negate();
+    } else {
+      const { ra, dec } = PLANET_ROTATION[body];
+      const [a, d] = [ra * DEG, dec * DEG];
+      t.j2000.set(Math.cos(d) * Math.cos(a), Math.cos(d) * Math.sin(a), Math.sin(d));
+      primeMeridian(body, this.date, t.j2000, t.prime).applyMatrix3(prec);
+      t.pole.copy(t.j2000).applyMatrix3(prec);
+    }
+    bodyFixedRotation(t.pole, t.prime, q);
+  }
+
+  /**
+   * The Moon or the planet the "body" rest frame would turn with: the one visited, the one
+   * attached, else (true-scale scene) the one the camera follows or, Sun-fixed, the nearest to
+   * the point looked at within half the camera's distance. Allocation-free.
+   */
+  private restFocus(): BodyTarget | null {
+    if (this.frameId === "body") return this.bodyFrame.body;
+    if (this.rest === "body") return this.restBody;
+    if (this.rest === "earth" || !this.pov.ready) return null;
+    let index = this.follow;
+    if (this.rest === "sun") {
+      index = -1;
+      const target = this.frameTmp.b.set(this.orbit.tx, this.orbit.ty, this.orbit.tz);
+      let best = 0.5 * this.orbit.dist;
+      const positions = this.pov.anchors.positions;
+      for (let i = 0; i < positions.length; i++) {
+        const d = this.toFrame(positions[i]!, this.frameTmp.a).distanceTo(target);
+        if (d < best) [index, best] = [i, d];
+      }
+    }
+    const body = index >= 0 ? SCENE_BODIES[index]! : null;
+    return body && body !== "Sun" && body !== "Earth" ? body : null;
+  }
+
+  /** Tells the caller the rest frame and the body offered, when they changed. */
+  private tellRest(): void {
+    const focus = this.restFocus();
+    const told = this.restTold;
+    if (told.rest === this.rest && told.focus === focus) return;
+    told.rest = this.rest;
+    told.focus = focus;
+    this.options.onRestChange?.(this.rest, focus);
+  }
+
+  /** Back to the stars' rest frame at once (a new point of view, a flight). */
+  private resetRest(): void {
+    if (this.rest === "stars") return;
+    this.rest = "stars";
+    this.restBody = null;
+    this.update();
+  }
+
+  /**
+   * Back to the stars' rest frame, the camera kept where it is (call after placeCamera): the
+   * orbit re-expressed in the point of view's own frame; the body it was attached to followed.
+   */
+  private dropRest(): void {
+    if (this.rest === "stars") return;
+    const attached = this.rest === "earth" ? "Earth" : this.rest === "body" ? this.restBody : null;
+    this.rest = "stars";
+    this.restBody = null;
+    this.updateFrame();
+    orbitInFrame(
+      this.camera.position,
+      this.poseTarget,
+      this.frameQuat,
+      this.frameOrigin,
+      this.orbit,
+    );
+    if (attached && this.sceneFrame() && this.pov.ready) this.setFollow(SCENE_INDEX[attached]);
+    this.dirty = true;
+  }
+
+  /**
+   * Changes the rest frame (#139): the camera's pose now frozen as the start of a slerp (as a
+   * change of point of view), ending on the same place expressed in the new frame, or moved to
+   * look at what the new frame holds still (setRestFrame).
+   */
+  private changeRest(id: RestFrameId, body: BodyTarget | null, duration: number): void {
+    this.input.stopInertia();
+    this.camTween = null;
+    if (duration <= 0 && this.reducedMotion && this.running) this.startCrossfade();
+    this.placeCamera();
+    const state = this.frameTweenState;
+    state.quat.copy(this.camera.quaternion);
+    state.target.copy(this.poseTarget);
+    state.shift.set(0, 0, 0);
+    const t = this.restTmp;
+    const cam = t.cam.copy(this.camera.position);
+    const look = t.look.copy(this.poseTarget);
+    const dist = cam.distanceTo(look);
+    const visit = this.frameId === "body";
+    const scene = this.sceneFrame();
+    this.rest = id;
+    this.restBody = body;
+    if (id !== "stars") this.setFollow(-1);
+    if (id === "sun" && visit) {
+      // The origin stays where it is relative to the Sun: the body goes on its way.
+      this.bodyFrame.target(this.date, this.restOffset).sub(this.sunWorld());
+    }
+    this.updateFrame();
+    const to = { lon: 0, lat: 0, dist: 1, tx: 0, ty: 0, tz: 0 };
+    orbitInFrame(cam, look, this.frameQuat, this.frameOrigin, to);
+    if (scene && (id === "earth" || id === "body")) {
+      // Look at the body from where the camera is, at most at the distance framing its globe.
+      const r = id === "earth" || !body ? 1 : bodyRadius(body);
+      const from = orbitInFrame(cam, this.frameOrigin, this.frameQuat, this.frameOrigin, t.orbit);
+      to.lon = from.lon;
+      to.lat = from.lat;
+      to.dist = Math.max(this.distMin(), Math.min(from.dist, this.globeFraming(r)));
+      to.tx = to.ty = to.tz = 0;
+    } else if (scene && id === "sun") {
+      // The Sun at the centre, the orbit of what was looked at in view, from above it.
+      const extent = Math.max(1.03 * AU, 1.1 * look.distanceTo(this.frameOrigin));
+      to.lat = Math.max(to.lat, FRAMING.sunLat);
+      const { clientHeight: h } = this.options.canvas;
+      const { w: safeW, h: safeH } = this.safeSize();
+      const halfH = 1.3 * extent * Math.sin(to.lat * DEG);
+      const fit = fitDistance(extent, halfH, ORBIT_FOV, Math.max(1, h), safeW, safeH, 0.9);
+      to.dist = Math.min(this.distMax(), Math.max(dist, fit));
+      to.tx = to.ty = to.tz = 0;
+    }
+    this.orbit = to;
+    this.clampPan();
+    if (id === "stars" && scene) this.chooseFollow();
+    this.frameTween =
+      duration > 0
+        ? {
+            from: this.frameId,
+            rest: true,
+            fromBody: null,
+            dist,
+            start: performance.now(),
+            duration,
+            k: 0,
+            t: 0,
+            blend: null,
+            ...state,
+          }
+        : null;
+    this.tellRest();
+    this.dirty = true;
+  }
+
+  /** Camera distance at which a globe of radius `r` fills FRAMING.earthFill of the safe area. */
+  private globeFraming(r: number): number {
+    const { w: safeW, h: safeH } = this.safeSize();
+    const h = Math.max(1, this.options.canvas.clientHeight);
+    return fitDistance(r, r, ORBIT_FOV, h, safeW, safeH, FRAMING.earthFill, true);
+  }
+
+  /** The camera is attached to a globe of the true-scale scene (the Earth or a body). */
+  private attached(): boolean {
+    return this.sceneFrame() && (this.rest === "earth" || this.rest === "body");
+  }
+
+  /**
+   * Where the recentre button and a double tap beside a globe go: attached to a globe, back to
+   * it at its framing distance; in a visit, the body's default view; else the point of view's.
+   */
+  private homeOrbit(): EarthOrbit {
+    if (this.attached()) {
+      const r = this.rest === "body" && this.restBody ? bodyRadius(this.restBody) : 1;
+      const { lon, lat } = this.orbit;
+      return { lon, lat, dist: this.globeFraming(r), tx: 0, ty: 0, tz: 0 };
+    }
+    const orbit = this.defaultOrbit();
+    if (this.frameId === "body" && this.globe3d.object.visible) {
+      // Sun-fixed, the frame's origin is no longer on the body.
+      const t = this.toFrame(this.globe3d.object.position, this.frameTmp.a);
+      [orbit.tx, orbit.ty, orbit.tz] = [t.x, t.y, t.z];
+    }
+    return orbit;
   }
 
   /** Eased progress of the frame slerp at time `now`; ends it at 1. */
@@ -1243,8 +1520,6 @@ export class SpaceView {
 
   /**
    * Where each point of view opens (#128, #131), in the current frame (call after updateFrame):
-   * - La Terre tourne: the whole Earth, lit from the left (the camera at 90° from the Sun, so
-   *   the terminator crosses the disc), 20° above the equator;
    * - Les saisons: the true-scale scene round the Sun, the Earth's orbit filling the safe area,
    *   from 32° above the ecliptic (58° on a portrait screen), from longitude 180° (June solstice
    *   on the right);
@@ -1259,26 +1534,7 @@ export class SpaceView {
     const fit = (halfW: number, halfH: number, fill: number, sphere = false) =>
       fitDistance(halfW, halfH, ORBIT_FOV, Math.max(1, h), safeW, safeH, fill, sphere);
     const orbit = { lon: 0, lat: 0, dist: 4, tx: 0, ty: 0, tz: 0 };
-    if (id === "stars") {
-      orbit.dist = fit(1, 1, FRAMING.earthFill, true);
-      orbit.lat = FRAMING.earthLat;
-      if (this.bodies) {
-        // Camera along pole × Sun: the Sun on the left of the screen, the pole up; the Earth
-        // shifted to the right, leaving room for the Sun's glyph (drawSunlight).
-        const sun = this.dirAt(0, this.frameTmp.a);
-        const side = this.frameTmp.b.crossVectors(Z_AXIS, sun);
-        if (side.lengthSq() > 1e-9) {
-          orbit.lon = directionInFrame(side, this.frameQuat, orbit).lon;
-          const across = sun.addScaledVector(side.normalize(), -sun.dot(side));
-          across.z = 0;
-          if (across.lengthSq() > 1e-9) {
-            across.normalize().multiplyScalar(FRAMING.earthShift); // the target towards the Sun
-            [orbit.tx, orbit.ty, orbit.tz] = [across.x, across.y, across.z];
-          }
-        }
-        orbit.lat = FRAMING.earthLat;
-      }
-    } else {
+    {
       const seasons = id === "ecliptic";
       const portrait = safeW < safeH;
       orbit.lat = seasons
@@ -1442,8 +1698,9 @@ export class SpaceView {
 
   /** Double tap: the place of the globe under (x, y) turns to face the camera; beside it, reset. */
   private centreAt(x: number, y: number): void {
-    // Round the Sun of a diagram there is no globe to turn: back to the point of view's framing.
-    if (isSunCentred(this.frameId)) return this.resetView();
+    // Round the Sun of a diagram there is no globe to turn: back to the point of view's framing
+    // (attached to a globe, #139: that globe turns to face the camera).
+    if (isSunCentred(this.frameId) && !this.attached()) return this.resetView();
     const { clientWidth: w, clientHeight: h } = this.options.canvas;
     const { a: dir } = this.frameTmp;
     const o = this.camera.position;
@@ -1453,7 +1710,8 @@ export class SpaceView {
       .sub(o)
       .normalize();
     const c = this.targetCentre();
-    const t = raySphere(o.x - c.x, o.y - c.y, o.z - c.z, dir.x, dir.y, dir.z, this.radius());
+    const r = this.attached() && this.restBody ? bodyRadius(this.restBody) : this.radius();
+    const t = raySphere(o.x - c.x, o.y - c.y, o.z - c.z, dir.x, dir.y, dir.z, r);
     if (t < 0) {
       this.resetView();
       return;
@@ -1461,7 +1719,9 @@ export class SpaceView {
     dir.multiplyScalar(t).add(o).sub(c); // the point of the globe, from its centre
     const { lon, lat } = directionInFrame(dir, this.frameQuat, { lon: 0, lat: 0 });
     const clamped = Math.max(-89, Math.min(89, lat));
-    this.moveTo({ lon, lat: clamped, dist: this.orbit.dist, tx: 0, ty: 0, tz: 0 }, false);
+    // The globe's centre in the frame (not its origin when the Sun is held still in a visit).
+    const at = this.toFrame(c, this.frameTmp.b);
+    this.moveTo({ lon, lat: clamped, dist: this.orbit.dist, tx: at.x, ty: at.y, tz: at.z }, false);
   }
 
   private buildRealistic(): void {
@@ -1621,7 +1881,7 @@ export class SpaceView {
       // visit to the solar system (#134): the camera recedes looking at the body, which only
       // leaves the centre once the distance has grown (the inverse of the way in).
       const back = tw.blend === "out";
-      const trip = !back && (tw.fromBody !== null || this.frameId === "body");
+      const trip = !back && !tw.rest && (tw.fromBody !== null || this.frameId === "body");
       const move = trip ? flightEase((tw.t - 0.15) / 0.85) : tw.k;
       const { look, dest, up } = this.tripTmp;
       dest.copy(target);
@@ -1879,7 +2139,7 @@ export class SpaceView {
    */
   private refreshPointsOfView(prec: THREE.Matrix3): void {
     const tw = this.frameTween;
-    const on = isSunCentred(this.frameId) || (!!tw && isSunCentred(tw.from));
+    const on = isSunCentred(this.frameId) || (!!tw?.from && isSunCentred(tw.from));
     if (!on) return;
     if (!this.ephemerisOk) {
       this.pov.ready = false;
@@ -1929,7 +2189,8 @@ export class SpaceView {
    * within half the camera's distance of it; none otherwise (the Sun: the frame's origin).
    */
   private chooseFollow(): void {
-    if (!this.sceneFrame() || !this.pov.ready) {
+    // Attached to the Sun, the Earth or a body (#139), the frame's origin follows instead.
+    if (!this.sceneFrame() || !this.pov.ready || this.rest !== "stars") {
       this.follow = -1;
       return;
     }
@@ -2043,6 +2304,7 @@ export class SpaceView {
     }
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
+    this.tellRest();
   }
 
   private dirAt(i: number, out = new THREE.Vector3()): THREE.Vector3 {
@@ -2138,9 +2400,6 @@ export class SpaceView {
       .set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat))
       .multiplyScalar(1.02)
       .applyMatrix4(this.earth.matrixWorld);
-    const w = this.weights;
-    // Points of view (#128): their own anchors first.
-    if (w.stars >= 0.5) this.drawSunlight(layout);
     // On the ground (flight) the marker is hidden: its label would float overhead.
     if (this.observerMarker.visible) label(labels.here, here, false);
     this.labelPointsOfView(font, layout);
@@ -2166,8 +2425,10 @@ export class SpaceView {
       });
     }
     font("700 11px", "0.12em");
-    if (w.stars >= 0.5) label(labels.pole, pole, true);
+    // Attached to the Earth (#139), the sky turns round the celestial pole: named.
+    if (this.rest === "earth") label(labels.pole, pole, true);
     // Dated monthly marks of the selected planet's path (lowest priority).
+    const w = this.weights;
     if (this.pathPoints.visible && this.pathMarks.length && w.ecliptic + w.heliocentric < 0.5) {
       font("400 9px", "0.06em");
       ctx.globalAlpha = 0.65;
@@ -2201,11 +2462,6 @@ export class SpaceView {
     layout: LabelLayout,
   ): void {
     const w = this.weights;
-    const { labels } = this.options;
-    if (w.stars >= 0.5 && labels.rotation) {
-      font("400 10px", "0.08em");
-      this.labelSpin(layout, labels.rotation);
-    }
     this.sceneOk.fill(0);
     // The scene's overlay fades in and out with its point of view (#134).
     const scene = w.ecliptic + w.heliocentric;
@@ -2215,41 +2471,6 @@ export class SpaceView {
       this.sceneAlpha = 1;
       this.ctx.globalAlpha = 1;
     }
-  }
-
-  /**
-   * « La Terre tourne »: the rotation's label beside its arrow (above it, else on a side), clear
-   * of the globe and of « Vous êtes ici ».
-   */
-  private labelSpin(layout: LabelLayout, text: string): void {
-    const box = this.frameTmp.shift;
-    let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
-    const p = this.frameTmp.b;
-    for (let i = 0; i < 8; i++) {
-      const t = (i / 8) * 2 * Math.PI;
-      p.set(SPIN_ARROW.radius * Math.cos(t), SPIN_ARROW.radius * Math.sin(t), SPIN_ARROW.height);
-      const s = this.screenOf(p, false);
-      if (!s) return;
-      [x0, x1, y0, y1] = [
-        Math.min(x0, s[0]),
-        Math.max(x1, s[0]),
-        Math.min(y0, s[1]),
-        Math.max(y1, s[1]),
-      ];
-    }
-    box.x = (x0 + x1) / 2;
-    box.y = (y0 + y1) / 2;
-    const ctx = this.ctx;
-    const t = text.toUpperCase();
-    const w = ctx.measureText(t).width;
-    const h = 12;
-    const r = layout.place([
-      { x: box.x - w / 2, y: y0 - 8 - h, w, h },
-      { x: x1 + 10, y: box.y - h / 2, w, h },
-      { x: x0 - 10 - w, y: box.y - h / 2, w, h },
-      { x: box.x - w / 2, y: y0 - 24 - h, w, h },
-    ]);
-    if (r) ctx.fillText(t, r.x, r.y + h / 2);
   }
 
   /**
@@ -2707,67 +2928,6 @@ export class SpaceView {
   }
 
   /**
-   * « La Terre tourne » (#128): where the Sun's light comes from, drawn on the overlay: the Sun's
-   * glyph at the edge of the safe area (or where the Sun is, if on screen) and its name; the lit
-   * side of the globe shows the rest (#134: no rays). Allocation-free.
-   */
-  private drawSunlight(layout: LabelLayout): void {
-    if (!this.bodies) return;
-    const ctx = this.ctx;
-    const { clientWidth: width, clientHeight: height } = this.options.canvas;
-    const centre = this.screenOf(ORIGIN, false);
-    if (!centre) return;
-    const [cx, cy] = [centre[0], centre[1]];
-    const sun = this.dirAt(0, this.frameTmp.sun);
-    const towards = this.screenOf(this.frameTmp.marker.copy(sun).multiplyScalar(0.25), false);
-    if (!towards) return;
-    let ux = towards[0] - cx;
-    let uy = towards[1] - cy;
-    const n = Math.hypot(ux, uy);
-    if (n < 1e-3) return; // the Sun right behind or in front of the Earth
-    ux /= n;
-    uy /= n;
-    const radius = this.pixelRadius(ORIGIN, 1);
-    // The glyph: where the Sun is if on screen, else at the edge of the safe area, on its side.
-    const margin = 20;
-    const s = this.safe;
-    const [x0, x1] = [s.left + margin, width - s.right - margin];
-    const [y0, y1] = [s.top + margin, height - s.bottom - margin];
-    let t = Infinity;
-    if (ux > 0) t = Math.min(t, (x1 - cx) / ux);
-    if (ux < 0) t = Math.min(t, (x0 - cx) / ux);
-    if (uy > 0) t = Math.min(t, (y1 - cy) / uy);
-    if (uy < 0) t = Math.min(t, (y0 - cy) / uy);
-    const onScreen = this.hiddenByEarth(sun, true) ? null : this.screenOf(sun, true);
-    if (onScreen) t = Math.min(t, Math.hypot(onScreen[0] - cx, onScreen[1] - cy));
-    if (!(t > radius + 24)) return;
-    const gx = cx + ux * t;
-    const gy = cy + uy * t;
-    ctx.strokeStyle = this.options.theme.ink;
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash(NO_DASH);
-    // Sun glyph: a ring and twelve rays.
-    ctx.beginPath();
-    ctx.arc(gx, gy, 8, 0, 2 * Math.PI);
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * 2 * Math.PI;
-      ctx.moveTo(gx + 11 * Math.cos(a), gy + 11 * Math.sin(a));
-      ctx.lineTo(gx + 16 * Math.cos(a), gy + 16 * Math.sin(a));
-    }
-    ctx.stroke();
-    // Its name beside the glyph.
-    const text = this.options.labels.sun.toUpperCase();
-    const tw = ctx.measureText(text).width;
-    const r = layout.place([
-      { x: gx - tw / 2, y: gy + 20, w: tw, h: 12 },
-      { x: gx - tw / 2, y: gy - 32, w: tw, h: 12 },
-      { x: gx + 20, y: gy - 6, w: tw, h: 12 },
-      { x: gx - 20 - tw, y: gy - 6, w: tw, h: 12 },
-    ]);
-    if (r) ctx.fillText(text, r.x, r.y + 6);
-  }
-
-  /**
    * Engraved reticle around the selected star, Sun, Moon or planet (#103), as on the sky map;
    * none when the object is hidden behind the globe or not drawn. Allocation-free.
    */
@@ -2910,6 +3070,14 @@ export class SpaceView {
    */
   private focusBody(index: number): void {
     if (!this.pov.ready) return;
+    // Attached to another body or to the Sun (#139): back to the stars, the camera kept.
+    const held =
+      (this.rest === "earth" && index === SCENE_INDEX.Earth) ||
+      (this.rest === "body" && this.restBody !== null && index === SCENE_INDEX[this.restBody]);
+    if (this.rest !== "stars" && !held) {
+      this.placeCamera();
+      this.dropRest();
+    }
     const a = this.pov.anchors;
     const t = this.toFrame(a.positions[index]!, this.frameTmp.a);
     // The globe filling about half of the safe area, as « La Terre tourne » frames the Earth.
@@ -2946,6 +3114,8 @@ export class SpaceView {
     state.target.copy(this.poseTarget);
     state.shift.set(0, 0, 0);
     const dist = this.camera.position.distanceTo(this.poseTarget);
+    // Each point of view opens with the stars still (#139): the camera kept, re-expressed.
+    this.dropRest();
     const from = this.frameId;
     const fromBody = from === "body" ? this.bodyFrame.body : null;
     // Into a visit from the true-scale scene: its framing, for the way back (#134).
@@ -2965,6 +3135,7 @@ export class SpaceView {
       duration > 0 && !this.flight
         ? {
             from,
+            rest: false,
             fromBody,
             dist,
             start: performance.now(),
@@ -3115,7 +3286,8 @@ export class SpaceView {
     this.frameTween =
       duration > 0
         ? {
-            from: body ? "stars" : this.frameId,
+            from: body ? null : this.frameId,
+            rest: false,
             fromBody: null,
             dist: this.camera.position.length(),
             start: performance.now(),
@@ -3169,14 +3341,15 @@ export class SpaceView {
 
   /** Centre (world) of the frame's target: the body's globe, or the Earth's. */
   private targetCentre(): THREE.Vector3 {
-    return this.frameId === "body" ? this.globe3d.object.position : ORIGIN;
+    if (this.frameId === "body") return this.globe3d.object.position;
+    return this.attached() ? this.frameOrigin : ORIGIN;
   }
 
   /** Weight of the body frame: 1 in it, blended during a transition to or from it. */
   private bodyWeight(): number {
     const tw = this.frameTween;
     const on = this.frameId === "body" ? 1 : 0;
-    if (!tw) return on;
+    if (!tw || tw.rest) return on;
     const was = tw.fromBody ? 1 : 0;
     return was + (on - was) * tw.k;
   }
@@ -3396,8 +3569,29 @@ export class SpaceView {
     if (this.sceneFrame()) {
       if (this.snapped >= 0) this.setFollow(this.snapped);
       else this.chooseFollow();
+      if (factor < 1) this.diveIntoSky(factor);
     }
     this.dirty = true;
+  }
+
+  /**
+   * Zooming in on "you are here" close to the Earth (#37; since #139 from the true-scale scene,
+   * « La Terre tourne » being gone): the camera within DIST_MIN radii of the Earth's centre,
+   * above the observer, the gesture pushed on by OVERZOOM_THRESHOLD: the caller lands in the
+   * sky map.
+   */
+  private diveIntoSky(factor: number): void {
+    if (!this.options.onEnterSky) return;
+    const z = this.zoomTmp;
+    orbitPose(this.frameQuat, this.frameOrigin, this.orbit, z.cam, z.q, z.target);
+    if (z.cam.length() >= DIST_MIN) {
+      this.overZoom.reset();
+      return;
+    }
+    if (!this.overZoom.push(1 / factor, performance.now())) return;
+    const gst = greenwichMeanSiderealTime(this.date);
+    horizonBasis(this.observer.latitude, this.observer.longitude, gst, this.horizon);
+    if (shouldEnterSky(z.cam, this.horizon.up)) this.options.onEnterSky();
   }
 
   /**
@@ -3505,17 +3699,5 @@ export class SpaceView {
         });
       return;
     }
-    // Zooming in past the closest distance on "you are here": into the sky (#37). Only round the
-    // Earth (not round a body, nor in the true-scale scene).
-    if (
-      this.frameId !== "stars" ||
-      !this.options.onEnterSky ||
-      !this.overZoom.push(DIST_MIN / requested, performance.now())
-    )
-      return;
-    this.placeCamera();
-    const gst = greenwichMeanSiderealTime(this.date);
-    horizonBasis(this.observer.latitude, this.observer.longitude, gst, this.horizon);
-    if (shouldEnterSky(this.camera.position, this.horizon.up)) this.options.onEnterSky();
   }
 }

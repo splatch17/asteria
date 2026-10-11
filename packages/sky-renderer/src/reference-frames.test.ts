@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { heliocentricPosition, meanObliquity } from "@asteria/astro-core";
 import {
+  DEFAULT_REFERENCE_FRAME,
+  EQUATORIAL,
   FRAMES,
   REFERENCE_FRAMES,
   directionInFrame,
@@ -20,21 +22,20 @@ const X = new THREE.Vector3(1, 0, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 const ORIGIN = new THREE.Vector3();
 
-const orientation = (id: "stars" | "ecliptic", date: Date) =>
-  FRAMES[id].orientation(date, new THREE.Quaternion());
+const orientation = (id: "equatorial" | "ecliptic", date: Date) =>
+  (id === "equatorial" ? EQUATORIAL : FRAMES[id]).orientation(date, new THREE.Quaternion());
 const raDec = (v: THREE.Vector3) => ({
   ra: (((Math.atan2(v.y, v.x) / DEG) % 360) + 360) % 360,
   dec: Math.asin(v.z / v.length()) / DEG,
 });
 
 describe("reference frame list", () => {
-  it("offers the four points of view, star-fixed first, all available (#128, #131)", () => {
-    expect(REFERENCE_FRAMES.map((f) => f.id)).toEqual([
-      "stars",
-      "ecliptic",
-      "heliocentric",
-      "body",
-    ]);
+  it("offers the three points of view, all available (#128, #131, #139)", () => {
+    expect(REFERENCE_FRAMES.map((f) => f.id)).toEqual(["ecliptic", "heliocentric", "body"]);
+    expect(DEFAULT_REFERENCE_FRAME).toBe("heliocentric");
+    // « La Terre tourne » was removed (#139): a saved "stars" frame falls back to the default.
+    expect(isAvailableFrame("stars")).toBe(false);
+    expect(isReferenceFrameId("stars")).toBe(false);
     expect(REFERENCE_FRAMES.every((f) => f.available)).toBe(true);
     expect(isReferenceFrameId("body")).toBe(true);
     expect(isAvailableFrame("heliocentric")).toBe(true);
@@ -42,10 +43,10 @@ describe("reference frame list", () => {
     // « Vu du sol » was removed (#131): a saved "earth" frame is no longer valid.
     expect(isAvailableFrame("earth")).toBe(false);
     expect(isReferenceFrameId("earth")).toBe(false);
-    expect(frameOf("heliocentric").id).toBe("heliocentric");
-    expect(frameOf("body").id).toBe("stars");
+    expect(frameOf("heliocentric")).toBe(FRAMES.heliocentric);
+    expect(frameOf("body")).toBe(EQUATORIAL);
     expect(isSunCentred("ecliptic") && isSunCentred("heliocentric")).toBe(true);
-    expect(isSunCentred("stars") || isSunCentred("body")).toBe(false);
+    expect(isSunCentred("body")).toBe(false);
   });
 });
 
@@ -64,9 +65,9 @@ describe("sun-centred frames (#128, #131)", () => {
   });
 });
 
-describe("star-fixed frame", () => {
+describe("equatorial frame", () => {
   it("is the mean equator of date: celestial pole up, x at the equinox", () => {
-    const q = orientation("stars", new Date("2026-10-09T21:00:00Z"));
+    const q = orientation("equatorial", new Date("2026-10-09T21:00:00Z"));
     expect(Z.clone().applyQuaternion(q).distanceTo(Z)).toBeLessThan(1e-15);
     expect(X.clone().applyQuaternion(q).distanceTo(X)).toBeLessThan(1e-15);
   });
@@ -109,7 +110,7 @@ describe("orbit camera in a frame", () => {
 
   it("looks at the target with the frame's pole up", () => {
     const date = new Date("2026-10-09T21:00:00Z");
-    for (const id of ["stars", "ecliptic"] as const) {
+    for (const id of ["equatorial", "ecliptic"] as const) {
       const q = orientation(id, date);
       const orbit = { lon: 40, lat: 25, dist: 5, tx: 0.2, ty: 0, tz: -0.1 };
       orbitPose(q, ORIGIN, orbit, position, quaternion, target);
@@ -126,7 +127,7 @@ describe("orbit camera in a frame", () => {
 
   it("keeps the camera in place when re-expressed in another frame", () => {
     const date = new Date("2026-10-09T21:00:00Z");
-    const from = orientation("stars", date);
+    const from = orientation("equatorial", date);
     const orbit = { lon: 123, lat: 40, dist: 3.2, tx: 0.1, ty: 0.3, tz: -0.2 };
     orbitPose(from, ORIGIN, orbit, position, quaternion, target);
     const p0 = position.clone();
