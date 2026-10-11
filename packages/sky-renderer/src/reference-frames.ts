@@ -1,5 +1,5 @@
 /**
- * Reference frames of the Earth view (#105, #122, #128).
+ * Reference frames of the Earth view (#105, #122, #128, #131).
  *
  * The scene's world frame stays the mean equator and equinox of date (z = celestial north pole,
  * x = mean vernal equinox): the globe turns in it by Greenwich mean sidereal time, the stars and
@@ -10,34 +10,32 @@
  * Each frame is also a point of view telling one phenomenon (#128, see points-of-view.ts):
  * - "stars" — La Terre tourne (star-fixed, default): the world frame itself; celestial north up,
  *   the Earth turns under a fixed day/night line.
- * - "earth" — Vu du sol (Earth-fixed): the world frame turned about the pole by GMST, so the
- *   camera turns with the globe: a place stays in front of the camera while the Sun and the Moon
- *   go round. GMST rather than the Earth rotation angle (ERA): the globe is turned by GMST in
- *   this equinox-based frame (ERA is measured from the CIO); the same angle keeps it still.
  * - "ecliptic" — Les saisons: x = vernal equinox, z = ecliptic pole of date (mean obliquity of
- *   date, IAU 2006, astro-core meanObliquity); the camera orbits the Sun of the seasons diagram
- *   (diagramSun), round which the Earth goes, its axis keeping its direction in space.
- * - "heliocentric" — Le système solaire (#124): the same axes, round the Sun of the solar system
- *   diagram (compressed distances).
+ *   date, IAU 2006, astro-core meanObliquity); the camera orbits the Sun at its true place and
+ *   distance (#131), round which the Earth goes, its axis keeping its direction in space.
+ * - "heliocentric" — Le système solaire (#124, #131): the same axes and the same true-scale
+ *   scene, framed on the whole system.
  * - "body" — Visiter un astre (#123): the camera orbits the Moon or a planet, at its real
  *   distance and size, its north pole up (body-frame.ts: BodyFrame, owned by the view, which
  *   knows the chosen body).
  *
- * Pure three.js maths; orientations are allocation-free (the diagrams' targets call
+ * « Vu du sol » (the Earth-fixed frame of #122/#128) was removed in #131: a saved "earth" frame
+ * is no longer valid and falls back to the default.
+ *
+ * Pure three.js maths; orientations are allocation-free (the Sun-centred targets call
  * astronomy-engine, once per date change).
  */
 import * as THREE from "three";
-import { greenwichMeanSiderealTime, meanObliquity, precessionMatrix } from "@asteria/astro-core";
-import { diagramSun } from "./points-of-view";
+import { meanObliquity, precessionMatrix } from "@asteria/astro-core";
+import { trueScalePosition } from "./points-of-view";
 
 const DEG = Math.PI / 180;
 
-export type ReferenceFrameId = "stars" | "earth" | "ecliptic" | "heliocentric" | "body";
+export type ReferenceFrameId = "stars" | "ecliptic" | "heliocentric" | "body";
 
 /** The frames (points of view) in the selector's order; `available`: false until they land. */
 export const REFERENCE_FRAMES: readonly { id: ReferenceFrameId; available: boolean }[] = [
   { id: "stars", available: true },
-  { id: "earth", available: true },
   { id: "ecliptic", available: true },
   { id: "heliocentric", available: true },
   { id: "body", available: true },
@@ -47,7 +45,7 @@ export const DEFAULT_REFERENCE_FRAME: ReferenceFrameId = "stars";
 
 /**
  * Duration of the move between two points of view, ms (0 with reduced motion: chosen by the
- * caller): long enough to follow a change of scale (from the Earth to the Sun's diagram).
+ * caller): long enough to follow a change of scale (from the Earth to the whole solar system).
  */
 export const FRAME_TRANSITION_MS = 1400;
 
@@ -58,7 +56,7 @@ export const isReferenceFrameId = (v: unknown): v is ReferenceFrameId =>
 export const isAvailableFrame = (v: unknown): v is ReferenceFrameId =>
   REFERENCE_FRAMES.some((f) => f.id === v && f.available);
 
-/** Points of view drawn round the Sun of a diagram, not round the Earth or a body. */
+/** Points of view drawn round the Sun (the true-scale scene), not round the Earth or a body. */
 export const isSunCentred = (id: ReferenceFrameId): id is "ecliptic" | "heliocentric" =>
   id === "ecliptic" || id === "heliocentric";
 
@@ -84,25 +82,24 @@ const precession = new THREE.Matrix3();
 const eclipticOfDate = (d: Date, out: THREE.Quaternion) =>
   out.setFromAxisAngle(X_AXIS, meanObliquity(d) * DEG);
 
+/** The Sun at its true place (world, Earth radii): the target of the Sun-centred frames. */
+const sunTarget = (d: Date, out: THREE.Vector3) =>
+  trueScalePosition("Sun", d, precession.set(...precessionMatrix(d)), out);
+
 /** Frames whose definition does not depend on a chosen body. */
 export type FixedFrameId = Exclude<ReferenceFrameId, "body">;
 
 export const FRAMES: Readonly<Record<FixedFrameId, ReferenceFrame>> = {
   stars: { id: "stars", orientation: (_d, out) => out.identity(), target: geocentre },
-  earth: {
-    id: "earth",
-    orientation: (d, out) => out.setFromAxisAngle(Z_AXIS, greenwichMeanSiderealTime(d) * DEG),
-    target: geocentre,
-  },
   ecliptic: {
     id: "ecliptic",
     orientation: eclipticOfDate,
-    target: (d, out) => diagramSun("seasons", d, precession.set(...precessionMatrix(d)), out),
+    target: sunTarget,
   },
   heliocentric: {
     id: "heliocentric",
     orientation: eclipticOfDate,
-    target: (d, out) => diagramSun("solar", d, precession.set(...precessionMatrix(d)), out),
+    target: sunTarget,
   },
 };
 

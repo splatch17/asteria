@@ -61,6 +61,9 @@ export class RealisticLayer {
   private selected = -1;
   private planetsShown = true;
   private hasSun = false;
+  private shown = false;
+  /** The true-scale solar system (#131) draws the Sun and the bodies: no sprites. */
+  private sceneBodies = false;
   private readonly globeBodies = [-1, -1];
 
   constructor(shared: SharedUniforms, stars: CatalogStar[], motion: StarMotion) {
@@ -201,10 +204,21 @@ export class RealisticLayer {
   }
 
   setVisible(visible: boolean): void {
+    this.shown = visible;
     this.stars.visible = visible;
     this.atmosphere.visible = visible;
-    this.sun.visible = visible && this.hasSun;
-    this.bodies.visible = visible;
+    this.sun.visible = visible && this.hasSun && !this.sceneBodies;
+    this.bodies.visible = visible && !this.sceneBodies;
+  }
+
+  /**
+   * The Sun, the Moon and the planets are drawn as true-scale globes by the solar system scene
+   * (#131): their sprites at infinity are hidden.
+   */
+  setSceneBodies(on: boolean): void {
+    if (on === this.sceneBodies) return;
+    this.sceneBodies = on;
+    this.setVisible(this.shown);
   }
 
   /** Red night vision: the whole realistic rendering in shades of `ink`. */

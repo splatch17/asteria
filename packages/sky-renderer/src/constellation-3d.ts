@@ -1,8 +1,10 @@
 /**
  * Constellation 3D view (#8): the figure's stars at their real distances, the Earth at the
- * origin, distance rings in light-years; render on demand. Gestures (#107, gesture-input.ts):
- * one finger orbits round the target point with inertia, two fingers pan it, pinch-zoom towards
- * the point between them and roll the view; double tap centres a star (or resets the view). Opens with an animated transition from the sky map's own view
+ * origin, distance rings in light-years; render on demand. Gestures (#107, #131,
+ * gesture-input.ts), as a map app: one finger pans the target point with a light inertia, two
+ * fingers rotate round it, pinch-zoom towards the point between them and roll the view; double
+ * tap centres a star (or resets the view). Opens with an animated transition from the sky map's
+ * own view
  * (same stereographic projection, same orientation) that unfolds the depth, and closes with the
  * reverse.
  *

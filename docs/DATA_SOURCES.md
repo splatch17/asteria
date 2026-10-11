@@ -27,6 +27,7 @@
 | Rayons de la Lune et des planètes, anneaux de Saturne | **IAU WGCCRE 2015** (Archinal et al. 2018) : rayons équatoriaux des planètes, rayon moyen de la Lune ; rayon équatorial terrestre 6 378,137 km (IAU 2015 / WGS 84) ; anneaux C (1,239 R) à A (2,27 R) | IAU | Libre (publication scientifique, citation) | Référentiel « centré sur un astre » à l'échelle réelle (`body-frame.ts`, #123) ; positions géocentriques astrométriques corrigées du temps de lumière (`geocentricPosition`, astronomy-engine), testées contre JPL Horizons — ✅ (#123) |
 | Obliquité moyenne de l'écliptique | **IAU 2006** (Capitaine et al. 2003, *A&A* 412:567 ; IERS Conventions 2010, éq. 5.40) | IAU / IERS | Libre (publication scientifique, citation) | `astro-core` `meanObliquity` (±5 siècles ; au-delà, constante du modèle de précession à long terme), validé contre SOFA `iauObl06` à 0,001″ — référentiel « plan de l'écliptique » de la vue Terre (#122) |
 | Positions héliocentriques de la Terre et des planètes | lib `astronomy-engine` `HelioVector` (MIT) ; validation **JPL Horizons DE441** : états héliocentriques géométriques (centre Soleil @10, ICRF, au), tables `generate/heliostate/<Corps>.txt` du dépôt astronomy-engine (github.com/cosinekitty/astronomy, commit `865d3da7d811`, requêtes Horizons du 2021-11-14), Horizons n'étant pas joignable depuis l'environnement de build | NASA JPL | Libre | Points de vue « Les saisons » et « Le système solaire » de la vue Terre (#128, #124) : `astro-core` `heliocentricPosition`, testé à **1′** (direction vue du Soleil) et 1e-4 (distance) sur 3 dates (2001, 2026, 2039) pour les 8 corps — écart maximal mesuré 15″ (Neptune) — ✅ |
+| Rayon du Soleil ; paramètres gravitationnels des orbites | **IAU 2015 Resolution B3** (rayon solaire nominal 695 700 km) ; constante de Gauss k = 0,01720209895 (IAU 1976) ; rapports de masse Soleil/planète et GM⊕, Terre/Lune du **système de constantes IAU 2009** (Luzum et al. 2011, *Celest. Mech. Dyn. Astr.* 110:293) | IAU | Libre (publication scientifique, citation) | Système solaire à l'échelle réelle (#131) : globe du Soleil, orbites osculatrices (`orbits.ts`), testées à < 0,5 % du trajet d'astronomy-engine un quart de période plus loin — ✅ |
 | Équinoxes et solstices | lib `astronomy-engine` `Seasons` (MIT) ; validation **USNO**, Astronomical Applications Department, « Earth's Seasons » (api.usno.navy.mil/seasons, heures TU à la minute), tableau `generate/seasons/seasons.txt` du dépôt astronomy-engine (commit `865d3da7d811`), l'USNO et l'IMCCE n'étant pas joignables depuis l'environnement de build | U.S. Naval Observatory | Domaine public (œuvre du gouvernement des États-Unis) | Marques de « Les saisons » (#128) : `astro-core` `seasons`, testé à **10 min** pour 2000, 2024, 2025, 2026, 2027 et 2100 — écart maximal mesuré 1,9 min (2100) ; contrôle croisé : déclinaison apparente du Soleil = ± obliquité moyenne IAU 2006 aux solstices (0,005°) — ✅ |
 | Périodes orbitales sidérales | **JPL Horizons**, données physiques des mêmes tables (« Sidereal orb. per. » : Mercure 87,969 j … Neptune 60 189 j, Terre 365,25636 j) | NASA JPL | Libre | Échantillonnage des orbites dessinées par « Le système solaire » (un tour) ; les positions viennent de `heliocentricPosition` |
 | Satellites / ISS | **CelesTrak** (TLE) | — | Libre | Passages |
@@ -48,33 +49,47 @@ Règle appliquée par `build_stars.py` (champs `dist`, `eDist` en années-lumiè
 
 Arrondis : 3 chiffres significatifs pour la distance (≤ 0,5 %, sous les erreurs de parallaxe), 2 pour l'incertitude. L'app affiche « ≈ » (2 chiffres) au-delà de 5 % d'incertitude et rien au-delà de 50 %. Contrôles automatiques : Sirius 8,60 al (± 0,5 %), Rigel 860 al (± 10 %, Hipparcos), Bételgeuse 548 al (± 5 %, Joyce 2020), Deneb 2 600 al (± 10 %, Schiller & Przybilla 2008). Étoiles V ≤ 2 restant à plus de 10 % d'incertitude (affichées « ≈ ») : Bételgeuse, Antarès, Shaula, Alnilam, Alnitak, Wezen, Sargas — candidates à une distance publiée.
 
-## Échelles des points de vue de la vue Terre (#128)
+## Échelles des points de vue de la vue Terre (#128, #131)
 
-Règles appliquées par `packages/sky-renderer/src/points-of-view.ts` (constantes testées dans
-`points-of-view.test.ts`) ; l'unité de la scène reste le rayon équatorial terrestre (6 378,137 km)
-et la Terre reste au centre du repère, si bien que son globe, son terminateur et son axe gardent
-leur vraie orientation. Les directions héliocentriques sont toujours exactes ; seules les
-distances changent d'échelle. Chaque échelle est annoncée à l'écran (légende du point de vue).
+Depuis #131, **tout est à l'échelle réelle** : le schéma compressé du système solaire
+(distances en 6,1 · ln(1 + r / 0,15 au), tailles en (R / R⊕)^¼) et la Terre agrandie ≈ 3 900 fois
+des saisons ont été retirés, ainsi que le point de vue « Vu du sol » (#131 : un réglage
+enregistré `earth` retombe sur le point de vue par défaut). Règles appliquées par
+`packages/sky-renderer/src/points-of-view.ts`, `orbits.ts` et `pov-scene.ts` (constantes testées
+dans `points-of-view.test.ts`, `orbits.test.ts`, `pov-scene.test.ts`).
 
-- **Les saisons** : 1 au = 6 rayons terrestres (`SEASONS_SCALE`). L'orbite a sa vraie forme et sa
-  vraie taille relative ; la Terre est agrandie de 149 597 870,7 / 6 378,137 / 6 ≈ **3 900 fois**
-  (`SEASONS_EARTH_ENLARGEMENT`, arrondi à la centaine à l'écran). Le Soleil est un symbole de
-  taille fixe à l'écran, pas à l'échelle. Les quatre Terres fantômes (rayon 0,7) sont placées aux
-  instants des équinoxes et solstices de l'année affichée, éclairées depuis le Soleil, leur axe
-  parallèle à celui de la Terre (pôle céleste de la date).
-- **Le système solaire** : une distance r (au) au Soleil est dessinée à 6,1 · ln(1 + r / 0,15 au)
-  rayons terrestres (`compressedRadius`) : monotone, l'ordre des planètes et les angles vus du
-  Soleil sont conservés, pas les rapports de distances (Mercure 7,6 ; Terre 12,4 ; Neptune 32,3).
-  Rayon dessiné des planètes : (R / R⊕)^¼ rayons terrestres (`planetDrawRadius`, rayons IAU
-  WGCCRE 2015), la Terre gardant son rayon 1. La ligne de visée Terre → Mars est tracée dans ce
-  schéma compressé jusqu'au cercle de fond (35 rayons) ; sa trace sur 6 mois tourne en arrière
-  autour de l'opposition (rétrogradation, testée autour de l'opposition du 19/02/2027), mais
-  l'amplitude de la boucle n'est pas celle du ciel réel (les distances sont compressées).
-- **Vu du sol** : le Soleil et la Lune sont dessinés à 1,9 et 1,45 rayon terrestre du centre de
-  la Terre, dans leur direction géocentrique vraie (distances schématiques) ; leurs cercles du
-  jour sont les cercles de déclinaison correspondants ; les points subsolaire et sublunaire et leur
-  trajet du jour sont à la surface.
-
+- **Unité et repère** : le rayon équatorial terrestre (6 378,137 km, IAU 2015 / WGS 84) ;
+  l'origine au centre de la Terre, axes de l'équateur et de l'équinoxe moyens de la date. 1 au
+  (149 597 870,7 km, IAU 2012 B2) = 23 454,8 rayons terrestres.
+- **Positions** : héliocentriques géométriques d'astronomy-engine (`heliocentricPosition`, testées
+  contre JPL Horizons à 15″), moins celle de la Terre, précessées vers la date. La Lune : position
+  géocentrique astrométrique (`geocentricPosition`, la même que la visite d'un astre).
+- **Rayons** : Soleil, rayon nominal 695 700 km (IAU 2015 Resolution B3) ; planètes, rayon
+  équatorial, et Lune, rayon moyen (IAU WGCCRE 2015, Archinal et al. 2018) ; sphères (aplatissement
+  ignoré).
+- **Orbites** : ellipse de Kepler osculatrice à la date affichée, calculée à partir de la position
+  et de la vitesse (différence centrée sur ± 0,05 j, ± 600 s pour la Lune) avec GM☉ = k²
+  (k = 0,01720209895, IAU 1976) × (1 + m / M☉) (rapports de masse du système IAU 2009, Luzum et
+  al. 2011) et, pour la Lune, GM⊕ + GM☾ = 398 600,4418 × (1 + 1 / 81,300569) km³/s². Elle passe
+  exactement par l'astre ; à un quart de période elle s'écarte du trajet réel de moins de 0,5 % de
+  la distance (perturbations, testé pour les huit planètes).
+- **Repères** : chaque astre a un repère gravé de taille fixe (rayon 4,5 px, sa phase vue de la
+  caméra) qui s'efface quand le globe vrai atteint un rayon apparent de 3 à 6 px (`markerOpacity`,
+  même seuil de 6 px que la visite : `GLOBE_MIN_PX`) ; le Soleil garde un halo gravé de rayons. Les
+  repères à moins de 9 px l'un de l'autre fusionnent (le premier de `SCENE_BODIES` reste) : vue de
+  Neptune, les planètes internes sont dans le halo du Soleil.
+- **Les saisons** : la même scène cadrée sur l'orbite de la Terre ; marques des équinoxes et
+  solstices (instants d'astronomy-engine `Seasons`) aux positions vraies ; la direction de l'axe
+  (pôle céleste de la date) est un trait de 13 px sur les repères de la Terre, symbolique en
+  longueur, exacte en direction. Toucher la Terre amène la caméra à quelques rayons d'elle (vrai
+  axe, vrai terminateur) et la suit quand la date avance.
+- **Échelle affichée** : barre de longueur ronde (1, 2, 5 × 10ⁿ km, ou en ua à partir de 0,1 au)
+  à la profondeur du point regardé (`scaleBar`).
+- **Précision** : aucun sommet loin de l'origine de son objet (globes = sphères unité mises à
+  l'échelle et déplacées ; chaque orbite écrite par rapport à son astre et posée sur lui) ; three.js
+  compose la matrice modèle-vue en double précision côté CPU (positions relatives à l'œil).
+  Plans de découpe adaptés au zoom (proche à mi-chemin de la surface la plus proche, ≤ 2 % de la
+  distance regardée ; lointain 45 au au-delà du Soleil).
 
 ## Catalogue du ciel profond (#100)
 

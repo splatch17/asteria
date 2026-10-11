@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { greenwichMeanSiderealTime, hmsToDegrees, meanObliquity } from "@asteria/astro-core";
+import { heliocentricPosition, meanObliquity } from "@asteria/astro-core";
 import {
   FRAMES,
   REFERENCE_FRAMES,
@@ -11,10 +11,8 @@ import {
   isSunCentred,
   orbitInFrame,
   orbitPose,
-  type FrameOrbit,
 } from "./reference-frames";
-import { ORBIT_FOV } from "./flight";
-import { SEASONS_SCALE } from "./points-of-view";
+import { AU } from "./points-of-view";
 
 const DEG = Math.PI / 180;
 const ARCSEC = DEG / 3600;
@@ -22,7 +20,7 @@ const X = new THREE.Vector3(1, 0, 0);
 const Z = new THREE.Vector3(0, 0, 1);
 const ORIGIN = new THREE.Vector3();
 
-const orientation = (id: "stars" | "earth" | "ecliptic", date: Date) =>
+const orientation = (id: "stars" | "ecliptic", date: Date) =>
   FRAMES[id].orientation(date, new THREE.Quaternion());
 const raDec = (v: THREE.Vector3) => ({
   ra: (((Math.atan2(v.y, v.x) / DEG) % 360) + 360) % 360,
@@ -30,10 +28,9 @@ const raDec = (v: THREE.Vector3) => ({
 });
 
 describe("reference frame list", () => {
-  it("offers the five points of view, star-fixed first, all available (#128)", () => {
+  it("offers the four points of view, star-fixed first, all available (#128, #131)", () => {
     expect(REFERENCE_FRAMES.map((f) => f.id)).toEqual([
       "stars",
-      "earth",
       "ecliptic",
       "heliocentric",
       "body",
@@ -42,6 +39,9 @@ describe("reference frame list", () => {
     expect(isReferenceFrameId("body")).toBe(true);
     expect(isAvailableFrame("heliocentric")).toBe(true);
     expect(isAvailableFrame("galactic")).toBe(false);
+    // « Vu du sol » was removed (#131): a saved "earth" frame is no longer valid.
+    expect(isAvailableFrame("earth")).toBe(false);
+    expect(isReferenceFrameId("earth")).toBe(false);
     expect(frameOf("heliocentric").id).toBe("heliocentric");
     expect(frameOf("body").id).toBe("stars");
     expect(isSunCentred("ecliptic") && isSunCentred("heliocentric")).toBe(true);
@@ -49,17 +49,15 @@ describe("reference frame list", () => {
   });
 });
 
-describe("sun-centred frames (#128)", () => {
-  it("orbit the Sun drawn by their diagram, the Earth at the origin", () => {
+describe("sun-centred frames (#128, #131)", () => {
+  it("orbit the Sun at its true place, the Earth at the origin", () => {
     const date = new Date("2026-10-10T00:00:00Z");
     const seasons = FRAMES.ecliptic.target(date, new THREE.Vector3());
     const solar = FRAMES.heliocentric.target(date, new THREE.Vector3());
-    // 1 au = SEASONS_SCALE Earth radii in « Les saisons »; ≈ 12.4 in the compressed solar system.
-    expect(seasons.length()).toBeGreaterThan(SEASONS_SCALE * 0.98);
-    expect(seasons.length()).toBeLessThan(SEASONS_SCALE * 1.02);
-    expect(solar.length()).toBeGreaterThan(12);
-    expect(solar.length()).toBeLessThan(12.8);
-    expect(seasons.angleTo(solar)).toBeLessThan(1e-7);
+    // True scale: the Sun–Earth distance in Earth radii (≈ 23 455 per au).
+    const r = heliocentricPosition("Earth", date).distanceAu * AU;
+    expect(seasons.length() / r).toBeCloseTo(1, 9);
+    expect(solar.distanceTo(seasons)).toBe(0);
     // Both have the ecliptic pole up, as the ecliptic frame.
     const q = FRAMES.heliocentric.orientation(date, new THREE.Quaternion());
     expect(q.angleTo(orientation("ecliptic", date))).toBeLessThan(1e-7); // acos rounding
@@ -71,64 +69,6 @@ describe("star-fixed frame", () => {
     const q = orientation("stars", new Date("2026-10-09T21:00:00Z"));
     expect(Z.clone().applyQuaternion(q).distanceTo(Z)).toBeLessThan(1e-15);
     expect(X.clone().applyQuaternion(q).distanceTo(X)).toBeLessThan(1e-15);
-  });
-});
-
-describe("Earth-fixed frame", () => {
-  it("puts its x axis on the Greenwich meridian (Meeus 12.a: GMST 13h10m46.3668s)", () => {
-    const q = orientation("earth", new Date("1987-04-10T00:00:00Z"));
-    const x = X.clone().applyQuaternion(q);
-    // Reference: Meeus, Astronomical Algorithms, example 12.a. Tolerance 0.001 s of time.
-    expect(Math.abs(raDec(x).ra - hmsToDegrees(13, 10, 46.3668))).toBeLessThan(0.0000042);
-    expect(Math.abs(raDec(x).dec)).toBeLessThan(1e-12);
-    // Celestial north stays up: the Earth's axis.
-    expect(Z.clone().applyQuaternion(q).distanceTo(Z)).toBeLessThan(1e-15);
-  });
-
-  it("keeps the observer's place still on screen within 0.1° over 24 h", () => {
-    const observer = { latitude: 48.8566, longitude: 2.3522 };
-    const start = Date.parse("2026-03-20T00:00:00Z");
-    // Camera above the place, a little off it and panned, as after a few gestures.
-    const orbit: FrameOrbit = {
-      lon: observer.longitude + 12,
-      lat: observer.latitude - 8,
-      dist: 4,
-      tx: 0.1,
-      ty: -0.05,
-      tz: 0.02,
-    };
-    const camera = new THREE.PerspectiveCamera(ORBIT_FOV, 360 / 780, 0.01, 100);
-    const q = new THREE.Quaternion();
-    const target = new THREE.Vector3();
-    const place = new THREE.Vector3();
-    /** Direction of the place in the camera's axes, at a date. */
-    const seen = (time: number) => {
-      const date = new Date(time);
-      FRAMES.earth.orientation(date, q);
-      orbitPose(q, ORIGIN, orbit, camera.position, camera.quaternion, target);
-      camera.updateMatrixWorld();
-      // The place on the globe, turned by sidereal time as SpaceView turns the globe.
-      const lon = (observer.longitude + greenwichMeanSiderealTime(date)) * DEG;
-      const lat = observer.latitude * DEG;
-      place.set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat));
-      return place.clone().applyMatrix4(camera.matrixWorldInverse).normalize();
-    };
-    const first = seen(start);
-    let worst = 0;
-    for (let minutes = 0; minutes <= 24 * 60; minutes += 10) {
-      const v = seen(start + minutes * 60_000);
-      worst = Math.max(worst, v.angleTo(first) / DEG);
-    }
-    expect(worst).toBeLessThan(0.1);
-    // The star-fixed frame, by contrast, lets the place turn away.
-    FRAMES.stars.orientation(new Date(start), q);
-    orbitPose(q, ORIGIN, orbit, camera.position, camera.quaternion, target);
-    camera.updateMatrixWorld();
-    const lon = (observer.longitude + greenwichMeanSiderealTime(new Date(start + 6 * 3.6e6))) * DEG;
-    const lat = observer.latitude * DEG;
-    place.set(Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat));
-    const later = place.applyMatrix4(camera.matrixWorldInverse).normalize();
-    expect(later.angleTo(first) / DEG).toBeGreaterThan(10);
   });
 });
 
@@ -169,7 +109,7 @@ describe("orbit camera in a frame", () => {
 
   it("looks at the target with the frame's pole up", () => {
     const date = new Date("2026-10-09T21:00:00Z");
-    for (const id of ["stars", "earth", "ecliptic"] as const) {
+    for (const id of ["stars", "ecliptic"] as const) {
       const q = orientation(id, date);
       const orbit = { lon: 40, lat: 25, dist: 5, tx: 0.2, ty: 0, tz: -0.1 };
       orbitPose(q, ORIGIN, orbit, position, quaternion, target);
@@ -191,7 +131,7 @@ describe("orbit camera in a frame", () => {
     orbitPose(from, ORIGIN, orbit, position, quaternion, target);
     const p0 = position.clone();
     const t0 = target.clone();
-    for (const id of ["earth", "ecliptic"] as const) {
+    for (const id of ["ecliptic"] as const) {
       const to = orientation(id, date);
       const converted = orbitInFrame(p0, t0, to, ORIGIN, { ...orbit });
       orbitPose(to, ORIGIN, converted, position, quaternion, target);
@@ -201,18 +141,12 @@ describe("orbit camera in a frame", () => {
   });
 
   it("finds the frame coordinates of a direction", () => {
-    const date = new Date("1987-04-10T00:00:00Z");
-    const gst = greenwichMeanSiderealTime(date);
-    // Paris on the turned globe → its geographic coordinates in the Earth-fixed frame.
-    const lon = (2.3522 + gst) * DEG;
-    const lat = 48.8566 * DEG;
-    const dir = new THREE.Vector3(
-      Math.cos(lat) * Math.cos(lon),
-      Math.cos(lat) * Math.sin(lon),
-      Math.sin(lat),
-    );
-    const at = directionInFrame(dir, orientation("earth", date), { lon: 0, lat: 0 });
-    expect(at.lon).toBeCloseTo(2.3522, 9);
-    expect(at.lat).toBeCloseTo(48.8566, 9);
+    const date = new Date("2026-06-21T00:00:00Z");
+    // The summer solstice point (RA 6h, Dec +ε) lies on the ecliptic at longitude 90°.
+    const eps = meanObliquity(date) * DEG;
+    const dir = new THREE.Vector3(0, Math.cos(eps), Math.sin(eps));
+    const at = directionInFrame(dir, orientation("ecliptic", date), { lon: 0, lat: 0 });
+    expect(at.lon).toBeCloseTo(90, 9);
+    expect(at.lat).toBeCloseTo(0, 9);
   });
 });
