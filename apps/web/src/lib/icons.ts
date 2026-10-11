@@ -35,4 +35,7 @@ export type IconName =
   | "menu"
   | "help"
   | "north"
-  | "hide";
+  | "hide"
+  | "eye"
+  | "placeTime"
+  | "settings";

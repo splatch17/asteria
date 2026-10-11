@@ -77,6 +77,7 @@
   import TimeBar from "./components/TimeBar.svelte";
   import MenuSheet from "./components/MenuSheet.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
+  import SkyTools from "./components/SkyTools.svelte";
   import SearchPanel from "./components/SearchPanel.svelte";
   import GestureTip from "./components/GestureTip.svelte";
   import FramePanel from "./components/FramePanel.svelte";
@@ -388,7 +389,7 @@
   let immersive = $state(false);
   /** Earth view caption unfolded (a single line at rest). */
   let captionOpen = $state(false);
-  /** Sensor pointing next to the search where it can work (phone, HTTPS); else in the menu. */
+  /** Sensor pointing on the time line where it can work (phone, HTTPS); else in the menu. */
   const pointingDirect = pointingShortcut({
     coarse: matchMedia("(pointer: coarse)").matches,
     secure: isSecureContext,
@@ -953,17 +954,19 @@
   });
 
   // Labels (graduations, names) are not written under the HUD: header line, time line (and its
-  // unfolded controls), mini-globe. In immersive mode nothing is in the way (#130).
+  // unfolded controls), the instruments on the right (search, mini-globe, compass, #138). In
+  // immersive mode nothing is in the way (#130).
   let header = $state<HTMLElement>();
   let bottomNav: HTMLElement;
   /** The time line itself (folded): what the Earth view's framing keeps clear (#130). */
   let lineElement = $state<HTMLElement>();
-  let globeButton = $state<HTMLElement>();
+  /** Search, mini-globe and compass, top right (#138): resized as the mini-globe comes and goes. */
+  let skyTools = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
   /** « ← Système solaire » during a visit (#134): kept free of labels while shown. */
   let visitBack = $state<HTMLElement>();
   const hudBlocks = () =>
-    [header, bottomNav, globeButton, visitBack].filter((el) => el !== undefined && el !== null);
+    [header, bottomNav, skyTools, visitBack].filter((el) => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
     const rects = immersive
@@ -1004,17 +1007,6 @@
     for (const el of hudBlocks()) hudObserver.observe(el);
     addEventListener("resize", updateGraduationExclusions);
   }
-  // The mini-globe (#38) comes and goes (layer, view): its area is kept free of labels too.
-  $effect(() => {
-    const el = globeButton;
-    if (!el || !hudObserver) return;
-    hudObserver.observe(el);
-    return () => hudObserver?.unobserve(el);
-  });
-  $effect(() => {
-    void globeButton;
-    if (status === "ready") tick().then(updateGraduationExclusions);
-  });
 
   // --- Mini-globe (#38): relief and lights loaded after the map (they also serve the Earth view).
   // Kept mounted while its layer is on (hidden in the Earth view and during flights), so the
@@ -1585,26 +1577,36 @@
   <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
 {/if}
 
-{#if globeLayer}
-  <MiniGlobe
-    hidden={!showGlobe || immersive}
-    bind:element={globeButton}
-    top="max(16px, env(safe-area-inset-top))"
-    images={globeImages}
-    {place}
-    sun={bodies.sun}
-    {date}
-    style={spaceStyle}
-    theme={night
-      ? { ink: nightInk(brightness), base: THEMES.red.ground }
-      : {
-          ink: THEMES.day.ink,
-          base: THEMES.day.ground,
-        }}
-    monochrome={night}
-    onopen={() => void flyToSpace()}
-  />
-{/if}
+<!-- Top right of the sky map (#138): search, mini-globe, compass. -->
+<SkyTools
+  shown={status === "ready" && mode === "sky" && !flying}
+  hidden={immersive}
+  {searchOpen}
+  onsearch={openSearch}
+  bind:searchButton
+  azimuth={viewAzimuth}
+  roll={viewRoll}
+  northDisabled={pointer.state === "on"}
+  onnorth={faceNorth}
+  bind:element={skyTools}
+>
+  {#snippet globe()}{#if globeLayer}<MiniGlobe
+        hidden={!showGlobe || immersive}
+        images={globeImages}
+        {place}
+        sun={bodies.sun}
+        {date}
+        style={spaceStyle}
+        theme={night
+          ? { ink: nightInk(brightness), base: THEMES.red.ground }
+          : {
+              ink: THEMES.day.ink,
+              base: THEMES.day.ground,
+            }}
+        monochrome={night}
+        onopen={() => void flyToSpace()}
+      />{/if}{/snippet}
+</SkyTools>
 
 {#if pointer.state === "waiting"}
   <p class="hud toast" style:top={toastTop} role="status">{$_("pointing.hint")}</p>
@@ -1828,10 +1830,6 @@
         timeOpen = !timeOpen;
         immersive = false;
       }}
-      search={mode === "sky"}
-      {searchOpen}
-      onsearch={openSearch}
-      bind:searchButton
       pointing={pointingDirect && mode === "sky"
         ? pointer.state === "on" || pointer.state === "waiting"
         : null}
@@ -1874,9 +1872,6 @@
       menuOpen = false;
       if (m !== mode) toggleSpace();
     }}
-    rotation={-viewAzimuth - viewRoll}
-    northDisabled={pointer.state === "on"}
-    onnorth={faceNorth}
     pointing={pointer.state === "on" || pointer.state === "waiting"}
     onpoint={fromMenu(() => pointer.toggle())}
     frame={spaceFrame}

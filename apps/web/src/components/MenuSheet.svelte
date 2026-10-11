@@ -1,16 +1,25 @@
 <script lang="ts">
-  // The single menu (#130), as a compact control surface (#135): the everyday choices are tiles in
-  // a 4-column grid (engraved pictogram, short label, filled when on), the points of view are
-  // cards, place and time are two readout lines, and the rarer settings wait in a collapsed
-  // « Plus de réglages ». Long labels and hints are not printed: a readout at the foot of the
-  // sheet shows the detail of the tile focused, hovered or long-pressed (and screen readers get it
-  // as the tile's description). A bottom sheet on a phone, a side panel on a wide screen. Modal: a
-  // backdrop takes the outside taps (they close the menu without selecting anything), Tab stays
-  // inside, Escape closes.
-  import { onMount } from "svelte";
+  // The single menu (#130) as separate panels (#138): a row of four tabs (Vue, Affichage, Lieu et
+  // temps, Réglages) shows one short panel at a time, remembered on the device. The choices are
+  // tiles (#135): an engraved pictogram over a short label, filled when on. Long labels and hints
+  // are not printed: a readout shows the detail of the tile focused, hovered or long-pressed (and
+  // screen readers get it as the tile's description).
+  // A bottom sheet on a phone, whose tabs sit at the bottom, under the thumb and where the menu
+  // button was, so that they do not move when the panel's height changes; a side panel on a wide
+  // screen, tabs at the top. Modal: a backdrop takes the outside taps (they close the menu without
+  // selecting anything), Tab stays inside, Escape closes.
+  import { onMount, tick } from "svelte";
   import { _ } from "@asteria/ui";
   import { REFERENCE_FRAMES, type ReferenceFrameId, type SkyLayers } from "@asteria/sky-renderer";
-  import type { LayerKey } from "../lib/layers";
+  import { sectionsFor, type LayerKey } from "../lib/layers";
+  import {
+    MENU_PANELS,
+    MENU_PANEL_ICONS,
+    MENU_PANEL_KEY,
+    isMenuPanel,
+    tabForKey,
+    type MenuPanel,
+  } from "../lib/menu";
   import { readSetting, writeSetting } from "../lib/storage";
   import FramePicto from "./FramePicto.svelte";
   import Icon from "./Icon.svelte";
@@ -20,9 +29,6 @@
   let {
     mode,
     onview,
-    rotation,
-    northDisabled,
-    onnorth,
     pointing,
     onpoint,
     frame,
@@ -57,10 +63,6 @@
     mode: "sky" | "space";
     /** Switches between the sky map and the Earth view. */
     onview: (mode: "sky" | "space") => void;
-    /** Compass needle rotation, degrees (sky map). */
-    rotation: number;
-    northDisabled: boolean;
-    onnorth: () => void;
     /** Sensor pointing on or starting. */
     pointing: boolean;
     onpoint: () => void;
@@ -101,21 +103,24 @@
   } = $props();
 
   let sheet: HTMLElement;
-  const pad = (i: number) => String(i).padStart(2, "0");
-  /** Section numbers: the Earth view has one more section (points of view). */
-  const n = $derived(
-    mode === "space"
-      ? { view: 1, pov: 2, display: 3, place: 4 }
-      : { view: 1, pov: 0, display: 2, place: 3 },
-  );
+  let tablist: HTMLElement;
 
-  /** « Plus de réglages », folded by default, remembered per device. */
-  const MORE_KEY = "asteria.menu.more";
-  const isBool = (v: unknown): v is boolean => typeof v === "boolean";
-  let more = $state(readSetting(MORE_KEY, false, isBool));
-  function toggleMore() {
-    more = !more;
-    writeSetting(MORE_KEY, more);
+  /** Panel shown: the last one, remembered on the device (Vue the first time). */
+  let panel = $state<MenuPanel>(readSetting(MENU_PANEL_KEY, "view", isMenuPanel));
+  function show(id: MenuPanel) {
+    if (id === panel) return;
+    panel = id;
+    info = null;
+    writeSetting(MENU_PANEL_KEY, id);
+  }
+  /** Arrow keys, Home and End move between the tabs and show their panel (automatic activation). */
+  async function ontabkey(e: KeyboardEvent) {
+    const next = tabForKey(panel, e.key);
+    if (!next) return;
+    e.preventDefault();
+    show(next);
+    await tick();
+    tablist.querySelector<HTMLElement>(`[data-panel="${next}"]`)?.focus();
   }
 
   /** Detail readout: the tile focused, hovered or long-pressed. */
@@ -126,11 +131,13 @@
     else if (info?.detail === tile.detail) info = null;
   }
 
+  // The sheet itself takes the focus (no ring drawn on a tab after a tap); Tab then reaches the
+  // tab shown first.
   onMount(() => {
     sheet.focus({ preventScroll: true });
   });
 
-  /** Escape closes; Tab cycles inside the sheet (modal). */
+  /** Escape closes; Tab cycles inside the sheet (modal), over what is reachable by Tab. */
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -140,8 +147,10 @@
     }
     if (e.key !== "Tab") return;
     const items = [
-      ...sheet.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
-    ];
+      ...sheet.querySelectorAll<HTMLElement>(
+        'button:not(:disabled):not([tabindex="-1"]), input:not(:disabled)',
+      ),
+    ].filter((el) => !el.closest("[hidden]"));
     if (!items.length) return;
     const first = items[0]!;
     const last = items[items.length - 1]!;
@@ -156,24 +165,6 @@
   }
 </script>
 
-{#snippet needle()}
-  <span class="needle" style:transform={`rotate(${rotation}deg)`}
-    ><Icon name="north" size={20} /></span
-  >
-{/snippet}
-
-{#snippet realisticTile()}
-  <MenuTile
-    id="realistic"
-    icon="realistic"
-    label={$_("menu.realistic.short")}
-    detail={$_("space.realistic")}
-    pressed={realistic}
-    onclick={onrealistic}
-    {oninfo}
-  />
-{/snippet}
-
 <!-- Outside taps close the menu and stop there (no selection behind it). -->
 <div class="backdrop" aria-hidden="true" onpointerdown={onclose}></div>
 <div
@@ -186,17 +177,42 @@
   bind:this={sheet}
   {onkeydown}
 >
+  <h2 id="menu-title" class="sr-only">{$_("menu.title")}</h2>
   <div class="head">
-    <h2 id="menu-title">{$_("menu.title")}</h2>
+    <div class="tabs" role="tablist" aria-label={$_("menu.tabs")} bind:this={tablist}>
+      {#each MENU_PANELS as id (id)}
+        <button
+          class="tab"
+          role="tab"
+          id={`menu-tab-${id}`}
+          data-panel={id}
+          aria-selected={panel === id}
+          aria-controls={`menu-panel-${id}`}
+          tabindex={panel === id ? 0 : -1}
+          onclick={() => show(id)}
+          onkeydown={ontabkey}
+        >
+          <Icon name={MENU_PANEL_ICONS[id]} size={18} />
+          <span class="tab-label">{$_(`menu.section.${id === "place" ? "placeTime" : id}`)}</span>
+        </button>
+      {/each}
+    </div>
     <button class="close" onclick={onclose} aria-label={$_("menu.close")} title={$_("menu.close")}
       >×</button
     >
   </div>
-  <div class="scroll">
-    <section aria-labelledby="menu-view">
-      <h3 id="menu-view">{pad(n.view)} // {$_("menu.section.view")}</h3>
+
+  <div class="panels">
+    <!-- Vue: the view, how it is driven, night vision. -->
+    <div
+      class="panel"
+      role="tabpanel"
+      id="menu-panel-view"
+      aria-labelledby="menu-tab-view"
+      hidden={panel !== "view"}
+    >
       <div class="grid">
-        <div class="group" role="radiogroup" aria-labelledby="menu-view">
+        <div class="group" role="radiogroup" aria-label={$_("menu.section.view")}>
           <MenuTile
             id="view-sky"
             icon="sky"
@@ -218,15 +234,6 @@
         </div>
         {#if mode === "sky"}
           <MenuTile
-            id="north"
-            glyph={needle}
-            label={$_("menu.north.short")}
-            detail={$_("compass.north")}
-            disabled={northDisabled}
-            onclick={onnorth}
-            {oninfo}
-          />
-          <MenuTile
             id="pointing"
             icon="aim"
             label={$_("menu.pointing.short")}
@@ -244,14 +251,32 @@
             onclick={onrecentre}
             {oninfo}
           />
-          {@render realisticTile()}
         {/if}
+        <MenuTile
+          id="night"
+          icon="night"
+          label={$_("night.short")}
+          detail={$_("night.toggle")}
+          pressed={night}
+          onclick={onnight}
+          {oninfo}
+        />
       </div>
-    </section>
-
-    {#if mode === "space"}
-      <section aria-labelledby="menu-pov">
-        <h3 id="menu-pov">{pad(n.pov)} // {$_("menu.section.pov")}</h3>
+      {#if night}
+        <label class="dim">
+          <span>{$_("night.brightness")}</span>
+          <input
+            class="slider"
+            type="range"
+            min={minBrightness}
+            max="1"
+            step="0.05"
+            bind:value={brightness}
+          />
+        </label>
+      {/if}
+      {#if mode === "space"}
+        <h3 id="menu-pov">{$_("menu.section.pov")}</h3>
         <div class="grid" role="radiogroup" aria-labelledby="menu-pov">
           {#each REFERENCE_FRAMES as entry (entry.id)}
             {#snippet picto()}<FramePicto frame={entry.id} size={28} />{/snippet}
@@ -272,36 +297,41 @@
             />
           {/each}
         </div>
-      </section>
-    {/if}
+      {/if}
+    </div>
 
-    <section aria-labelledby="menu-display">
-      <h3 id="menu-display">{pad(n.display)} // {$_("menu.section.display")}</h3>
-      <div class="grid">
-        <LayersPanel view={mode} tier="main" {layers} onchange={onlayer} {unavailable} {oninfo} />
-        <MenuTile
-          id="night"
-          icon="night"
-          label={$_("night.short")}
-          detail={$_("night.toggle")}
-          pressed={night}
-          onclick={onnight}
-          {oninfo}
-        />
-        <MenuTile
-          id="hide"
-          icon="hide"
-          label={$_("menu.hide.short")}
-          detail={$_("hud.hide")}
-          hint={$_("hud.hide.hint")}
-          onclick={onhide}
-          {oninfo}
-        />
-      </div>
-    </section>
+    <!-- Affichage: every layer of the view, by section (Ciel, Système solaire, Repères). -->
+    <div
+      class="panel"
+      role="tabpanel"
+      id="menu-panel-display"
+      aria-labelledby="menu-tab-display"
+      hidden={panel !== "display"}
+    >
+      {#each sectionsFor(mode) as section, i (section.id)}
+        <h3 id={`menu-layers-${section.id}`} class:first={i === 0}>
+          {$_(`layers.section.${section.id}`)}
+        </h3>
+        <div class="grid" role="group" aria-labelledby={`menu-layers-${section.id}`}>
+          <LayersPanel
+            entries={section.entries}
+            {layers}
+            onchange={onlayer}
+            {unavailable}
+            {oninfo}
+          />
+        </div>
+      {/each}
+    </div>
 
-    <section aria-labelledby="menu-place">
-      <h3 id="menu-place">{pad(n.place)} // {$_("menu.section.placeTime")}</h3>
+    <!-- Lieu et temps: two readout lines, data in monospace, actions as engraved icon buttons. -->
+    <div
+      class="panel"
+      role="tabpanel"
+      id="menu-panel-place"
+      aria-labelledby="menu-tab-place"
+      hidden={panel !== "place"}
+    >
       <div class="line">
         <span class="data">
           <span class="main">{placeName}</span>
@@ -340,71 +370,69 @@
           title={$_("time.backToNow")}><Icon name="now" size={16} /></button
         >
       </div>
-    </section>
+      <p class="note">{$_("menu.help.time")}</p>
+    </div>
 
-    <section class="more-section">
-      <button class="more" aria-expanded={more} aria-controls="menu-more" onclick={toggleMore}>
-        <span>{$_("menu.more")}</span>
-        <Icon name={more ? "expand" : "collapse"} />
-      </button>
-      {#if more}
-        <div id="menu-more" class="more-body">
-          <div class="grid">
-            <LayersPanel
-              view={mode}
-              tier="more"
-              {layers}
-              onchange={onlayer}
-              {unavailable}
-              {oninfo}
-            />
-            {#if mode === "sky"}{@render realisticTile()}{/if}
-            {#if fullscreen !== null}
-              <MenuTile
-                id="fullscreen"
-                icon="fullscreen"
-                label={$_("menu.fullscreen.short")}
-                detail={$_("fullscreen.enter")}
-                pressed={fullscreen}
-                onclick={onfullscreen}
-                {oninfo}
-              />
-            {/if}
-            <MenuTile
-              id="credits"
-              icon="help"
-              label={$_("menu.credits.short")}
-              detail={$_("credits.open")}
-              haspopup
-              onclick={oncredits}
-              {oninfo}
-            />
-          </div>
-          {#if night}
-            <label class="dim">
-              <span>{$_("night.brightness")}</span>
-              <input
-                class="slider"
-                type="range"
-                min={minBrightness}
-                max="1"
-                step="0.05"
-                bind:value={brightness}
-              />
-            </label>
-          {/if}
-          <h4 id="menu-help">{$_("menu.section.help")}</h4>
-          <ul class="help" aria-labelledby="menu-help">
-            <li>{$_("menu.help.tapSky")}</li>
-            <li>{$_("menu.help.tapObject")}</li>
-            <li>{$_("menu.help.time")}</li>
-          </ul>
-        </div>
-      {/if}
-    </section>
+    <!-- Réglages: the rarer settings, the credits and a short help. -->
+    <div
+      class="panel"
+      role="tabpanel"
+      id="menu-panel-settings"
+      aria-labelledby="menu-tab-settings"
+      hidden={panel !== "settings"}
+    >
+      <div class="grid">
+        <MenuTile
+          id="realistic"
+          icon="realistic"
+          label={$_("menu.realistic.short")}
+          detail={$_("space.realistic")}
+          pressed={realistic}
+          onclick={onrealistic}
+          {oninfo}
+        />
+        <MenuTile
+          id="hide"
+          icon="hide"
+          label={$_("menu.hide.short")}
+          detail={$_("hud.hide")}
+          hint={$_("hud.hide.hint")}
+          onclick={onhide}
+          {oninfo}
+        />
+        {#if fullscreen !== null}
+          <MenuTile
+            id="fullscreen"
+            icon="fullscreen"
+            label={$_("menu.fullscreen.short")}
+            detail={$_("fullscreen.enter")}
+            pressed={fullscreen}
+            onclick={onfullscreen}
+            {oninfo}
+          />
+        {/if}
+        <MenuTile
+          id="credits"
+          icon="help"
+          label={$_("menu.credits.short")}
+          detail={$_("credits.open")}
+          haspopup
+          onclick={oncredits}
+          {oninfo}
+        />
+      </div>
+      <h3 id="menu-help">{$_("menu.section.help")}</h3>
+      <ul class="help" aria-labelledby="menu-help">
+        <li>{$_("menu.help.tapSky")}</li>
+        <li>{$_("menu.help.tapObject")}</li>
+        {#if mode === "sky"}<li>{$_("menu.help.compass")}</li>{/if}
+      </ul>
+    </div>
   </div>
-  <!-- Visual only: screen readers get the same text as each tile's description. -->
-  <p class="readout" aria-hidden="true">
+
+  <!-- Visual only: screen readers get the same text as each tile's description. No tiles in
+       « Lieu et temps », so no readout there. -->
+  <p class="readout" aria-hidden="true" hidden={panel === "place"}>
     {#if info}
       <span class="r-label">{info.detail}</span>{#if info.hint}<span class="r-hint"
           >{info.hint}</span
@@ -422,7 +450,7 @@
     z-index: 4;
     background: color-mix(in srgb, var(--ast-bg) 35%, transparent);
   }
-  /* Phone: bottom sheet over the time line, under the safe areas. */
+  /* Phone: bottom sheet over the time line, under the safe areas; the tabs at its foot. */
   .sheet {
     position: fixed;
     z-index: 5;
@@ -436,6 +464,16 @@
     outline: none;
     animation: rise 180ms var(--ast-ease-out);
   }
+  .panels {
+    order: 1;
+  }
+  .readout {
+    order: 2;
+  }
+  .head {
+    order: 3;
+    border-top: 1px solid var(--ast-hairline);
+  }
   @keyframes rise {
     from {
       opacity: 0;
@@ -448,8 +486,13 @@
       transform: translateX(12px);
     }
   }
-  /* Wide screen: side panel on the right, the sky stays visible on the left; it is only as tall
-     as its content (up to the screen's height). */
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+  }
+  /* Wide screen: side panel on the right, tabs at the top, the sky stays visible on the left; it
+     is only as tall as its content (up to the screen's height). */
   @media (min-width: 720px) {
     .sheet {
       left: auto;
@@ -460,32 +503,85 @@
       max-height: calc(100dvh - 2 * max(16px, env(safe-area-inset-top)));
       animation-name: slide;
     }
+    .head {
+      order: 0;
+      border-top: 0;
+      border-bottom: 1px solid var(--ast-hairline);
+    }
     .backdrop {
       background: transparent;
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .sheet {
+    .sheet,
+    .panel {
       animation: none;
     }
   }
   .head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--ast-hairline);
+    align-items: stretch;
+    flex: none;
   }
-  h2 {
+  .tabs {
     flex: 1;
-    margin: 0 12px;
-    font: 700 20px/1 var(--ast-font-display);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  /* A tab: engraved pictogram over a short label; the one shown is inked, with a rule on the
+     side of its panel (above on a phone, below on a wide screen). */
+  .tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 52px;
+    padding: 6px 2px 5px;
+    border: 0;
+    border-radius: var(--ast-radius);
+    background: transparent;
+    color: var(--ast-fg-muted);
+    font: 500 9px/1.15 var(--ast-font-mono);
     letter-spacing: 0.04em;
     text-transform: uppercase;
+    text-align: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab + .tab {
+    border-left: 1px solid var(--ast-hairline);
+  }
+  .tab:hover {
     color: var(--ast-fg);
   }
+  .tab[aria-selected="true"] {
+    color: var(--ast-fg);
+    background: color-mix(in srgb, var(--ast-fg) 12%, transparent);
+  }
+  .tab[aria-selected="true"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -1px;
+    height: 2px;
+    background: var(--ast-fg);
+  }
+  @media (min-width: 720px) {
+    .tab[aria-selected="true"]::after {
+      top: auto;
+      bottom: -1px;
+    }
+  }
+  .tab-label {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
   .close {
+    flex: none;
     width: 44px;
-    height: 44px;
     border: 0;
     border-left: 1px solid var(--ast-hairline);
     background: transparent;
@@ -493,26 +589,32 @@
     font: 400 20px/1 var(--ast-font-mono);
     cursor: pointer;
   }
+  .tab:focus-visible,
   .close:focus-visible,
-  .icon:focus-visible,
-  .more:focus-visible {
+  .icon:focus-visible {
     outline: 1px solid var(--ast-fg);
     outline-offset: -3px;
   }
-  .scroll {
+  .panels {
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding: 0 0 10px;
   }
-  section {
-    padding: 0 10px;
+  .panel {
+    padding: 10px 10px 12px;
+    animation: appear 140ms var(--ast-ease-out);
+  }
+  .panel[hidden] {
+    display: none;
   }
   h3 {
-    margin: 10px 2px 6px;
+    margin: 12px 2px 6px;
     font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
+  }
+  h3.first {
+    margin-top: 0;
   }
   /* The tiles: four columns on a phone as on the side panel. */
   .grid {
@@ -523,17 +625,7 @@
   .group {
     display: contents;
   }
-  .needle {
-    display: grid;
-    place-items: center;
-    transition: transform 160ms var(--ast-ease-out);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .needle {
-      transition: none;
-    }
-  }
-  /* Place and time: two readout lines, data in monospace, actions as engraved icon buttons. */
+  /* Place and time: two readout lines. */
   .line {
     display: flex;
     align-items: center;
@@ -543,7 +635,7 @@
     color: var(--ast-fg-muted);
   }
   .line + .line {
-    margin-top: 6px;
+    margin-top: 8px;
   }
   .data {
     flex: 1;
@@ -581,38 +673,9 @@
     cursor: default;
     opacity: 0.4;
   }
-  /* « Plus de réglages »: a folded hairline row. */
-  .more-section {
-    margin-top: 10px;
-  }
-  .more {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    min-height: 44px;
-    padding: 0 12px;
-    font: 500 10px/1 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-    background: transparent;
-    border: 1px dashed var(--ast-hairline);
-    border-radius: var(--ast-radius);
-    cursor: pointer;
-  }
-  .more[aria-expanded="true"] {
-    color: var(--ast-fg);
-    border-style: solid;
-  }
-  .more-body {
-    padding: 8px 0 0;
-  }
-  h4 {
-    margin: 12px 2px 4px;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
+  .note {
+    margin: 12px 4px 0;
+    font: 10px/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .help {
@@ -625,7 +688,7 @@
   .help li + li {
     margin-top: 4px;
   }
-  /* Detail readout at the foot of the sheet. */
+  /* Detail readout of the tiles. */
   .readout {
     flex: none;
     margin: 0;
@@ -637,6 +700,9 @@
     font: 400 10px/1.4 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
+  }
+  .readout[hidden] {
+    display: none;
   }
   .r-label {
     margin-right: 8px;
