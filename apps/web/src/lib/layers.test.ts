@@ -112,7 +112,10 @@ describe("layersFor (#135)", () => {
     const messages = fr as Record<string, string>;
     for (const e of layersFor("sky", "main").concat(layersFor("sky", "more"))) {
       const short = messages[`layers.${e.key}.short`]!;
-      expect(short.split(" ").every((w) => w.length <= 11), short).toBe(true);
+      expect(
+        short.split(" ").every((w) => w.length <= 11),
+        short,
+      ).toBe(true);
       expect(short.length, short).toBeLessThanOrEqual(22);
     }
   });

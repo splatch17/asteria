@@ -1,14 +1,21 @@
 <script lang="ts">
-  // The single menu (#130): every action that is not a field action, grouped by theme. A bottom
-  // sheet on a phone, a side panel on a wide screen. Modal: a backdrop takes the outside taps
-  // (they close the menu without selecting anything), Tab stays inside, Escape closes.
+  // The single menu (#130), as a compact control surface (#135): the everyday choices are tiles in
+  // a 4-column grid (engraved pictogram, short label, filled when on), the points of view are
+  // cards, place and time are two readout lines, and the rarer settings wait in a collapsed
+  // « Plus de réglages ». Long labels and hints are not printed: a readout at the foot of the
+  // sheet shows the detail of the tile focused, hovered or long-pressed (and screen readers get it
+  // as the tile's description). A bottom sheet on a phone, a side panel on a wide screen. Modal: a
+  // backdrop takes the outside taps (they close the menu without selecting anything), Tab stays
+  // inside, Escape closes.
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
-  import type { SkyLayers } from "@asteria/sky-renderer";
+  import { REFERENCE_FRAMES, type ReferenceFrameId, type SkyLayers } from "@asteria/sky-renderer";
   import type { LayerKey } from "../lib/layers";
+  import { readSetting, writeSetting } from "../lib/storage";
+  import FramePicto from "./FramePicto.svelte";
   import Icon from "./Icon.svelte";
   import LayersPanel from "./LayersPanel.svelte";
-  import MenuSwitch from "./MenuSwitch.svelte";
+  import MenuTile from "./MenuTile.svelte";
 
   let {
     mode,
@@ -18,9 +25,9 @@
     onnorth,
     pointing,
     onpoint,
-    povTitle,
+    frame,
+    onframe,
     visiting,
-    onpov,
     onvisit,
     onrecentre,
     layers,
@@ -58,9 +65,11 @@
     pointing: boolean;
     onpoint: () => void;
     /** Earth view: the point of view shown, and the body visited (body-centred frame) or null. */
-    povTitle: string;
+    frame: ReferenceFrameId;
+    /** A point of view other than « Visiter un astre » is chosen (closes the menu). */
+    onframe: (id: ReferenceFrameId) => void;
     visiting: string | null;
-    onpov: () => void;
+    /** « Visiter un astre »: opens the selector with its bodies. */
     onvisit: () => void;
     onrecentre: () => void;
     layers: Readonly<SkyLayers>;
@@ -82,7 +91,7 @@
     minBrightness: number;
     realistic: boolean;
     onrealistic: () => void;
-    /** null: fullscreen not available (row hidden). */
+    /** null: fullscreen not available (tile hidden). */
     fullscreen: boolean | null;
     onfullscreen: () => void;
     oncredits: () => void;
@@ -93,6 +102,29 @@
 
   let sheet: HTMLElement;
   const pad = (i: number) => String(i).padStart(2, "0");
+  /** Section numbers: the Earth view has one more section (points of view). */
+  const n = $derived(
+    mode === "space"
+      ? { view: 1, pov: 2, display: 3, place: 4 }
+      : { view: 1, pov: 0, display: 2, place: 3 },
+  );
+
+  /** « Plus de réglages », folded by default, remembered per device. */
+  const MORE_KEY = "asteria.menu.more";
+  const isBool = (v: unknown): v is boolean => typeof v === "boolean";
+  let more = $state(readSetting(MORE_KEY, false, isBool));
+  function toggleMore() {
+    more = !more;
+    writeSetting(MORE_KEY, more);
+  }
+
+  /** Detail readout: the tile focused, hovered or long-pressed. */
+  type Info = { label: string; detail: string; hint?: string | undefined };
+  let info = $state<Info | null>(null);
+  function oninfo(tile: Info, on: boolean) {
+    if (on) info = tile;
+    else if (info?.detail === tile.detail) info = null;
+  }
 
   onMount(() => {
     sheet.focus({ preventScroll: true });
@@ -124,6 +156,24 @@
   }
 </script>
 
+{#snippet needle()}
+  <span class="needle" style:transform={`rotate(${rotation}deg)`}
+    ><Icon name="north" size={20} /></span
+  >
+{/snippet}
+
+{#snippet realisticTile()}
+  <MenuTile
+    id="realistic"
+    icon="realistic"
+    label={$_("menu.realistic.short")}
+    detail={$_("space.realistic")}
+    pressed={realistic}
+    onclick={onrealistic}
+    {oninfo}
+  />
+{/snippet}
+
 <!-- Outside taps close the menu and stop there (no selection behind it). -->
 <div class="backdrop" aria-hidden="true" onpointerdown={onclose}></div>
 <div
@@ -138,142 +188,231 @@
 >
   <div class="head">
     <h2 id="menu-title">{$_("menu.title")}</h2>
-    <!-- Night vision at hand, whatever the scroll (also in « Affichage »). -->
-    <button
-      class="quick"
-      aria-pressed={night}
-      onclick={onnight}
-      aria-label={$_("night.toggle")}
-      title={$_("night.toggle")}><Icon name="night" size={18} /></button
-    >
     <button class="close" onclick={onclose} aria-label={$_("menu.close")} title={$_("menu.close")}
       >×</button
     >
   </div>
   <div class="scroll">
     <section aria-labelledby="menu-view">
-      <h3 id="menu-view">{pad(1)} // {$_("menu.section.view")}</h3>
-      <div class="segmented" role="radiogroup" aria-labelledby="menu-view">
-        <button role="radio" aria-checked={mode === "sky"} onclick={() => onview("sky")}
-          ><Icon name="sky" />{$_("menu.view.sky")}</button
-        >
-        <button role="radio" aria-checked={mode === "space"} onclick={() => onview("space")}
-          ><Icon name="earth" />{$_("menu.view.earth")}</button
-        >
+      <h3 id="menu-view">{pad(n.view)} // {$_("menu.section.view")}</h3>
+      <div class="grid">
+        <div class="group" role="radiogroup" aria-labelledby="menu-view">
+          <MenuTile
+            id="view-sky"
+            icon="sky"
+            label={$_("menu.view.sky.short")}
+            detail={$_("menu.view.sky")}
+            checked={mode === "sky"}
+            onclick={() => onview("sky")}
+            {oninfo}
+          />
+          <MenuTile
+            id="view-earth"
+            icon="earth"
+            label={$_("menu.view.earth.short")}
+            detail={$_("menu.view.earth")}
+            checked={mode === "space"}
+            onclick={() => onview("space")}
+            {oninfo}
+          />
+        </div>
+        {#if mode === "sky"}
+          <MenuTile
+            id="north"
+            glyph={needle}
+            label={$_("menu.north.short")}
+            detail={$_("compass.north")}
+            disabled={northDisabled}
+            onclick={onnorth}
+            {oninfo}
+          />
+          <MenuTile
+            id="pointing"
+            icon="aim"
+            label={$_("menu.pointing.short")}
+            detail={$_("pointing.toggle")}
+            pressed={pointing}
+            onclick={onpoint}
+            {oninfo}
+          />
+        {:else}
+          <MenuTile
+            id="recentre"
+            icon="recentre"
+            label={$_("menu.recentre.short")}
+            detail={$_("gestures.recentre")}
+            onclick={onrecentre}
+            {oninfo}
+          />
+          {@render realisticTile()}
+        {/if}
       </div>
-      {#if mode === "sky"}
-        <button class="row" onclick={onnorth} disabled={northDisabled}>
-          <span class="glyph" style:transform={`rotate(${rotation}deg)`}><Icon name="north" /></span
-          >
-          <span class="label">{$_("compass.north")}</span>
-        </button>
-        <MenuSwitch icon="aim" label={$_("pointing.toggle")} checked={pointing} onclick={onpoint} />
-      {:else}
-        <button class="row" onclick={onpov} aria-haspopup="dialog">
-          <Icon name="frame" />
-          <span class="label">{$_("frame.title")}</span>
-          <span class="value">{povTitle} ›</span>
-        </button>
-        <button class="row" onclick={onvisit} aria-haspopup="dialog">
-          <Icon name="planets" />
-          <span class="label">{$_("frame.body")}</span>
-          <span class="value">{visiting ?? ""} ›</span>
-        </button>
-        <button class="row" onclick={onrecentre}>
-          <Icon name="recentre" />
-          <span class="label">{$_("gestures.recentre")}</span>
-        </button>
-      {/if}
     </section>
 
-    <section aria-labelledby="menu-layers">
-      <h3 id="menu-layers">{pad(2)} // {$_("layers.title")}</h3>
-      <LayersPanel view={mode} {layers} onchange={onlayer} {unavailable} />
+    {#if mode === "space"}
+      <section aria-labelledby="menu-pov">
+        <h3 id="menu-pov">{pad(n.pov)} // {$_("menu.section.pov")}</h3>
+        <div class="grid" role="radiogroup" aria-labelledby="menu-pov">
+          {#each REFERENCE_FRAMES as entry (entry.id)}
+            {#snippet picto()}<FramePicto frame={entry.id} size={28} />{/snippet}
+            <MenuTile
+              id={`pov-${entry.id}`}
+              glyph={picto}
+              large
+              label={$_(`frame.${entry.id}`)}
+              detail={entry.id === "body" && visiting
+                ? $_("frame.body.header", { values: { body: visiting } })
+                : undefined}
+              hint={$_(`frame.${entry.id}.hint`)}
+              checked={frame === entry.id}
+              disabled={!entry.available}
+              haspopup={entry.id === "body"}
+              onclick={() => (entry.id === "body" ? onvisit() : onframe(entry.id))}
+              {oninfo}
+            />
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <section aria-labelledby="menu-display">
+      <h3 id="menu-display">{pad(n.display)} // {$_("menu.section.display")}</h3>
+      <div class="grid">
+        <LayersPanel view={mode} tier="main" {layers} onchange={onlayer} {unavailable} {oninfo} />
+        <MenuTile
+          id="night"
+          icon="night"
+          label={$_("night.short")}
+          detail={$_("night.toggle")}
+          pressed={night}
+          onclick={onnight}
+          {oninfo}
+        />
+        <MenuTile
+          id="hide"
+          icon="expand"
+          label={$_("menu.hide.short")}
+          detail={$_("hud.hide")}
+          hint={$_("hud.hide.hint")}
+          onclick={onhide}
+          {oninfo}
+        />
+      </div>
     </section>
 
     <section aria-labelledby="menu-place">
-      <h3 id="menu-place">{pad(3)} // {$_("menu.section.placeTime")}</h3>
-      <div class="info">
-        <span class="label">{placeName}</span>
-        <span class="value">{coords}</span>
-      </div>
-      <button class="row" onclick={onlocate} aria-busy={locating === "busy"}>
-        <Icon name="locate" />
-        <span class="label">{$_("place.locate")}</span>
-        {#if locating !== "idle"}
-          <span class="value" role="status"
-            >{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</span
-          >
-        {/if}
-      </button>
-      <div class="info">
-        <span class="label">{time}</span>
-        <span class="value">{live ? `● ${$_("time.live")}` : relative}</span>
-      </div>
-      <button class="row" onclick={ontime}>
-        <Icon name="range" />
-        <span class="label">{$_("menu.setDate")}</span>
-        <span class="value">›</span>
-      </button>
-      <button class="row" onclick={onnow} disabled={live}>
-        <Icon name="now" />
-        <span class="label">{$_("time.backToNow")}</span>
-      </button>
-    </section>
-
-    <section aria-labelledby="menu-display">
-      <h3 id="menu-display">{pad(4)} // {$_("menu.section.display")}</h3>
-      <MenuSwitch icon="night" label={$_("night.toggle")} checked={night} onclick={onnight} />
-      {#if night}
-        <label class="dim">
-          <span>{$_("night.brightness")}</span>
-          <input
-            class="slider"
-            type="range"
-            min={minBrightness}
-            max="1"
-            step="0.05"
-            bind:value={brightness}
-          />
-        </label>
-      {/if}
-      <MenuSwitch
-        icon="realistic"
-        label={$_("space.realistic")}
-        checked={realistic}
-        onclick={onrealistic}
-      />
-      {#if fullscreen !== null}
-        <MenuSwitch
-          icon="fullscreen"
-          label={$_("fullscreen.enter")}
-          checked={fullscreen}
-          onclick={onfullscreen}
-        />
-      {/if}
-      <button class="row" onclick={onhide}>
-        <Icon name="expand" />
-        <span class="text">
-          <span class="label">{$_("hud.hide")}</span>
-          <span class="hint">{$_("hud.hide.hint")}</span>
+      <h3 id="menu-place">{pad(n.place)} // {$_("menu.section.placeTime")}</h3>
+      <div class="line">
+        <span class="data">
+          <span class="main">{placeName}</span>
+          {#if locating === "idle"}
+            <span class="sub">{coords}</span>
+          {:else}
+            <span class="sub" role="status"
+              >{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</span
+            >
+          {/if}
         </span>
-      </button>
+        <button
+          class="icon"
+          onclick={onlocate}
+          aria-busy={locating === "busy"}
+          aria-label={$_("place.locate")}
+          title={$_("place.locate")}><Icon name="locate" size={16} /></button
+        >
+      </div>
+      <div class="line">
+        <span class="data">
+          <span class="main">{time}</span>
+          <span class="sub">{live ? `● ${$_("time.live")}` : relative}</span>
+        </span>
+        <button
+          class="icon"
+          onclick={ontime}
+          aria-label={$_("menu.setDate")}
+          title={$_("menu.setDate")}><Icon name="range" size={16} /></button
+        >
+        <button
+          class="icon"
+          onclick={onnow}
+          disabled={live}
+          aria-label={$_("time.backToNow")}
+          title={$_("time.backToNow")}><Icon name="now" size={16} /></button
+        >
+      </div>
     </section>
 
-    <section aria-labelledby="menu-help">
-      <h3 id="menu-help">{pad(5)} // {$_("menu.section.help")}</h3>
-      <ul class="help">
-        <li>{$_("menu.help.tapSky")}</li>
-        <li>{$_("menu.help.tapObject")}</li>
-        <li>{$_("menu.help.time")}</li>
-      </ul>
-      <button class="row" onclick={oncredits}>
-        <Icon name="help" />
-        <span class="label">{$_("credits.open")}</span>
-        <span class="value">›</span>
+    <section class="more-section">
+      <button class="more" aria-expanded={more} aria-controls="menu-more" onclick={toggleMore}>
+        <span>{$_("menu.more")}</span>
+        <Icon name={more ? "expand" : "collapse"} />
       </button>
+      {#if more}
+        <div id="menu-more" class="more-body">
+          <div class="grid">
+            <LayersPanel
+              view={mode}
+              tier="more"
+              {layers}
+              onchange={onlayer}
+              {unavailable}
+              {oninfo}
+            />
+            {#if mode === "sky"}{@render realisticTile()}{/if}
+            {#if fullscreen !== null}
+              <MenuTile
+                id="fullscreen"
+                icon="fullscreen"
+                label={$_("menu.fullscreen.short")}
+                detail={$_("fullscreen.enter")}
+                pressed={fullscreen}
+                onclick={onfullscreen}
+                {oninfo}
+              />
+            {/if}
+            <MenuTile
+              id="credits"
+              icon="help"
+              label={$_("menu.credits.short")}
+              detail={$_("credits.open")}
+              haspopup
+              onclick={oncredits}
+              {oninfo}
+            />
+          </div>
+          {#if night}
+            <label class="dim">
+              <span>{$_("night.brightness")}</span>
+              <input
+                class="slider"
+                type="range"
+                min={minBrightness}
+                max="1"
+                step="0.05"
+                bind:value={brightness}
+              />
+            </label>
+          {/if}
+          <h4 id="menu-help">{$_("menu.section.help")}</h4>
+          <ul class="help" aria-labelledby="menu-help">
+            <li>{$_("menu.help.tapSky")}</li>
+            <li>{$_("menu.help.tapObject")}</li>
+            <li>{$_("menu.help.time")}</li>
+          </ul>
+        </div>
+      {/if}
     </section>
   </div>
+  <!-- Visual only: screen readers get the same text as each tile's description. -->
+  <p class="readout" aria-hidden="true">
+    {#if info}
+      <span class="r-label">{info.detail}</span>{#if info.hint}<span class="r-hint"
+          >{info.hint}</span
+        >{/if}
+    {:else}
+      <span class="r-idle">{$_("menu.caption.idle")}</span>
+    {/if}
+  </p>
 </div>
 
 <style>
@@ -309,15 +448,16 @@
       transform: translateX(12px);
     }
   }
-  /* Wide screen: side panel on the right, the sky stays visible on the left. */
+  /* Wide screen: side panel on the right, the sky stays visible on the left; it is only as tall
+     as its content (up to the screen's height). */
   @media (min-width: 720px) {
     .sheet {
       left: auto;
       top: max(16px, env(safe-area-inset-top));
       right: max(16px, env(safe-area-inset-right));
-      bottom: max(16px, env(safe-area-inset-bottom));
+      bottom: auto;
       width: 360px;
-      max-height: none;
+      max-height: calc(100dvh - 2 * max(16px, env(safe-area-inset-top)));
       animation-name: slide;
     }
     .backdrop {
@@ -343,19 +483,6 @@
     text-transform: uppercase;
     color: var(--ast-fg);
   }
-  .quick {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border: 0;
-    border-left: 1px solid var(--ast-hairline);
-    color: var(--ast-fg);
-  }
-  .quick[aria-pressed="true"] {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
-  }
   .close {
     width: 44px;
     height: 44px;
@@ -366,118 +493,134 @@
     font: 400 20px/1 var(--ast-font-mono);
     cursor: pointer;
   }
-  .scroll {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 2px 0 8px;
-  }
-  section + section {
-    border-top: 1px solid var(--ast-hairline);
-  }
-  h3 {
-    margin: 10px 12px 2px;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg);
-  }
-  button {
-    font: 500 11px/1 var(--ast-font-mono);
-    color: var(--ast-fg-muted);
-    background: transparent;
-    border: 0;
-    border-radius: var(--ast-radius);
-    cursor: pointer;
-  }
-  button:focus-visible {
+  .close:focus-visible,
+  .icon:focus-visible,
+  .more:focus-visible {
     outline: 1px solid var(--ast-fg);
     outline-offset: -3px;
   }
-  button:disabled {
-    cursor: default;
-    opacity: 0.5;
+  .scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 0 10px;
   }
-  .segmented {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    margin: 6px 12px 4px;
-    border: 1px solid var(--ast-hairline);
+  section {
+    padding: 0 10px;
   }
-  .segmented button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 44px;
+  h3 {
+    margin: 10px 2px 6px;
+    font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
+    color: var(--ast-fg-muted);
   }
-  .segmented button + button {
-    border-left: 1px solid var(--ast-hairline);
-  }
-  .segmented button[aria-checked="true"] {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
-  }
-  .row,
-  .info {
+  /* The tiles: four columns on a phone as on the side panel. */
+  .grid {
     display: grid;
-    grid-template-columns: 16px 1fr auto;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    min-height: 44px;
-    padding: 4px 12px;
-    box-sizing: border-box;
-    text-align: left;
-    letter-spacing: 0.06em;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
   }
-  .row {
-    color: var(--ast-fg);
+  .group {
+    display: contents;
   }
-  .info {
-    grid-template-columns: 1fr auto;
-    min-height: 32px;
-    padding-left: 40px;
-    font: 500 11px/1.3 var(--ast-font-mono);
-    color: var(--ast-fg);
-  }
-  .text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .hint {
-    font-size: 9px;
-    line-height: 1.3;
-    letter-spacing: 0.02em;
-    color: var(--ast-fg-muted);
-  }
-  .label {
-    text-transform: uppercase;
-    letter-spacing: var(--ast-tracking-meta);
-    min-width: 0;
-  }
-  .value {
-    font-size: 10px;
-    color: var(--ast-fg-muted);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    text-align: right;
-  }
-  .glyph {
+  .needle {
     display: grid;
     place-items: center;
     transition: transform 160ms var(--ast-ease-out);
   }
   @media (prefers-reduced-motion: reduce) {
-    .glyph {
+    .needle {
       transition: none;
     }
   }
+  /* Place and time: two readout lines, data in monospace, actions as engraved icon buttons. */
+  .line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding-left: 4px;
+    color: var(--ast-fg-muted);
+  }
+  .line + .line {
+    border-top: 1px solid var(--ast-hairline);
+  }
+  .data {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    font: 500 11px/1.2 var(--ast-font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .main {
+    color: var(--ast-fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sub {
+    font-size: 9px;
+    color: var(--ast-fg-muted);
+  }
+  .icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    color: var(--ast-fg);
+    background: transparent;
+    border: 1px solid var(--ast-hairline);
+    border-radius: var(--ast-radius);
+    cursor: pointer;
+  }
+  .icon + .icon {
+    margin-left: -4px;
+  }
+  .icon:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+  /* « Plus de réglages »: a folded hairline row. */
+  .more-section {
+    margin-top: 10px;
+  }
+  .more {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    font: 500 10px/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+    background: transparent;
+    border: 1px dashed var(--ast-hairline);
+    border-radius: var(--ast-radius);
+    cursor: pointer;
+  }
+  .more[aria-expanded="true"] {
+    color: var(--ast-fg);
+    border-style: solid;
+    border-bottom-color: transparent;
+  }
+  .more-body {
+    padding: 8px 0 0;
+  }
+  h4 {
+    margin: 12px 2px 4px;
+    font: 500 9px/1.4 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
   .help {
-    margin: 4px 12px 2px 40px;
+    margin: 0 2px;
     padding: 0;
     list-style: none;
     font: 10px/1.5 var(--ast-font-mono);
@@ -486,14 +629,41 @@
   .help li + li {
     margin-top: 4px;
   }
+  /* Detail readout at the foot of the sheet. */
+  .readout {
+    flex: none;
+    margin: 0;
+    min-height: 40px;
+    padding: 7px 12px 8px;
+    box-sizing: border-box;
+    border-top: 1px solid var(--ast-hairline);
+    font: 400 10px/1.4 var(--ast-font-mono);
+    letter-spacing: 0.02em;
+    color: var(--ast-fg-muted);
+  }
+  .r-label {
+    margin-right: 8px;
+    color: var(--ast-fg);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .r-label::before,
+  .r-idle::before {
+    content: "// ";
+    color: var(--ast-fg-muted);
+  }
+  .r-idle {
+    opacity: 0.8;
+  }
   .dim {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     min-height: 44px;
-    padding: 0 12px 0 40px;
-    font-size: 11px;
+    margin-top: 6px;
+    padding: 0 2px;
+    font: 500 10px/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -501,7 +671,7 @@
   /* Fully themed slider: native tracks are white/grey, which would break night vision */
   .slider {
     appearance: none;
-    width: 140px;
+    width: 160px;
     height: 44px;
     background: transparent;
   }

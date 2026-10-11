@@ -1840,9 +1840,12 @@
     onnorth={faceNorth}
     pointing={pointer.state === "on" || pointer.state === "waiting"}
     onpoint={fromMenu(() => pointer.toggle())}
-    {povTitle}
+    frame={spaceFrame}
+    onframe={(id) => {
+      menuOpen = false;
+      chooseFrame(id);
+    }}
     visiting={spaceFrame === "body" ? targetName(spaceBody) : null}
-    onpov={fromMenu(() => (frameOpen = true))}
     onvisit={fromMenu(() => (frameOpen = true))}
     onrecentre={fromMenu(() => space?.resetView())}
     layers={viewLayers[mode]}
