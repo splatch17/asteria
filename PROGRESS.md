@@ -8,6 +8,7 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
+| #138 | Recherche en haut à droite, petite boussole (tuile Nord retirée), menu en quatre panneaux à onglets Vue / Affichage / Lieu et temps / Réglages (captures `docs/design/menu-panels/`, branche poussée, PR à ouvrir, à valider par le porteur) | Claude (agent) | `feat/138-menu-panels` | 2026-10-11 |
 | #134 | Retour fluide de la visite au système solaire (dézoom continu, « ← Système solaire », sans saut de temps de lumière, fondu en mouvement réduit) ; flèches du Soleil retirées de « La Terre tourne » (captures `docs/design/visit-return/`, branche poussée, PR à ouvrir) | Claude (agent) | `feat/134-visit-return` | 2026-10-11 |
 | #135 | Menu visuel : tuiles, cartes des points de vue, « Plus de réglages » replié (captures `docs/design/menu-visual/`, à valider par le porteur) | Claude (agent) | `feat/135-menu-visual` | 2026-10-11 |
 | #101 | Ciel profond sur la carte et dans la recherche | Claude (agent) | `feat/101-deepsky-map` | 2026-10-09 |

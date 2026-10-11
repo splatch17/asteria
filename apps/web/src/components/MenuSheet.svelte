@@ -131,8 +131,10 @@
     else if (info?.detail === tile.detail) info = null;
   }
 
+  // The sheet itself takes the focus (no ring drawn on a tab after a tap); Tab then reaches the
+  // tab shown first.
   onMount(() => {
-    tablist.querySelector<HTMLElement>('[aria-selected="true"]')?.focus({ preventScroll: true });
+    sheet.focus({ preventScroll: true });
   });
 
   /** Escape closes; Tab cycles inside the sheet (modal), over what is reachable by Tab. */
@@ -428,8 +430,9 @@
     </div>
   </div>
 
-  <!-- Visual only: screen readers get the same text as each tile's description. -->
-  <p class="readout" aria-hidden="true">
+  <!-- Visual only: screen readers get the same text as each tile's description. No tiles in
+       « Lieu et temps », so no readout there. -->
+  <p class="readout" aria-hidden="true" hidden={panel === "place"}>
     {#if info}
       <span class="r-label">{info.detail}</span>{#if info.hint}<span class="r-hint"
           >{info.hint}</span
@@ -697,6 +700,9 @@
     font: 400 10px/1.4 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
+  }
+  .readout[hidden] {
+    display: none;
   }
   .r-label {
     margin-right: 8px;
