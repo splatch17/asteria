@@ -1593,19 +1593,19 @@
   {#snippet globe()}{#if globeLayer}<MiniGlobe
         hidden={!showGlobe || immersive}
         images={globeImages}
-    {place}
-    sun={bodies.sun}
-    {date}
-    style={spaceStyle}
-    theme={night
-      ? { ink: nightInk(brightness), base: THEMES.red.ground }
-      : {
-          ink: THEMES.day.ink,
-          base: THEMES.day.ground,
-        }}
-    monochrome={night}
-    onopen={() => void flyToSpace()}
-  />{/if}{/snippet}
+        {place}
+        sun={bodies.sun}
+        {date}
+        style={spaceStyle}
+        theme={night
+          ? { ink: nightInk(brightness), base: THEMES.red.ground }
+          : {
+              ink: THEMES.day.ink,
+              base: THEMES.day.ground,
+            }}
+        monochrome={night}
+        onopen={() => void flyToSpace()}
+      />{/if}{/snippet}
 </SkyTools>
 
 {#if pointer.state === "waiting"}

@@ -177,13 +177,7 @@
 >
   <h2 id="menu-title" class="sr-only">{$_("menu.title")}</h2>
   <div class="head">
-    <div
-      class="tabs"
-      role="tablist"
-      aria-label={$_("menu.tabs")}
-      bind:this={tablist}
-      onkeydown={ontabkey}
-    >
+    <div class="tabs" role="tablist" aria-label={$_("menu.tabs")} bind:this={tablist}>
       {#each MENU_PANELS as id (id)}
         <button
           class="tab"
@@ -194,6 +188,7 @@
           aria-controls={`menu-panel-${id}`}
           tabindex={panel === id ? 0 : -1}
           onclick={() => show(id)}
+          onkeydown={ontabkey}
         >
           <Icon name={MENU_PANEL_ICONS[id]} size={18} />
           <span class="tab-label">{$_(`menu.section.${id === "place" ? "placeTime" : id}`)}</span>
@@ -207,7 +202,7 @@
 
   <div class="panels">
     <!-- Vue: the view, how it is driven, night vision. -->
-    <section
+    <div
       class="panel"
       role="tabpanel"
       id="menu-panel-view"
@@ -301,10 +296,10 @@
           {/each}
         </div>
       {/if}
-    </section>
+    </div>
 
     <!-- Affichage: every layer of the view, by section (Ciel, Système solaire, Repères). -->
-    <section
+    <div
       class="panel"
       role="tabpanel"
       id="menu-panel-display"
@@ -325,10 +320,10 @@
           />
         </div>
       {/each}
-    </section>
+    </div>
 
     <!-- Lieu et temps: two readout lines, data in monospace, actions as engraved icon buttons. -->
-    <section
+    <div
       class="panel"
       role="tabpanel"
       id="menu-panel-place"
@@ -374,10 +369,10 @@
         >
       </div>
       <p class="note">{$_("menu.help.time")}</p>
-    </section>
+    </div>
 
     <!-- Réglages: the rarer settings, the credits and a short help. -->
-    <section
+    <div
       class="panel"
       role="tabpanel"
       id="menu-panel-settings"
@@ -430,7 +425,7 @@
         <li>{$_("menu.help.tapObject")}</li>
         {#if mode === "sky"}<li>{$_("menu.help.compass")}</li>{/if}
       </ul>
-    </section>
+    </div>
   </div>
 
   <!-- Visual only: screen readers get the same text as each tile's description. -->
