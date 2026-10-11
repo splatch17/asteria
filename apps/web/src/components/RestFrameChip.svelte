@@ -13,6 +13,7 @@
     options,
     bottom,
     onselect,
+    element = $bindable(),
   }: {
     rest: RestFrameId;
     /** The rest frames in order, localised; `disabled`: not possible now (`hint` says why). */
@@ -20,6 +21,8 @@
     /** CSS `bottom` of the chip. */
     bottom: string;
     onselect: (id: RestFrameId) => void;
+    /** The chip's container, for the HUD's label exclusions. */
+    element?: HTMLElement;
   } = $props();
 
   let open = $state(false);
@@ -78,7 +81,7 @@
   });
 </script>
 
-<div class="rest" style:bottom>
+<div class="rest" style:bottom bind:this={element}>
   {#if open}
     <div
       class="popover"
@@ -176,7 +179,7 @@
     width: min(300px, calc(100vw - 2 * max(16px, env(safe-area-inset-left))));
     box-sizing: border-box;
     padding: 4px 6px 6px;
-    background: color-mix(in srgb, var(--ast-bg) 92%, transparent);
+    background: var(--ast-bg);
     border: 1px solid var(--ast-hairline);
     border-radius: var(--ast-radius);
     outline: none;

@@ -983,7 +983,9 @@
   /** « ← Système solaire » during a visit (#134): kept free of labels while shown. */
   let visitBack = $state<HTMLElement>();
   const hudBlocks = () =>
-    [header, bottomNav, globeButton, visitBack].filter((el) => el !== undefined && el !== null);
+    [header, bottomNav, globeButton, visitBack, restChip].filter(
+      (el) => el !== undefined && el !== null,
+    );
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
     const rects = immersive
@@ -999,13 +1001,15 @@
   $effect(() => {
     void immersive;
     void visitBack;
+    void restChip;
     if (status === "ready") tick().then(updateGraduationExclusions);
   });
   /**
-   * Caption of the points of view (#128), one line above the time line on narrow screens: kept
-   * free below the scene, whether shown or not (beside it on wide ones).
+   * Caption of the points of view (#128), one line above the time line on narrow screens, and the
+   * rest chip over it (#139): kept free below the scene, whether shown or not (beside the time
+   * line on wide ones, the chip still above it).
    */
-  const captionReserve = () => (innerWidth < 700 ? 40 : 12);
+  const captionReserve = () => (innerWidth < 700 ? 80 : 48);
   /**
    * Insets of the Earth view's scene (#128): below the header line, above the time line and the
    * caption (#130: no column on the right any more). The points of view are framed in the rest.
@@ -1191,12 +1195,13 @@
 
   /**
    * What stays still (#139): the camera moves to the new rest frame; attached to the Earth or a
-   * body, the rotation is played (1 s = 1 h) so that the sky is seen turning round it.
+   * body with the time paused, the rotation is played (1 s = 1 h) so that the sky is seen
+   * turning round it.
    */
   function chooseRest(id: RestFrameId) {
     space?.setRestFrame(id, { duration: frameDuration() });
-    if (id === "earth" || id === "body") startDemo("rotation");
-    else pauseDemo();
+    // A playback under way goes on: the same motion seen from the new frame.
+    if ((id === "earth" || id === "body") && !playing) startDemo("rotation");
   }
 
   /** Sidereal rotation period of a body, « 24 h 37 min », « 58,6 j », retrograde said. */
@@ -1599,6 +1604,8 @@
     timeOpen && playing ? `calc(${aboveControls} + ${BUBBLE_RISE - 8}px)` : aboveControls,
   );
   let captionHeight = $state(28);
+  /** The rest chip (#139): a HUD block, kept free of labels. */
+  let restChip = $state<HTMLElement>();
   const toastTop = $derived(
     `calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16 + (showVisitBack ? 26 : 0)}px)`,
   );
@@ -1749,6 +1756,7 @@
       options={restOptions}
       bottom={`calc(${captionBottom} + ${captionHeight + 8}px)`}
       onselect={chooseRest}
+      bind:element={restChip}
     />
   {/if}
 {/if}
