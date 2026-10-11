@@ -11,7 +11,6 @@ import {
   isSunCentred,
   orbitInFrame,
   orbitPose,
-  type FrameOrbit,
 } from "./reference-frames";
 import { AU } from "./points-of-view";
 
