@@ -34,4 +34,5 @@ export type IconName =
   | "frame"
   | "menu"
   | "help"
-  | "north";
+  | "north"
+  | "hide";

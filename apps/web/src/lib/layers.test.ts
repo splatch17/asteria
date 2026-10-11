@@ -4,6 +4,7 @@ import {
   LAYER_SECTIONS,
   graduationFormatter,
   isLevel,
+  layersFor,
   layersFromUrl,
   restoreLayers,
   sectionsFor,
@@ -76,7 +77,46 @@ describe("layer catalogue", () => {
       for (const e of s.entries) {
         expect(messages[`layers.${e.key}`], e.key).toBeTruthy();
         if (e.hint) expect(messages[`layers.${e.key}.hint`], e.key).toBeTruthy();
+        expect(messages[`layers.${e.key}.short`], e.key).toBeTruthy();
       }
+    }
+  });
+});
+
+describe("layersFor (#135)", () => {
+  const keys = (view: "sky" | "space", tier: "main" | "more") =>
+    layersFor(view, tier).map((e) => e.key);
+
+  it("puts the everyday layers in the main grid, in catalogue order", () => {
+    expect(keys("sky", "main")).toEqual([
+      "constellationLines",
+      "constellationNames",
+      "constellationFigures",
+      "starNames",
+      "deepSky",
+      "planets",
+    ]);
+    expect(keys("space", "main")).toEqual(["constellationLines", "planets"]);
+  });
+
+  it("keeps every other layer in « Plus de réglages »: none is lost", () => {
+    for (const view of ["sky", "space"] as const) {
+      const all = sectionsFor(view).flatMap((s) => s.entries.map((e) => e.key));
+      expect([...keys(view, "main"), ...keys(view, "more")].sort()).toEqual(all.sort());
+    }
+    expect(keys("sky", "more")).toContain("equatorialGrid");
+    expect(keys("space", "more")).toEqual(["equatorialGrid", "ecliptic"]);
+  });
+
+  it("gives short tile labels that fit a quarter of a phone sheet (two lines of 11)", () => {
+    const messages = fr as Record<string, string>;
+    for (const e of layersFor("sky", "main").concat(layersFor("sky", "more"))) {
+      const short = messages[`layers.${e.key}.short`]!;
+      expect(
+        short.split(" ").every((w) => w.length <= 11),
+        short,
+      ).toBe(true);
+      expect(short.length, short).toBeLessThanOrEqual(22);
     }
   });
 });

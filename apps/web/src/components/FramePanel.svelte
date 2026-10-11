@@ -1,10 +1,12 @@
 <script lang="ts">
-  // Point of view selector of the Earth view (#122, #128, #131): four entries, each with an
-  // engraved pictogram and a one-line hint. Opens beside the dials column. « Visiter un astre » (#123)
-  // has a sub-list: the Moon and the planets, one tap travels there.
+  // Point of view selector of the Earth view (#122, #128, #131): four cards, each with an engraved
+  // pictogram (#135: cards rather than a list; the one-line hint is read out under them). Opens
+  // under the header. « Visiter un astre » (#123) has a sub-grid: the Moon and the planets, one tap
+  // travels there.
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
   import { REFERENCE_FRAMES, type BodyTarget, type ReferenceFrameId } from "@asteria/sky-renderer";
+  import FramePicto from "./FramePicto.svelte";
 
   let {
     frame,
@@ -31,6 +33,8 @@
   } = $props();
 
   let panel: HTMLElement;
+  /** Card whose hint is read out: focused or hovered (else the current point of view). */
+  let shown = $state<ReferenceFrameId | null>(null);
 
   onMount(() => {
     panel.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
@@ -64,70 +68,43 @@
   id="frame-panel"
 >
   <h2 id="frame-title">{$_("frame.title")}</h2>
-  <div role="radiogroup" aria-labelledby="frame-title">
+  <!-- Visual cards (#135): pictogram and name; the hint is the card's description, and is read
+       out under the cards for the focused or hovered card, else the current one. -->
+  <div class="cards" role="radiogroup" aria-labelledby="frame-title">
     {#each REFERENCE_FRAMES as entry (entry.id)}
       <button
         class="choice"
         role="radio"
         aria-checked={frame === entry.id}
+        aria-describedby={`frame-hint-${entry.id}`}
         disabled={!entry.available}
         onclick={() => onselect(entry.id)}
+        onfocus={() => (shown = entry.id)}
+        onpointerenter={(e) => e.pointerType === "mouse" && (shown = entry.id)}
+        onpointerleave={() => (shown = null)}
+        onblur={() => (shown = null)}
       >
-        <svg class="picto" viewBox="0 0 32 32" aria-hidden="true">
-          {#if entry.id === "stars"}
-            <!-- The Earth lit from the left, its rotation arrow, the Sun's rays -->
-            <circle cx="19" cy="17" r="8" />
-            <path class="fill" d="M19 9 A8 8 0 0 0 19 25 Z" />
-            <path d="M13 6.5 A8 3 0 1 0 25 6.5" />
-            <path d="M25 6.5 l-2.6 -0.6 M25 6.5 l-1.2 2.3" />
-            <path class="dash" d="M2 13 H9 M2 17 H9 M2 21 H9" />
-          {:else if entry.id === "ecliptic"}
-            <!-- The Sun, the orbit, two Earths with the same tilted axis -->
-            <ellipse cx="16" cy="17" rx="13" ry="6" />
-            <circle class="fill" cx="16" cy="17" r="2.6" />
-            <circle cx="3" cy="17" r="2.2" />
-            <circle cx="29" cy="17" r="2.2" />
-            <path d="M1.4 13 L4.6 21 M27.4 13 L30.6 21" />
-          {:else if entry.id === "heliocentric"}
-            <!-- The Sun and nested orbits, planets on them -->
-            <ellipse cx="16" cy="16" rx="6" ry="3" />
-            <ellipse cx="16" cy="16" rx="10" ry="5" />
-            <ellipse cx="16" cy="16" rx="14.5" ry="7.5" />
-            <circle class="fill" cx="16" cy="16" r="1.8" />
-            <circle class="fill" cx="22" cy="16" r="1.1" />
-            <circle class="fill" cx="9" cy="19.5" r="1.3" />
-            <circle class="fill" cx="27" cy="11" r="1.6" />
-          {:else}
-            <!-- A ringed planet, the Earth far away -->
-            <circle cx="15" cy="17" r="6.5" />
-            <ellipse cx="15" cy="17" rx="12" ry="3.2" transform="rotate(-18 15 17)" />
-            <circle class="fill" cx="28" cy="5" r="1.3" />
-          {/if}
-        </svg>
-        <span class="text">
-          <span class="label">{$_(`frame.${entry.id}`)}</span>
-          <span class="hint">{$_(`frame.${entry.id}.hint`)}</span>
-        </span>
-        {#if entry.available}
-          <span class="mark" aria-hidden="true"></span>
-        {:else}
-          <span class="soon">{$_("frame.soon")}</span>
-        {/if}
+        <FramePicto frame={entry.id} size={34} />
+        <span class="label">{$_(`frame.${entry.id}`)}</span>
+        {#if !entry.available}<span class="soon">{$_("frame.soon")}</span>{/if}
+        <span class="sr" id={`frame-hint-${entry.id}`}>{$_(`frame.${entry.id}.hint`)}</span>
       </button>
-      {#if entry.id === "body" && entry.available}
-        <div class="bodies" role="radiogroup" aria-label={$_("frame.body.pick")}>
-          {#each bodies as b (b.id)}
-            <button
-              class="body"
-              role="radio"
-              aria-checked={frame === "body" && body === b.id}
-              onclick={() => onbody(b.id)}>{b.name}</button
-            >
-          {/each}
-        </div>
-      {/if}
     {/each}
   </div>
+  <p class="readout" aria-hidden="true">{$_(`frame.${shown ?? frame}.hint`)}</p>
+  {#if REFERENCE_FRAMES.some((f) => f.id === "body" && f.available)}
+    <h3 id="frame-bodies">{$_("frame.body.pick")}</h3>
+    <div class="bodies" role="radiogroup" aria-labelledby="frame-bodies">
+      {#each bodies as b (b.id)}
+        <button
+          class="body"
+          role="radio"
+          aria-checked={frame === "body" && body === b.id}
+          onclick={() => onbody(b.id)}>{b.name}</button
+        >
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -135,9 +112,9 @@
     position: fixed;
     z-index: 3;
     right: max(16px, env(safe-area-inset-right));
-    width: min(320px, calc(100vw - 2 * max(16px, env(safe-area-inset-left))));
+    width: min(340px, calc(100vw - 2 * max(16px, env(safe-area-inset-left))));
     box-sizing: border-box;
-    padding: 4px 0 6px;
+    padding: 4px 10px 10px;
     outline: none;
     animation: rise 160ms var(--ast-ease-out);
   }
@@ -152,93 +129,106 @@
       animation: none;
     }
   }
-  h2 {
-    margin: 6px 12px 2px;
+  h2,
+  h3 {
+    margin: 6px 2px 6px;
     font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
-  .choice {
+  h3 {
+    margin-top: 10px;
+  }
+  /* Two by two cards: an engraved pictogram over the name. */
+  .cards {
     display: grid;
-    grid-template-columns: 30px 1fr auto;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .choice {
+    position: relative;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-height: 44px;
-    padding: 4px 12px;
-    font: 500 11px/1 var(--ast-font-mono);
+    justify-content: center;
+    gap: 8px;
+    min-height: 76px;
+    padding: 10px 4px 8px;
+    font: 500 9px/1.2 var(--ast-font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
     color: var(--ast-fg-muted);
     background: transparent;
-    border: 0;
+    border: 1px solid var(--ast-hairline);
     border-radius: var(--ast-radius);
-    text-align: left;
-    letter-spacing: 0.06em;
     cursor: pointer;
+    transition:
+      color 120ms var(--ast-ease-out),
+      background-color 120ms var(--ast-ease-out),
+      border-color 120ms var(--ast-ease-out);
+  }
+  .choice:hover:not(:disabled) {
+    color: var(--ast-fg);
+    border-color: var(--ast-fg-muted);
   }
   .choice:focus-visible {
     outline: 1px solid var(--ast-fg);
-    outline-offset: -3px;
+    outline-offset: 2px;
   }
   .choice:disabled {
     cursor: default;
     opacity: 0.5;
   }
-  /* Engraved pictogram: ink hairlines, a few filled parts. */
-  .picto {
-    width: 30px;
-    height: 30px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.1;
-    stroke-linecap: round;
-  }
-  .picto .fill {
-    fill: currentColor;
-    stroke: none;
-  }
-  .picto .dash {
-    stroke-dasharray: 2 2;
-  }
-  .text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-  .label {
-    text-transform: uppercase;
-    letter-spacing: var(--ast-tracking-meta);
-  }
-  .hint {
-    font-size: 9px;
-    line-height: 1.3;
-    letter-spacing: 0.02em;
-    opacity: 0.85;
-  }
-  /* Square instrument mark, filled for the chosen frame */
-  .mark {
-    width: 10px;
-    height: 10px;
-    border: 1px solid var(--ast-fg-muted);
+  /* Square instrument mark, filled for the chosen point of view */
+  .choice::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 6px;
+    height: 6px;
+    border: 1px solid var(--ast-hairline);
     box-sizing: border-box;
   }
   .choice[aria-checked="true"] {
     color: var(--ast-fg);
+    background: color-mix(in srgb, var(--ast-fg) 18%, transparent);
+    border-color: var(--ast-fg);
   }
-  .choice[aria-checked="true"] .mark {
+  .choice[aria-checked="true"]::after {
     background: var(--ast-fg);
     border-color: var(--ast-fg);
   }
-  /* Sub-list of the body-centred frame: a grid of small engraved tabs, 4 per row. */
+  @media (prefers-reduced-motion: reduce) {
+    .choice {
+      transition: none;
+    }
+  }
+  .readout {
+    min-height: 2.8em;
+    margin: 8px 2px 0;
+    font: 400 10px/1.4 var(--ast-font-mono);
+    letter-spacing: 0.02em;
+    color: var(--ast-fg-muted);
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The bodies: a grid of small engraved tabs, 4 per row. */
   .bodies {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
-    padding: 0 12px 6px 40px;
   }
   .body {
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 2px;
     font: 500 9px/1 var(--ast-font-mono);
     letter-spacing: 0.06em;
@@ -257,8 +247,8 @@
     outline-offset: 1px;
   }
   .body[aria-checked="true"] {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
+    color: var(--ast-fg);
+    background: color-mix(in srgb, var(--ast-fg) 18%, transparent);
     border-color: var(--ast-fg);
   }
   .soon {
@@ -266,6 +256,5 @@
     border: 1px solid var(--ast-hairline);
     font-size: 8px;
     letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
   }
 </style>

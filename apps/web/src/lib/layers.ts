@@ -24,6 +24,11 @@ export interface LayerEntry {
   hint?: boolean;
   /** Views where the renderer honours this layer. */
   views: readonly LayerView[];
+  /**
+   * Everyday layer (#135): a tile in the menu's main grid. The others wait in the collapsed
+   * « Plus de réglages » section. Each entry also has a short tile label `layers.<key>.short`.
+   */
+  main?: boolean;
 }
 
 export interface LayerSection {
@@ -39,11 +44,11 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
   {
     id: "sky",
     entries: [
-      { key: "constellationLines", icon: "lines", views: BOTH },
-      { key: "constellationNames", icon: "conNames", views: SKY },
-      { key: "constellationFigures", icon: "figures", hint: true, views: SKY },
-      { key: "starNames", icon: "starNames", views: SKY },
-      { key: "deepSky", icon: "deepsky", hint: true, views: SKY },
+      { key: "constellationLines", icon: "lines", main: true, views: BOTH },
+      { key: "constellationNames", icon: "conNames", main: true, views: SKY },
+      { key: "constellationFigures", icon: "figures", hint: true, main: true, views: SKY },
+      { key: "starNames", icon: "starNames", main: true, views: SKY },
+      { key: "deepSky", icon: "deepsky", hint: true, main: true, views: SKY },
       { key: "seeThroughGround", icon: "seeThrough", hint: true, views: SKY },
       { key: "realisticDaylight", icon: "sun", hint: true, views: SKY },
     ],
@@ -51,7 +56,7 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
   {
     id: "solar",
     entries: [
-      { key: "planets", icon: "planets", views: BOTH },
+      { key: "planets", icon: "planets", main: true, views: BOTH },
       { key: "allPaths", icon: "paths", hint: true, views: SKY },
     ],
   },
@@ -72,6 +77,13 @@ export function sectionsFor(view: LayerView): LayerSection[] {
     ...s,
     entries: s.entries.filter((e) => e.views.includes(view)),
   })).filter((s) => s.entries.length > 0);
+}
+
+/** Flat list of the layers of a view, everyday tiles (`main`) or the rarer ones, catalogue order. */
+export function layersFor(view: LayerView, tier: "main" | "more"): LayerEntry[] {
+  return sectionsFor(view)
+    .flatMap((s) => s.entries)
+    .filter((e) => Boolean(e.main) === (tier === "main"));
 }
 
 /** Public level, shared with the 3D view (setting `asteria.level`). */
