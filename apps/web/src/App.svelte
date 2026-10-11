@@ -26,8 +26,6 @@
     deepSkyFieldFor,
     deepSkyRank,
     FLIGHT_MS,
-    SEASONS_EARTH_ENLARGEMENT,
-    SOLAR_SCALE,
   } from "@asteria/sky-renderer";
   import {
     PLANETS,
@@ -466,6 +464,9 @@
         const key = days > 0 ? "space.earthSeason.before" : "space.earthSeason.after";
         return $_(key, { values: { season, days: Math.abs(days) } });
       },
+      // Scale bar of the true-scale solar system (#131): « 1 ua », « 100 000 km ».
+      formatScale: (value: number, unit: "km" | "au") =>
+        $_(`space.scale.${unit}`, { values: { value } }),
       onInteract: pauseDemo,
       frame: spaceFrame,
       body: spaceBody,
@@ -473,11 +474,12 @@
       formatPathMark: (d) => pathMarkFormat.format(d),
       onSelect: (s) => {
         selection = s;
-        // Body-centred frame (#123): a tap on the Moon or a planet travels to it; in the solar
-        // system (#128), a tap on a planet visits it.
+        // Body-centred frame (#123): a tap on the Moon or a planet travels to it; in the
+        // true-scale solar system (#128, #131), a tap on its marker or globe visits it.
         const body = targetOf(s);
         if (spaceFrame === "body" && body) spaceBody = body;
-        else if (spaceFrame === "heliocentric" && body) chooseBody(body);
+        else if ((spaceFrame === "heliocentric" || spaceFrame === "ecliptic") && body)
+          chooseBody(body);
       },
       onEnterSky: () => flyToSky(),
       style: spaceStyle,
@@ -1086,15 +1088,11 @@
     const values = {
       angle: angleFormat.format(meanObliquity(date)),
       body: targetName(spaceBody),
-      earth: Math.round(SEASONS_EARTH_ENLARGEMENT / 100) * 100,
-      a: SOLAR_SCALE.a,
-      r0: SOLAR_SCALE.r0,
     };
     const title = $_(`frame.${spaceFrame}.caption.${userLevel}`, { values });
     let detail = "";
-    if (spaceFrame === "ecliptic") detail = $_("frame.ecliptic.scale", { values });
-    else if (spaceFrame === "heliocentric")
-      detail = $_(`frame.heliocentric.scale.${userLevel}`, { values });
+    if (spaceFrame === "ecliptic") detail = $_(`frame.ecliptic.scale.${userLevel}`);
+    else if (spaceFrame === "heliocentric") detail = $_(`frame.heliocentric.scale.${userLevel}`);
     else if (spaceFrame === "body" && bodyScale)
       detail = `${bodyScale.distance} · ${bodyScale.light}. ${$_("frame.body.scale")}`;
     return { title, detail };

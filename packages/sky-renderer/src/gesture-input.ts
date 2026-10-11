@@ -1,8 +1,10 @@
 /**
- * Pointer input of the 3D views (#107): turns pointer and wheel events into camera intents
- * (orbit, pan, zoom, roll, tap, double tap) and runs the inertia of the orbit. Shared by the
- * constellation 3D view and the Earth view so that both feel the same; the views only map the
- * intents (in CSS px) onto their own camera. The recognition itself is in gestures.ts.
+ * Pointer input of the 3D views (#107, #131): turns pointer and wheel events into camera
+ * intents (orbit, pan, zoom, roll, tap, double tap) and runs the inertia. Shared by the
+ * constellation 3D view and the Earth view so that all feel the same, as a map app: one finger
+ * (or the mouse's left button) pans, two fingers rotate, pinch and twist; the right button or
+ * Shift + drag rotates with the mouse. The views only map the intents (in CSS px) onto their own
+ * camera. The recognition itself is in gestures.ts.
  *
  * Allocation-free per event: preallocated pointer slots, deltas and velocity.
  */
@@ -21,9 +23,9 @@ export interface GestureHandlers {
   enabled(): boolean;
   /** A gesture starts: stop tweens (the inertia is stopped by the input itself). */
   grab(): void;
-  /** Orbit by a screen drag (CSS px, y down): the scene follows the finger. */
+  /** Orbit (rotate) by a screen drag of two fingers (CSS px, y down): the scene follows them. */
   orbit(dx: number, dy: number): void;
-  /** Pan by a screen drag (CSS px, y down): the scene follows the fingers. */
+  /** Pan by a screen drag of one finger (CSS px, y down): the scene follows the finger. */
   pan(dx: number, dy: number): void;
   /** Multiply the camera distance by `factor` (< 1: closer), anchored at (x, y) CSS px. */
   zoom(factor: number, x: number, y: number): void;
@@ -58,10 +60,10 @@ export class GestureInput {
   private moved = 0;
   /** The gesture had two fingers at some point: never a tap, no fling. */
   private multi = false;
-  /** Travel of the finger left after a two-finger gesture, before it may orbit. */
+  /** Travel of the finger left after a two-finger gesture, before it may pan. */
   private resume = 0;
-  /** Mouse drag with the right button or Shift: pans. */
-  private mousePan = false;
+  /** Mouse drag with the right button or Shift: rotates. */
+  private mouseRotate = false;
   private fling: "none" | "orbit" | "pan" = "none";
 
   constructor(
@@ -77,7 +79,7 @@ export class GestureInput {
     canvas.addEventListener("pointerup", this.up, opts);
     canvas.addEventListener("pointercancel", this.up, opts);
     canvas.addEventListener("wheel", this.wheel, { passive: false, signal });
-    // The right button pans: no context menu over the view.
+    // The right button rotates: no context menu over the view.
     canvas.addEventListener("contextmenu", (e) => e.preventDefault(), opts);
   }
 
@@ -100,8 +102,9 @@ export class GestureInput {
   }
 
   /**
-   * Advances the inertia by `dtMs` (call once per frame): calls orbit() or pan() with the free
-   * motion. Returns true while it is still moving.
+   * Advances the inertia by `dtMs` (call once per frame): calls pan() (one finger, a light
+   * glide) or orbit() (mouse rotation) with the free motion. Returns true while it is still
+   * moving.
    */
   step(dtMs: number): boolean {
     if (this.pointers.size || this.fling === "none") return false;
@@ -109,9 +112,14 @@ export class GestureInput {
       this.stopInertia();
       return false;
     }
-    const d = this.velocity.step(Math.min(dtMs, 50), this.step2);
-    if (this.fling === "orbit") this.handlers.orbit(d.x, d.y);
-    else this.handlers.pan(d.x, d.y);
+    const dt = Math.min(dtMs, 50);
+    if (this.fling === "orbit") {
+      const d = this.velocity.step(dt, this.step2);
+      this.handlers.orbit(d.x, d.y);
+      return true;
+    }
+    const d = this.velocity.step(dt, this.step2, GESTURE.panInertiaTauMs);
+    this.handlers.pan(d.x, d.y);
     return true;
   }
 
@@ -129,7 +137,7 @@ export class GestureInput {
     if (this.pointers.size === 1) {
       this.moved = 0;
       this.multi = false;
-      this.mousePan = e.pointerType === "mouse" && (e.button === 2 || e.shiftKey);
+      this.mouseRotate = e.pointerType === "mouse" && (e.button === 2 || e.shiftKey);
       this.handlers.grab();
     } else {
       this.multi = true;
@@ -151,22 +159,22 @@ export class GestureInput {
     const h = this.handlers;
     if (this.pointers.size === 1) {
       if (this.multi) {
-        // The finger left by a pinch: still until it clearly moves on its own.
+        // The finger left by a two-finger gesture: still until it clearly moves on its own.
         this.resume += Math.abs(dx) + Math.abs(dy);
         if (this.resume < GESTURE.resumeSlop) return;
       } else if (this.moved < GESTURE.tapSlop && e.pointerType !== "mouse") return;
       this.velocity.sample(dx, dy, e.timeStamp);
-      if (this.mousePan) {
-        this.fling = "pan";
-        h.pan(dx, dy);
-      } else {
+      if (this.mouseRotate) {
         this.fling = "orbit";
         h.orbit(dx, dy);
+      } else {
+        this.fling = "pan";
+        h.pan(dx, dy);
       }
       return;
     }
     const d = this.two.move(this.pointers.a, this.pointers.b, this.delta);
-    if (d.dx !== 0 || d.dy !== 0) h.pan(d.dx, d.dy);
+    if (d.dx !== 0 || d.dy !== 0) h.orbit(d.dx, d.dy);
     if (d.scale !== 1) h.zoom(1 / d.scale, d.cx, d.cy);
     if (d.rotation !== 0) h.roll?.(d.rotation, d.cx, d.cy);
   };
@@ -174,7 +182,7 @@ export class GestureInput {
   private readonly up = (e: PointerEvent): void => {
     if (!this.pointers.remove(e.pointerId)) return;
     if (this.pointers.size === 1) {
-      // One finger of two lifted: no jump, no fling; the other one orbits once it moves on.
+      // One finger of two lifted: no jump, no fling; the other one pans once it moves on.
       this.resume = 0;
       this.velocity.reset();
       this.fling = "none";

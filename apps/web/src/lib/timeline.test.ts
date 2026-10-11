@@ -93,9 +93,10 @@ describe("point of view demonstrations (#128)", () => {
       return RANGES[demo.range].speeds[i]!.value;
     };
     expect(speed("stars")).toBe(HOUR);
-    expect(speed("earth")).toBe(HOUR);
     expect(speed("ecliptic")).toBe(7 * DAY);
-    expect(speed("heliocentric") / DAY).toBeCloseTo(30.44, 2);
+    // « Le système solaire » is explored freely (#131), « Vu du sol » is gone.
+    expect(POINT_OF_VIEW_DEMOS.heliocentric).toBeUndefined();
+    expect(POINT_OF_VIEW_DEMOS.earth).toBeUndefined();
     expect(POINT_OF_VIEW_DEMOS.body).toBeUndefined();
   });
 

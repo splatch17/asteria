@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Point of view selector of the Earth view (#122, #128): five entries, each with an engraved
-  // pictogram and a one-line hint. Opens beside the dials column. « Visiter un astre » (#123)
+  // Point of view selector of the Earth view (#122, #128, #131): four entries, each with an
+  // engraved pictogram and a one-line hint. Opens beside the dials column. « Visiter un astre » (#123)
   // has a sub-list: the Moon and the planets, one tap travels there.
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
@@ -81,13 +81,6 @@
             <path d="M13 6.5 A8 3 0 1 0 25 6.5" />
             <path d="M25 6.5 l-2.6 -0.6 M25 6.5 l-1.2 2.3" />
             <path class="dash" d="M2 13 H9 M2 17 H9 M2 21 H9" />
-          {:else if entry.id === "earth"}
-            <!-- Your place on the Earth, the Sun on its daily circle -->
-            <ellipse class="dash" cx="16" cy="17" rx="13" ry="7" />
-            <circle cx="16" cy="17" r="6" />
-            <path d="M16 11 V7.5" />
-            <circle class="fill" cx="16" cy="11" r="1.4" />
-            <circle cx="28" cy="15" r="2.2" />
           {:else if entry.id === "ecliptic"}
             <!-- The Sun, the orbit, two Earths with the same tilted axis -->
             <ellipse cx="16" cy="17" rx="13" ry="6" />

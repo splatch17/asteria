@@ -48,6 +48,7 @@ import { moonAxes, planetAxes, sunwardDirection, type SpaceStyle } from "./space
 import {
   BODY_TARGETS,
   BodyFrame,
+  EARTH_RADIUS_KM,
   bodyPole,
   bodyRadius,
   bodyViewDirection,
@@ -86,17 +87,20 @@ import {
   type FrameOrbit,
   type ReferenceFrameId,
 } from "./reference-frames";
+import { PovScene, SCENE_INDEX, SPIN_ARROW, type PovWeights } from "./pov-scene";
 import {
-  BACKDROP_RADIUS,
-  GHOST_EARTH_RADIUS,
-  GROUND_SUN_RADIUS,
-  PovScene,
-  SPIN_ARROW,
-  type PovWeights,
-} from "./pov-scene";
-import { SEASONS_SCALE, fitDistance } from "./points-of-view";
+  AU,
+  GLOBE_MIN_PX,
+  SCENE_BODIES,
+  apparentRadiusPx,
+  fitDistance,
+  markerOpacity,
+  scaleBar,
+  travelFraction,
+  type ScaleBar,
+} from "./points-of-view";
 import { GestureInput } from "./gesture-input";
-import { easeOut, panLimit, panScale, raySphere, wrapDegrees, zoomAnchorShift } from "./gestures";
+import { easeOut, panLimit, panScale, raySphere, wrapDegrees } from "./gestures";
 
 export type { SpaceTextureName } from "./space-realistic";
 
@@ -129,11 +133,16 @@ export interface SpaceViewOptions {
     sun: string;
     moon: string;
     pole: string;
-    /** Points of view (#128): the Earth in the diagrams, its axis, its rotation. */
+    /** Points of view (#128): the Earth in the solar system, its axis, its rotation. */
     earth?: string;
     axis?: string;
     rotation?: string;
   };
+  /**
+   * Text of the true-scale scene's scale bar (#131), e.g. "1 ua", "100 000 km" (localised by the
+   * caller). No scale bar without it.
+   */
+  formatScale?: (value: number, unit: "km" | "au") => string;
   /** Label of an equinox or solstice mark of « Les saisons » (#128), e.g. "Solstice · 21 juin". */
   formatSeason?: (kind: SeasonKind, date: Date) => string;
   /**
@@ -195,8 +204,6 @@ const RECENTRE_MS = 600;
 /** Shortest duration of a trip to or from a body (#123), ms (unless instant). */
 export const BODY_TRANSITION_MS = 1600;
 const ORIGIN = new THREE.Vector3();
-/** Apparent radius (CSS px) from which a body's globe replaces its glyph (body frame). */
-const GLOBE_MIN_PX = 6;
 
 /** Orbit camera of the Earth view, in the current reference frame (see reference-frames.ts). */
 type EarthOrbit = FrameOrbit;
@@ -209,34 +216,55 @@ const X_AXIS = new THREE.Vector3(1, 0, 0);
 const FRAME_IDS = REFERENCE_FRAMES.map((f) => f.id);
 
 /**
- * Framing of the points of view (#128), see defaultOrbit: share of the safe area filled, and the
- * camera's elevation above the orbit's plane in the sun-centred diagrams (degrees).
+ * Framing of the points of view (#128, #131), see defaultOrbit: share of the safe area filled,
+ * and the camera's elevation above the ecliptic in the true-scale scene (degrees).
  */
 const FRAMING = Object.freeze({
   earthFill: 0.55,
   /** The Earth moved away from the Sun's side, Earth radii. */
   earthShift: 0.4,
   earthLat: 20,
-  groundFill: 0.95,
-  seasonsFill: 0.97,
+  /** « Les saisons »: the Earth's orbit (aphelion 1.0167 au) and room for the marks' dates. */
+  seasonsFill: 0.78,
   seasonsLat: 32,
-  solarFill: 1,
+  /** « Le système solaire »: Neptune's orbit (30.3 au at most) fills the screen. */
+  solarFill: 0.96,
   solarLat: 48,
   /**
-   * On a portrait screen the diagrams are limited by the width: seen from higher above, the
+   * On a portrait screen the scene is limited by the width: seen from higher above, the
    * orbits' ellipses grow taller and use the free height.
    */
   seasonsLatPortrait: 58,
   solarLatPortrait: 64,
-  /** Diagrams seen from ecliptic longitude 180°: the June solstice on the right. */
-  diagramLon: 180,
+  /** Seen from ecliptic longitude 180°: the June solstice on the right. */
+  sceneLon: 180,
 });
+/** Half-extents framed by « Les saisons » and « Le système solaire », au. */
+const SEASONS_EXTENT_AU = 1.03;
+const SOLAR_EXTENT_AU = 30.6;
+/**
+ * Camera distance limits of the true-scale scene, Earth radii: from 0.05 (320 km from the point
+ * looked at; the camera never enters a globe, see zoomAt) to 400 au.
+ */
+const SCENE_DIST = Object.freeze({ min: 0.05, max: 400 * AU });
+/** The point looked at stays within this distance of the Sun, Earth radii (beyond Neptune). */
+const SCENE_PAN_MAX = 60 * AU;
+/** A zoom anchored within this distance (CSS px) of a body's marker or disc goes to its centre. */
+const SNAP_PX = 28;
+/** The camera stays this many radii from a body's centre when zooming towards it. */
+const SURFACE_MARGIN = 1.15;
+/** Engraved marker of a body in the true-scale scene: radius, CSS px. */
+const MARKER_PX = 4.5;
+/** Two markers closer than this (CSS px) merge: the one placed first (SCENE_BODIES) stays. */
+const MARKER_MERGE_PX = 9;
+/** Length of the axis tick on the Earth's markers (« Les saisons »), CSS px from the centre. */
+const AXIS_TICK_PX = 13;
+/** Longest scale bar, CSS px. */
+const SCALE_BAR_PX = 110;
 /** Engraved dashes of the overlay (Sun's light), CSS px; allocated once. */
 const DASH = [5, 4];
 /** « Les saisons »: the Earth's label merges with a mark's within this many days of it. */
 const SEASON_NEAR_DAYS = 20;
-/** Bodies of the solar system labelled from the Sun outwards: PLANETS indices, −1 the Earth. */
-const SOLAR_ORDER = [0, 1, -1, 2, 3, 4, 5, 6] as const;
 /** Angles (radians) tried around the outward direction for a label with a leader line. */
 const LEADER_FAN = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2] as const;
 /** Offsets of the Sun's rays from the Earth's centre line, in Earth radii on screen. */
@@ -328,15 +356,40 @@ export class SpaceView {
   /** Weight of each point of view: 1 when shown, blended during a transition. */
   private readonly weights: PovWeights = {
     stars: 1,
-    earth: 0,
     ecliptic: 0,
     heliocentric: 0,
     body: 0,
   };
-  private readonly povNeeds = { ground: false, seasons: false, solar: false };
-  private readonly povSun = new THREE.Vector3();
-  private readonly povMoon = new THREE.Vector3();
   private reducedMotion = false;
+  /**
+   * True-scale scene (#131): the body (SCENE_BODIES index) the camera follows when the date
+   * moves, −1 for none (the point looked at stays fixed relative to the Sun); its position in
+   * the frame's axes at the last refresh (NaN: unknown).
+   */
+  private follow = -1;
+  private readonly followAt = new THREE.Vector3(NaN, NaN, NaN);
+  /** Scale bar of the true-scale scene, its text made once per (value, unit). */
+  private readonly scaleBar: ScaleBar = { value: 0, unit: "km", px: 0 };
+  private scaleText = { value: NaN, unit: "", text: "" };
+  /**
+   * The true-scale scene's bodies as drawn in the last frame (SCENE_BODIES order): screen x, y
+   * and radius reached by the marker or disc (CSS px), whether drawn (not hidden nor merged),
+   * and the drawing order. Read by picking and by the zoom's anchor.
+   */
+  private readonly sceneScreen = new Float32Array(3 * SCENE_BODIES.length);
+  private readonly sceneOk = new Uint8Array(SCENE_BODIES.length);
+  private readonly sceneOrder = new Int8Array(SCENE_BODIES.length);
+  /** North end of the Earth's axis tick (« Les saisons »), CSS px; NaN when not drawn. */
+  private readonly axisTip = new THREE.Vector2(NaN, NaN);
+  /** The body a zoom was anchored on (SCENE_BODIES index), −1 for none. */
+  private snapped = -1;
+  private readonly zoomTmp = {
+    anchor: new THREE.Vector3(),
+    target: new THREE.Vector3(),
+    ray: new THREE.Vector3(),
+    cam: new THREE.Vector3(),
+    q: new THREE.Quaternion(),
+  };
   /** Screen insets (CSS px) covered by the HUD: the scene is centred and framed in the rest. */
   private readonly safe = { top: 0, right: 0, bottom: 0, left: 0 };
   /** Shift of the projection centre (CSS px) from the canvas centre, towards the safe area. */
@@ -368,8 +421,9 @@ export class SpaceView {
   /** Mean obliquity of date, degrees. */
   private obliquity = 0;
   private readonly poseTarget = new THREE.Vector3();
-  /** Animated move of the orbit (recentre, reset); null when none. */
-  private camTween: { from: EarthOrbit; to: EarthOrbit; start: number } | null = null;
+  /** Animated move of the orbit (recentre, reset, focus on a body); null when none. */
+  private camTween: { from: EarthOrbit; to: EarthOrbit; start: number; duration: number } | null =
+    null;
   private lastFrame = 0;
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
   private date = new Date();
@@ -671,11 +725,7 @@ export class SpaceView {
     const body = options.body && isBodyTarget(options.body) ? options.body : "Moon";
     this.bodyFrame.body = body;
     this.globe3d.setBody(body);
-    this.pov = new PovScene(engravedUniforms, {
-      uInk: this.uniforms.uInk,
-      uDpr: this.uniforms.uDpr,
-      uMoonT: this.uniforms.uMoonT,
-    });
+    this.pov = new PovScene(engravedUniforms);
 
     this.scene.add(
       this.pov.object,
@@ -946,7 +996,7 @@ export class SpaceView {
     this.dirty = true;
   }
 
-  /** Reduced motion: the static state of the points of view (ghost Suns in « Vu du sol »). */
+  /** Reduced motion (no demonstration is played by the caller; kept for the points of view). */
   setReducedMotion(on: boolean): void {
     this.reducedMotion = on;
     this.dirty = true;
@@ -1099,12 +1149,13 @@ export class SpaceView {
   }
 
   /**
-   * Where each point of view opens (#128), in the current frame (call after updateFrame):
+   * Where each point of view opens (#128, #131), in the current frame (call after updateFrame):
    * - La Terre tourne: the whole Earth, lit from the left (the camera at 90° from the Sun, so
    *   the terminator crosses the disc), 20° above the equator;
-   * - Vu du sol: above the observer, the Sun's daily circle in view;
-   * - Les saisons, Le système solaire: from 28° / 48° above the ecliptic, from longitude 180°
-   *   (June solstice on the right), the orbit or the backdrop filling the safe area;
+   * - Les saisons: the true-scale scene round the Sun, the Earth's orbit filling the safe area,
+   *   from 32° above the ecliptic (58° on a portrait screen), from longitude 180° (June solstice
+   *   on the right);
+   * - Le système solaire: the same scene out to Neptune's orbit, from 48° (64°);
    * - Visiter un astre: bodyOrbit.
    */
   private defaultOrbit(id: ReferenceFrameId = this.frameId): EarthOrbit {
@@ -1134,23 +1185,21 @@ export class SpaceView {
         }
         orbit.lat = FRAMING.earthLat;
       }
-    } else if (id === "earth") {
-      const r = GROUND_SUN_RADIUS + 0.3;
-      return this.observerOrbit(fit(r, r, FRAMING.groundFill));
-    } else if (id === "ecliptic") {
-      const portrait = safeW < safeH;
-      orbit.lat = portrait ? FRAMING.seasonsLatPortrait : FRAMING.seasonsLat;
-      const lat = orbit.lat * DEG;
-      const halfW = SEASONS_SCALE * 1.02 + GHOST_EARTH_RADIUS;
-      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2.2 * Math.cos(lat), FRAMING.seasonsFill);
-      orbit.lon = FRAMING.diagramLon;
     } else {
+      const seasons = id === "ecliptic";
       const portrait = safeW < safeH;
-      orbit.lat = portrait ? FRAMING.solarLatPortrait : FRAMING.solarLat;
-      const lat = orbit.lat * DEG;
-      const halfW = BACKDROP_RADIUS + 0.5;
-      orbit.dist = fit(halfW, halfW * Math.sin(lat) + 2 * Math.cos(lat), FRAMING.solarFill);
-      orbit.lon = FRAMING.diagramLon;
+      orbit.lat = seasons
+        ? portrait
+          ? FRAMING.seasonsLatPortrait
+          : FRAMING.seasonsLat
+        : portrait
+          ? FRAMING.solarLatPortrait
+          : FRAMING.solarLat;
+      const half = (seasons ? SEASONS_EXTENT_AU : SOLAR_EXTENT_AU) * AU;
+      const fill = seasons ? FRAMING.seasonsFill : FRAMING.solarFill;
+      // The near side of the orbit is closer, so larger on screen: a margin in height.
+      orbit.dist = fit(half, 1.3 * half * Math.sin(orbit.lat * DEG), fill);
+      orbit.lon = FRAMING.sceneLon;
     }
     orbit.dist = Math.max(this.distMin(id), Math.min(this.distMax(id), orbit.dist));
     return orbit;
@@ -1181,14 +1230,14 @@ export class SpaceView {
     this.camera.setViewOffset(w, h, -x, -y, w, h);
   }
 
-  private moveTo(to: EarthOrbit, instant: boolean): void {
+  private moveTo(to: EarthOrbit, instant: boolean, duration = RECENTRE_MS): void {
     this.input.stopInertia();
     const from = { ...this.orbit };
     to.lon = from.lon + wrapDegrees(to.lon - from.lon); // shortest way round
     if (instant) {
       this.orbit = to;
       this.camTween = null;
-    } else this.camTween = { from, to, start: performance.now() };
+    } else this.camTween = { from, to, start: performance.now(), duration };
     this.dirty = true;
   }
 
@@ -1196,26 +1245,31 @@ export class SpaceView {
   private stepCamTween(now: number): void {
     const tw = this.camTween;
     if (!tw) return;
-    const k = easeOut((now - tw.start) / RECENTRE_MS);
+    const k = easeOut((now - tw.start) / tw.duration);
     const { from: a, to: b } = tw;
     const o = this.orbit;
     o.lon = a.lon + (b.lon - a.lon) * k;
     o.lat = a.lat + (b.lat - a.lat) * k;
     o.dist = a.dist * (b.dist / a.dist) ** k;
-    o.tx = a.tx + (b.tx - a.tx) * k;
-    o.ty = a.ty + (b.ty - a.ty) * k;
-    o.tz = a.tz + (b.tz - a.tz) * k;
+    // Across the true-scale scene (to the Earth from the whole system) the point looked at
+    // arrives as the distance shrinks: geometric, see travelFraction.
+    const span = Math.hypot(b.tx - a.tx, b.ty - a.ty, b.tz - a.tz);
+    const f = travelFraction(k, span, a.dist, b.dist);
+    o.tx = a.tx + (b.tx - a.tx) * f;
+    o.ty = a.ty + (b.ty - a.ty) * f;
+    o.tz = a.tz + (b.tz - a.tz) * f;
     if (k >= 1) this.camTween = null;
     this.dirty = true;
   }
 
   /**
    * Keeps the pan within reach: the centre of the frame's target (the Earth, or the body in the
-   * body-centred frame) stays well inside the screen.
+   * body-centred frame) stays well inside the screen; in the true-scale scene (#131) the point
+   * looked at stays within SCENE_PAN_MAX of the Sun.
    */
   private clampPan(): void {
     const o = this.orbit;
-    const max = panLimit(o.dist, ORBIT_FOV, this.camera.aspect);
+    const max = this.sceneFrame() ? SCENE_PAN_MAX : panLimit(o.dist, ORBIT_FOV, this.camera.aspect);
     const n = Math.hypot(o.tx, o.ty, o.tz);
     if (n <= max) return;
     const k = max / n;
@@ -1239,13 +1293,20 @@ export class SpaceView {
     o.ty += d.y;
     o.tz += d.z;
     this.clampPan();
+    // The true-scale scene: a pan never takes the camera into a globe.
+    if (this.sceneFrame() && this.cameraInBody()) {
+      o.tx -= d.x;
+      o.ty -= d.y;
+      o.tz -= d.z;
+    }
     this.dirty = true;
   }
 
   /**
-   * Gesture intents (CSS px) mapped onto the orbit, in the current reference frame. Its pole
-   * stays up (no twist): celestial north in the star-fixed and Earth-fixed frames, the ecliptic
-   * pole in the ecliptic frame; the flights to and from the sky map land on that same up.
+   * Gesture intents (CSS px) mapped onto the orbit, in the current reference frame (#131: one
+   * finger pans, two fingers rotate and pinch, see gestures.ts). Its pole stays up (no twist):
+   * celestial north in the star-fixed frame, the ecliptic pole in the Sun-centred ones, the
+   * body's pole in the visit; the flights to and from the sky map land on that same up.
    */
   private gestures() {
     const canvas = this.options.canvas;
@@ -1257,8 +1318,10 @@ export class SpaceView {
         this.options.onInteract?.();
       },
       orbit: (dx: number, dy: number) => {
-        // Dragging turns the globe under the finger (the camera orbits the other way).
-        const k = (60 / Math.max(1, canvas.clientHeight)) * (this.orbit.dist / (4 * this.radius()));
+        // Dragging turns the scene under the fingers (the camera orbits the other way): round a
+        // globe, slower close to its surface; in the true-scale scene, at a constant rate.
+        const h = Math.max(1, canvas.clientHeight);
+        const k = this.sceneFrame() ? 150 / h : (60 / h) * (this.orbit.dist / (4 * this.radius()));
         this.orbit.lon -= dx * k;
         this.orbit.lat = Math.max(-89, Math.min(89, this.orbit.lat + dy * k));
         this.dirty = true;
@@ -1266,26 +1329,11 @@ export class SpaceView {
       pan: (dx: number, dy: number) => {
         const k = panScale(this.orbit.dist, focal(), canvas.clientHeight);
         this.shiftTarget(-dx * k, dy * k);
+        this.chooseFollow();
       },
       zoom: (factor: number, x: number, y: number) => {
-        const d = this.orbit.dist;
         this.options.onInteract?.();
-        this.zoom(factor);
-        if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
-        // Towards the point between the fingers (or under the cursor).
-        const { clientWidth: w, clientHeight: h } = canvas;
-        // From the projection centre, moved towards the safe area (setSafeArea).
-        const [cx, cy] = [w / 2 + this.viewShift.x, h / 2 + this.viewShift.y];
-        const shift = zoomAnchorShift(
-          (2 * (x - cx)) / Math.max(1, w),
-          (2 * (cy - y)) / Math.max(1, h),
-          this.camera.aspect,
-          d,
-          focal(),
-          this.orbit.dist / d,
-          this.frameTmp.shift,
-        );
-        this.shiftTarget(shift.x, shift.y);
+        this.zoomAt(factor, x, y);
       },
       tap: (x: number, y: number) => this.options.onSelect?.(this.pick(x, y)),
       doubleTap: (x: number, y: number) => this.centreAt(x, y),
@@ -1478,12 +1526,12 @@ export class SpaceView {
       up.copy(this.frameUp);
       look.copy(quaternion);
       quaternion.slerpQuaternions(tw.quat, look, move);
-      // A trip covers the distance geometrically (the same number of frames from 1 000 000 km
-      // to 100 000 km as from 100 000 km to 10 000 km), so that a far planet grows steadily
-      // instead of appearing in the last frames.
+      // The distance is covered geometrically (the same number of frames from 1 000 000 km to
+      // 100 000 km as from 100 000 km to 10 000 km), so that a far planet grows steadily instead
+      // of appearing in the last frames, and the whole solar system opens out of the Earth
+      // (travelFraction).
       const span = tw.target.distanceTo(dest);
-      const eps = trip && span > 0 ? this.orbit.dist / (span + this.orbit.dist) : 1;
-      const remaining = eps < 1 ? (eps ** move - eps) / (1 - eps) : 1 - move;
+      const remaining = 1 - travelFraction(move, span, tw.dist, this.orbit.dist);
       target.lerpVectors(dest, tw.target, remaining);
       // Back from the target along the slerped view axis, the distance interpolated
       // geometrically (the same for a frame change round the Earth, 4 → 1.1 for a trip to the
@@ -1683,21 +1731,81 @@ export class SpaceView {
   }
 
   /**
-   * Anchors of the points of view shown or being left (#128): the Sun and the Moon of « Vu du
-   * sol », the seasons and solar system diagrams. Date-dependent: run by refresh().
+   * The true-scale scene (#131), while a Sun-centred point of view is shown or being left: the
+   * bodies' positions, globes and orbits at the date (out of the ephemeris range: not drawn).
+   * Then the camera follows the body it looks at (follow). Date-dependent: run by refresh().
    */
   private refreshPointsOfView(prec: THREE.Matrix3): void {
     const tw = this.frameTween;
-    const on = (id: ReferenceFrameId) => this.frameId === id || tw?.from === id;
-    const needs = this.povNeeds;
-    needs.ground = on("earth");
-    needs.seasons = on("ecliptic");
-    needs.solar = on("heliocentric");
-    if (!needs.ground && !needs.seasons && !needs.solar) return;
-    const d = this.geoBodyDirs;
-    const sun = this.bodies ? this.povSun.set(d[0]!, d[1]!, d[2]!) : null;
-    const moon = this.bodies && this.ephemerisOk ? this.povMoon.set(d[3]!, d[4]!, d[5]!) : null;
-    this.pov.update({ date: this.date, prec, sun, moon }, needs);
+    const on = isSunCentred(this.frameId) || (!!tw && isSunCentred(tw.from));
+    if (!on) return;
+    if (!this.ephemerisOk) {
+      this.pov.ready = false;
+      return;
+    }
+    this.pov.update({ date: this.date, prec });
+    if (!this.sceneFrame() || this.follow < 0) return;
+    // The body looked at moved with the date: the point looked at moves with it.
+    const now = this.toFrame(this.pov.anchors.positions[this.follow]!, this.frameTmp.a);
+    const was = this.followAt;
+    if (Number.isFinite(was.x)) {
+      const dx = now.x - was.x;
+      const dy = now.y - was.y;
+      const dz = now.z - was.z;
+      const o = this.orbit;
+      o.tx += dx;
+      o.ty += dy;
+      o.tz += dz;
+      const tween = this.camTween;
+      if (tween) {
+        tween.from.tx += dx;
+        tween.from.ty += dy;
+        tween.from.tz += dz;
+        tween.to.tx += dx;
+        tween.to.ty += dy;
+        tween.to.tz += dz;
+      }
+    }
+    was.copy(now);
+  }
+
+  /** A world point in the current frame's axes, relative to its target (the frame's origin). */
+  private toFrame(p: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
+    return out
+      .copy(p)
+      .sub(this.frameOrigin)
+      .applyQuaternion(this.frameTmp.q.copy(this.frameQuat).invert());
+  }
+
+  /** The true-scale scene (#131) is the current point of view. */
+  private sceneFrame(): boolean {
+    return isSunCentred(this.frameId);
+  }
+
+  /**
+   * The body the camera follows (true-scale scene): the one nearest the point looked at, if
+   * within half the camera's distance of it; none otherwise (the Sun: the frame's origin).
+   */
+  private chooseFollow(): void {
+    if (!this.sceneFrame() || !this.pov.ready) {
+      this.follow = -1;
+      return;
+    }
+    const target = this.frameTmp.b.set(this.orbit.tx, this.orbit.ty, this.orbit.tz);
+    let best = -1;
+    let bestDist = 0.5 * this.orbit.dist;
+    const positions = this.pov.anchors.positions;
+    for (let i = 0; i < positions.length; i++) {
+      const d = this.toFrame(positions[i]!, this.frameTmp.a).distanceTo(target);
+      if (d < bestDist) [best, bestDist] = [i, d];
+    }
+    this.setFollow(best);
+  }
+
+  private setFollow(index: number): void {
+    this.follow = index;
+    if (index < 0) this.followAt.set(NaN, NaN, NaN);
+    else this.toFrame(this.pov.anchors.positions[index]!, this.followAt);
   }
 
   /** Planets are drawn (layer on, data given, date within the ephemeris range). */
@@ -1756,6 +1864,13 @@ export class SpaceView {
     if (!posed) this.placeCamera();
     this.camera.updateMatrixWorld();
     const dist = this.camera.position.length();
+    // Points of view (#128): weights of their anchors and of the sky glyphs they replace.
+    this.applyViewShift(!posed);
+    this.updateWeights();
+    const w = this.weights;
+    const sunCentred = w.ecliptic + w.heliocentric;
+    this.pov.setWeights(w);
+    this.pov.setCamera(this.camera.position);
     this.updateClipping(dist);
     this.blendSky();
     this.applyGlobes();
@@ -1763,26 +1878,17 @@ export class SpaceView {
     this.fadingGlobe.setCamera(this.camera.position);
     // Mix with zoom: engraved from afar, relief shows through when close.
     this.uniforms.uDetail.value = globeDetail(dist);
-    // Points of view (#128): weights of their anchors and of the sky glyphs they replace.
-    this.applyViewShift(!posed);
-    this.updateWeights();
-    const w = this.weights;
-    const sunCentred = w.ecliptic + w.heliocentric;
-    this.pov.setWeights(w, this.reducedMotion);
-    this.pov.setCamera(this.camera.position);
-    // Sun and Moon at infinity: replaced by their glyphs round the Earth (Vu du sol) or by the
-    // diagrams' Sun; planets at infinity: replaced by the solar system's.
-    this.uniforms.uGlyphs.value = Math.max(0, 1 - w.earth - sunCentred);
+    // Sun, Moon and planets at infinity: replaced by the true-scale scene's globes (#131).
+    this.uniforms.uGlyphs.value = Math.max(0, 1 - sunCentred);
     this.uniforms.uPlanetGlyphs.value = Math.max(0, 1 - sunCentred);
-    // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar;
-    // too small to read on the diagrams' Earth.
-    this.observerMarker.visible = dist > 1.05 && sunCentred < 0.5;
+    this.real?.setSceneBodies(sunCentred >= 0.5);
+    // "You are here" (disc, zenith line) would surround the eye on the ground: shown from afar,
+    // not when the Earth is a speck of the solar system.
+    this.observerMarker.visible = dist > 1.05 && dist < DIST_MAX;
     this.axis.visible = dist >= DIST_MIN;
-    // The axis is drawn longer on the diagrams' small Earth, as the seasons' guide.
-    this.axis.scale.set(1, 1, 1 + 0.7 * sunCentred);
+    // The ecliptic pole and the tilt arc on the Earth, as the seasons' guide, when close to it.
     const guide = w.ecliptic;
-    this.eclipticGuide.visible = guide > 0 && dist >= DIST_MIN;
-    this.eclipticGuide.scale.setScalar(1 + 0.6 * guide);
+    this.eclipticGuide.visible = guide > 0 && dist >= DIST_MIN && dist < DIST_MAX;
     for (const m of this.guideMaterials) m.opacity = m.userData.opacity * guide;
     if (this.style === "realistic")
       this.real?.setCameraEarth(this.camera.position, this.earth.rotation.z);
@@ -1792,15 +1898,6 @@ export class SpaceView {
       const [sx, sy] = s ? s : [NaN, NaN];
       const m = this.screenOf(this.dirAt(1, moon));
       if (s && m) this.uniforms.uSunAngle.value = Math.atan2(-(sy - m[1]), sx - m[0]);
-    }
-    if (w.earth > 0 && this.bodies) {
-      // The Moon of « Vu du sol », lit from the Sun drawn beside it.
-      const a = this.pov.anchors;
-      const s = this.screenOf(a.groundSun, false);
-      const sx = s ? s[0] : NaN;
-      const sy = s ? s[1] : NaN;
-      const m = this.screenOf(a.groundMoon, false);
-      if (s && m) this.pov.glyphUniforms.uSunAngle.value = Math.atan2(-(sy - m[1]), sx - m[0]);
     }
     this.renderer.render(this.scene, this.camera);
     this.drawLabels();
@@ -1904,7 +2001,7 @@ export class SpaceView {
     if (w.stars >= 0.5) this.drawSunlight(layout);
     // On the ground (flight) the marker is hidden: its label would float overhead.
     if (this.observerMarker.visible) label(labels.here, here, false);
-    this.labelPointsOfView(label, font, layout);
+    this.labelPointsOfView(font, layout);
     font("700 11px", "0.12em");
     if (this.bodies && this.uniforms.uGlyphs.value >= 0.5) {
       label(labels.sun, this.dirAt(0, sun), true, 20);
@@ -1927,7 +2024,7 @@ export class SpaceView {
       });
     }
     font("700 11px", "0.12em");
-    if (w.stars + w.earth >= 0.5) label(labels.pole, pole, true);
+    if (w.stars >= 0.5) label(labels.pole, pole, true);
     // Dated monthly marks of the selected planet's path (lowest priority).
     if (this.pathPoints.visible && this.pathMarks.length && w.ecliptic + w.heliocentric < 0.5) {
       font("400 9px", "0.06em");
@@ -1953,30 +2050,22 @@ export class SpaceView {
   }
 
   /**
-   * Labels of the points of view's anchors (#128): the Sun and the Moon round the Earth (Vu du
-   * sol), the rotation (La Terre tourne), the Sun, the Earth, its axis and the season marks
-   * (Les saisons), the Sun and the planets (Le système solaire).
+   * Labels of the points of view's anchors (#128, #131): the rotation (La Terre tourne), the
+   * true-scale scene's markers, names, season marks and scale bar (Les saisons, Le système
+   * solaire).
    */
   private labelPointsOfView(
-    label: (text: string, p: THREE.Vector3, atInfinity: boolean, dx?: number) => void,
     font: (weightSize: string, spacing: string) => void,
     layout: LabelLayout,
   ): void {
     const w = this.weights;
-    const a = this.pov.anchors;
     const { labels } = this.options;
     if (w.stars >= 0.5 && labels.rotation) {
       font("400 10px", "0.08em");
       this.labelSpin(layout, labels.rotation);
     }
-    if (w.earth >= 0.5 && this.bodies) {
-      font("700 11px", "0.12em");
-      label(labels.sun, a.groundSun, false, 20);
-      if (this.ephemerisOk) label(labels.moon, a.groundMoon, false, 16);
-      this.drawSubSolarPoint();
-    }
-    if (w.ecliptic >= 0.5 && this.pov.ready.seasons) this.labelSeasons(layout, font);
-    if (w.heliocentric >= 0.5 && this.pov.ready.solar) this.labelSolarSystem(layout, font);
+    this.sceneOk.fill(0);
+    if (w.ecliptic + w.heliocentric >= 0.5 && this.pov.sceneShown()) this.labelScene(layout, font);
   }
 
   /**
@@ -2015,110 +2104,371 @@ export class SpaceView {
   }
 
   /**
-   * « Les saisons »: the four marks and the Earth, each labelled outwards from the Sun, with a
-   * leader line when it has to move away. When the Earth is within SEASON_NEAR_DAYS of a mark,
-   * the two merge: « Terre · équinoxe dans 13 j », and the ghost keeps no label of its own.
+   * The true-scale scene (#131), on the overlay: the Sun's engraved glow; each body's engraved
+   * marker (its phase as seen from the camera, lit from the Sun's side), faded out once its true
+   * globe is GLOBE_MIN_PX in radius (markerOpacity), and its name, placed away from the Sun;
+   * markers closer than MARKER_MERGE_PX merge, the first in SCENE_BODIES order staying. In
+   * « Les saisons », the Earth at the equinoxes and solstices (dated) and the direction of its
+   * axis on each of its markers. Then the scale bar. Allocation-free but for the layout's
+   * rectangles (as every label).
    */
-  private labelSeasons(
-    layout: LabelLayout,
-    font: (weightSize: string, spacing: string) => void,
-  ): void {
+  private labelScene(layout: LabelLayout, font: (weightSize: string, spacing: string) => void) {
     const a = this.pov.anchors;
     const { labels } = this.options;
-    const sun = this.screenOf(a.seasonsSun, false);
-    if (!sun) return;
-    const [sx, sy] = [sun[0], sun[1]];
-    this.reserveGlyph(layout, a.seasonsSun, 18);
-    // The Earths' discs first, so that no label covers one.
-    this.reserveGlyph(layout, ORIGIN, this.pixelRadius(ORIGIN, 1));
-    for (const m of a.marks)
-      this.reserveGlyph(layout, m.position, this.pixelRadius(m.position, GHOST_EARTH_RADIUS));
-    // Mark nearest in time to the date shown.
+    const names = this.options.planetNames;
+    const seasons = this.weights.ecliptic >= 0.5;
+    const xyr = this.sceneScreen;
+    const ok = this.sceneOk;
+    this.drawScaleBar(layout, font);
+    // Screen places, merging of the crowded markers, discs reserved before any label.
+    let count = 0;
+    for (let i = 0; i < SCENE_BODIES.length; i++) {
+      const p = a.positions[i]!;
+      if (this.sceneHidden(p, i)) continue;
+      const s = this.screenOf(p, false);
+      if (!s) continue;
+      const x = s[0];
+      const y = s[1];
+      const r = this.pixelRadius(p, a.radii[i]!);
+      const reach = i === 0 ? Math.max(r, 10) : Math.max(r, MARKER_PX);
+      let merged = false;
+      for (let j = 0; j < count; j++) {
+        const k = this.sceneOrder[j]!;
+        const d = Math.hypot(x - xyr[3 * k]!, y - xyr[3 * k + 1]!);
+        // Within the Sun's glow, or on another marker.
+        const clear = k === 0 ? xyr[2]! + 4 : MARKER_MERGE_PX;
+        if (d < clear) {
+          merged = true;
+          break;
+        }
+      }
+      if (merged) continue;
+      xyr[3 * i] = x;
+      xyr[3 * i + 1] = y;
+      xyr[3 * i + 2] = reach;
+      ok[i] = 1;
+      this.sceneOrder[count++] = i;
+      layout.place([{ x: x - reach, y: y - reach, w: 2 * reach, h: 2 * reach }]);
+    }
+    let sx = xyr[0]!;
+    let sy = xyr[1]!;
+    if (!ok[0]) {
+      // The Sun off screen: names still pushed away from its side.
+      const toSun = this.bodyTmp.c.copy(a.positions[0]!).sub(this.poseTarget);
+      const u = this.screenDirection(this.poseTarget, toSun);
+      const c = this.screenOf(this.poseTarget, false);
+      sx = (c ? c[0] : 0) + (u ? u.x : 0) * 1e4;
+      sy = (c ? c[1] : 0) + (u ? u.y : -1) * 1e4;
+    }
+    const ctx = this.ctx;
+    ctx.strokeStyle = this.options.theme.ink;
+    ctx.fillStyle = this.options.theme.ink;
+    ctx.lineWidth = 1;
+    if (ok[0]) this.drawSunGlow(sx, sy, this.pixelRadius(a.positions[0]!, a.radii[0]!));
+    // Markers.
+    const e = SCENE_INDEX.Earth;
+    for (let j = 0; j < count; j++) {
+      const i = this.sceneOrder[j]!;
+      if (i === 0) continue;
+      const p = a.positions[i]!;
+      const alpha = markerOpacity(this.pixelRadius(p, a.radii[i]!));
+      if (seasons && i === e) this.drawAxisTick(p, xyr[3 * i]!, xyr[3 * i + 1]!, 1);
+      if (alpha <= 0) continue;
+      const faint = seasons && i !== e ? 0.6 : 1;
+      this.drawPhase(p, xyr[3 * i]!, xyr[3 * i + 1]!, MARKER_PX, alpha * faint);
+    }
+    ctx.globalAlpha = 1;
+    // « Les saisons »: the season mark nearest in time to the date shown.
     let near = -1;
     let nearDays = Infinity;
-    for (let i = 0; i < 4; i++) {
-      const days = (a.marks[i]!.date.getTime() - this.date.getTime()) / 86_400_000;
-      if (Math.abs(days) < Math.abs(nearDays)) [near, nearDays] = [i, days];
+    if (seasons) {
+      for (let i = 0; i < 4; i++) {
+        const days = (a.marks[i]!.date.getTime() - this.date.getTime()) / 86_400_000;
+        if (Math.abs(days) < Math.abs(nearDays)) {
+          near = i;
+          nearDays = days;
+        }
+      }
     }
-    const merged = Math.abs(nearDays) <= SEASON_NEAR_DAYS && !!this.options.formatEarthSeason;
+    const merged = seasons && Math.abs(nearDays) <= SEASON_NEAR_DAYS;
+    // Names: the Sun, the Earth (merged with a near season), the marks, then the others.
     font("700 11px", "0.12em");
-    label: if (labels.earth) {
+    if (ok[0]) this.labelOutward(layout, labels.sun, sx, sy, xyr[2]! + 4, sx, sy - 1);
+    if (ok[e] && labels.earth) {
       let text = labels.earth;
-      if (merged) {
+      if (merged && this.options.formatEarthSeason) {
         const days = Math.round(nearDays);
         const cache = this.earthSeasonText;
         if (cache.kind !== near || cache.days !== days) {
           cache.kind = near;
           cache.days = days;
-          cache.text = this.options.formatEarthSeason!(a.marks[near]!.kind, days);
+          cache.text = this.options.formatEarthSeason(a.marks[near]!.kind, days);
         }
         text = cache.text;
       }
-      const e = this.screenOf(ORIGIN, false);
-      if (!e) break label;
-      this.labelOutward(layout, text, e[0], e[1], this.pixelRadius(ORIGIN, 1), sx, sy);
+      this.labelOutward(layout, text, xyr[3 * e]!, xyr[3 * e + 1]!, xyr[3 * e + 2]! + 2, sx, sy);
     }
-    const format = this.options.formatSeason;
-    if (format) {
-      const texts = this.seasonTexts;
-      const time = a.marks[0]!.date.getTime();
-      if (texts.time !== time) {
-        texts.time = time;
-        for (let i = 0; i < 4; i++) texts.texts[i] = format(a.marks[i]!.kind, a.marks[i]!.date);
-      }
+    if (seasons) this.labelSeasonMarks(layout, font, merged ? near : -1, sx, sy);
+    font("700 10px", "0.12em");
+    if (seasons) ctx.globalAlpha = 0.75;
+    for (let j = 0; j < count; j++) {
+      const i = this.sceneOrder[j]!;
+      if (i === 0 || i === e) continue;
+      const body = SCENE_BODIES[i]!;
+      const text = body === "Moon" ? labels.moon : names?.[body as Planet];
+      if (!text) continue;
+      this.labelOutward(layout, text, xyr[3 * i]!, xyr[3 * i + 1]!, xyr[3 * i + 2]! + 2, sx, sy);
+    }
+    ctx.globalAlpha = 1;
+    if (seasons && labels.axis && ok[e] && Number.isFinite(this.axisTip.x)) {
+      // The axis' name at the north end of the Earth's tick, only where it fits beside it.
       font("400 10px", "0.06em");
-      for (let i = 0; i < 4; i++) {
-        if (merged && i === near) continue;
-        const p = a.marks[i]!.position;
-        const s = this.screenOf(p, false);
-        if (!s || this.hiddenByEarth(p, false)) continue;
-        const r = this.pixelRadius(p, GHOST_EARTH_RADIUS);
-        this.labelOutward(layout, texts.texts[i]!, s[0], s[1], r, sx, sy);
-      }
-    }
-    font("700 11px", "0.12em");
-    this.labelOutward(layout, labels.sun, sx, sy, 22, sx, sy - 1);
-    if (labels.axis) {
-      const top = this.frameTmp.tilt.set(0, 0, 1.5 * this.axis.scale.z + 0.1);
-      const s = this.screenOf(top, false);
-      if (s) this.labelOutward(layout, labels.axis, s[0], s[1], 4, sx, sy);
+      const t = labels.axis.toUpperCase();
+      const tw = ctx.measureText(t).width;
+      const { x, y } = this.axisTip;
+      const r = layout.place([
+        { x: x + 4, y: y - 6, w: tw, h: 12 },
+        { x: x - 4 - tw, y: y - 6, w: tw, h: 12 },
+        { x: x - tw / 2, y: y - 18, w: tw, h: 12 },
+      ]);
+      if (r) ctx.fillText(t, r.x, r.y + 6);
     }
   }
 
   /**
-   * « Le système solaire »: the Sun, then every body from the Sun outwards, each labelled away
-   * from the Sun, with a leader line when the planets are crowded (the inner ones on a phone).
+   * « Les saisons »: the Earth at the equinoxes and solstices of the year (phase and axis, as
+   * its own marker but fainter), each with its date; `skip`: the mark merged with the Earth's
+   * label.
    */
-  private labelSolarSystem(
+  private labelSeasonMarks(
+    layout: LabelLayout,
+    font: (weightSize: string, spacing: string) => void,
+    skip: number,
+    sx: number,
+    sy: number,
+  ): void {
+    const a = this.pov.anchors;
+    const format = this.options.formatSeason;
+    const texts = this.seasonTexts;
+    const time = a.marks[0]!.date.getTime();
+    if (format && texts.time !== time) {
+      texts.time = time;
+      for (let i = 0; i < 4; i++) texts.texts[i] = format(a.marks[i]!.kind, a.marks[i]!.date);
+    }
+    const ctx = this.ctx;
+    const xyr = this.sceneScreen;
+    const e = SCENE_INDEX.Earth;
+    font("400 10px", "0.06em");
+    for (let i = 0; i < 4; i++) {
+      const p = a.marks[i]!.position;
+      if (this.sceneHidden(p, -1)) continue;
+      const s = this.screenOf(p, false);
+      if (!s) continue;
+      const x = s[0];
+      const y = s[1];
+      // The Earth itself on a mark: drawn once.
+      const onEarth = this.sceneOk[e] === 1 && Math.hypot(x - xyr[3 * e]!, y - xyr[3 * e + 1]!) < 4;
+      if (!onEarth) {
+        this.drawAxisTick(p, x, y, 0.7, false);
+        this.drawPhase(p, x, y, MARKER_PX - 0.5, 0.7);
+        layout.place([{ x: x - MARKER_PX, y: y - MARKER_PX, w: 2 * MARKER_PX, h: 2 * MARKER_PX }]);
+      }
+      ctx.globalAlpha = 1;
+      if (i === skip || !format) continue;
+      this.labelOutward(layout, texts.texts[i]!, x, y, MARKER_PX + 2, sx, sy);
+    }
+  }
+
+  /**
+   * A body's engraved marker at (x, y): a circle of radius r, its lit part filled as seen from
+   * the camera (the phase: the terminator is an ellipse of half-width r·cos α, α the angle
+   * Sun–body–camera), turned towards the Sun on screen.
+   */
+  private drawPhase(p: THREE.Vector3, x: number, y: number, r: number, alpha: number): void {
+    const ctx = this.ctx;
+    const toSun = this.frameTmp.sun.copy(this.pov.anchors.positions[0]!).sub(p);
+    const toCam = this.frameTmp.moon.copy(this.camera.position).sub(p).normalize();
+    const u = this.screenDirection(p, toSun);
+    const cosA = toSun.normalize().dot(toCam);
+    ctx.globalAlpha = alpha;
+    ctx.setLineDash(NO_DASH);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.stroke();
+    if (!u) return;
+    const ux = u.x;
+    const uy = u.y;
+    ctx.beginPath();
+    for (let i = 0; i <= 12; i++) {
+      const t = -Math.PI / 2 + (Math.PI * i) / 12;
+      const c = r * Math.cos(t);
+      const s = r * Math.sin(t);
+      if (i === 0) ctx.moveTo(x + c * ux - s * uy, y + c * uy + s * ux);
+      else ctx.lineTo(x + c * ux - s * uy, y + c * uy + s * ux);
+    }
+    for (let i = 0; i <= 12; i++) {
+      const t = Math.PI / 2 - (Math.PI * i) / 12;
+      const c = -r * cosA * Math.cos(t);
+      const s = r * Math.sin(t);
+      ctx.lineTo(x + c * ux - s * uy, y + c * uy + s * ux);
+    }
+    ctx.fill();
+  }
+
+  /**
+   * The direction of the Earth's axis (the celestial pole of date) at the world point p, as a
+   * tick through its marker at (x, y), a dot at the north end; `keep`: remember the north tip
+   * for the axis' label.
+   */
+  private drawAxisTick(p: THREE.Vector3, x: number, y: number, alpha: number, keep = true): void {
+    if (keep) this.axisTip.set(NaN, NaN);
+    const u = this.screenDirection(p, this.frameTmp.pole.set(0, 0, 1));
+    if (!u) return;
+    const ctx = this.ctx;
+    const ux = u.x;
+    const uy = u.y;
+    ctx.globalAlpha = alpha;
+    ctx.setLineDash(NO_DASH);
+    ctx.beginPath();
+    ctx.moveTo(x - ux * AXIS_TICK_PX, y - uy * AXIS_TICK_PX);
+    ctx.lineTo(x + ux * AXIS_TICK_PX, y + uy * AXIS_TICK_PX);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x + ux * AXIS_TICK_PX, y + uy * AXIS_TICK_PX, 1.8, 0, 2 * Math.PI);
+    ctx.fill();
+    if (keep) this.axisTip.set(x + ux * (AXIS_TICK_PX + 2), y + uy * (AXIS_TICK_PX + 2));
+  }
+
+  /**
+   * Unit screen direction (CSS px, y down) of the world direction `dir` at the world point `p`
+   * (the projection of a short step along it), or null. The result is frameTmp.shift.
+   */
+  private screenDirection(p: THREE.Vector3, dir: THREE.Vector3): { x: number; y: number } | null {
+    const s0 = this.screenOf(p, false);
+    if (!s0) return null;
+    const x0 = s0[0];
+    const y0 = s0[1];
+    const len = dir.length();
+    if (!(len > 0)) return null;
+    const step = (1e-3 * this.camera.position.distanceTo(p)) / len;
+    const q = this.frameTmp.marker.copy(p).addScaledVector(dir, step);
+    const s1 = this.screenOf(q, false);
+    if (!s1) return null;
+    const dx = s1[0] - x0;
+    const dy = s1[1] - y0;
+    const n = Math.hypot(dx, dy);
+    if (!(n > 1e-9)) return null;
+    const out = this.frameTmp.shift;
+    out.x = dx / n;
+    out.y = dy / n;
+    return out;
+  }
+
+  /**
+   * The Sun's engraved glow (#131), so that the Sun at its true size (a fraction of a pixel seen
+   * from Neptune) is always found: twelve rays round its disc (a dot when it is smaller than
+   * 3 px), fainter once the disc is large.
+   */
+  private drawSunGlow(x: number, y: number, r: number): void {
+    const ctx = this.ctx;
+    const R = Math.max(r, 2.5);
+    ctx.globalAlpha = r < 40 ? 0.95 : Math.max(0.3, 0.95 - (r - 40) / 250);
+    ctx.setLineDash(NO_DASH);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < 12; i++) {
+      const t = (i / 12) * 2 * Math.PI;
+      const c = Math.cos(t);
+      const s = Math.sin(t);
+      const end = R + (i % 2 ? 8 : 12);
+      ctx.moveTo(x + (R + 4) * c, y + (R + 4) * s);
+      ctx.lineTo(x + end * c, y + end * s);
+    }
+    ctx.stroke();
+    if (r < 3) {
+      ctx.beginPath();
+      ctx.arc(x, y, R, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Scale bar of the true-scale scene (#131), bottom left of the safe area: a round length at
+   * the depth of the point looked at (« 1 ua », « 100 000 km »), its text via formatScale.
+   */
+  private drawScaleBar(
     layout: LabelLayout,
     font: (weightSize: string, spacing: string) => void,
   ): void {
-    const a = this.pov.anchors;
-    const { labels } = this.options;
-    const sun = this.screenOf(a.solarSun, false);
-    if (!sun) return;
-    const [sx, sy] = [sun[0], sun[1]];
-    this.reserveGlyph(layout, a.solarSun, 16);
-    // The planets' discs first, so that no label covers a planet.
-    for (let i = 0; i < PLANETS.length; i++)
-      this.reserveGlyph(layout, a.planets[i]!, this.pixelRadius(a.planets[i]!, a.planetRadius[i]!));
-    this.reserveGlyph(layout, ORIGIN, this.pixelRadius(ORIGIN, 1));
-    font("700 11px", "0.12em");
-    this.labelOutward(layout, labels.sun, sx, sy, 20, sx, sy - 1);
-    const names = this.options.planetNames;
-    font("700 10px", "0.12em");
-    for (let k = 0; k < SOLAR_ORDER.length; k++) {
-      const i: number = SOLAR_ORDER[k]!;
-      const earth = i < 0;
-      const text = earth ? labels.earth : names?.[PLANETS[i]!];
-      if (!text) continue;
-      const p = earth ? ORIGIN : a.planets[i]!;
-      if (!earth && this.hiddenByEarth(p, false)) continue;
-      const s = this.screenOf(p, false);
-      if (!s) continue;
-      const r = this.pixelRadius(p, earth ? 1 : a.planetRadius[i]!);
-      this.labelOutward(layout, text, s[0], s[1], r, sx, sy);
+    const format = this.options.formatScale;
+    if (!format) return;
+    const d = this.camera.position.distanceTo(this.poseTarget);
+    const bar = scaleBar((d * EARTH_RADIUS_KM) / this.focalPx(), SCALE_BAR_PX, this.scaleBar);
+    if (!(bar.px > 4)) return;
+    const cache = this.scaleText;
+    if (cache.value !== bar.value || cache.unit !== bar.unit) {
+      cache.value = bar.value;
+      cache.unit = bar.unit;
+      cache.text = format(bar.value, bar.unit).toUpperCase();
     }
+    const ctx = this.ctx;
+    font("400 10px", "0.08em");
+    const tw = ctx.measureText(cache.text).width;
+    const { clientWidth: width, clientHeight: height } = this.options.canvas;
+    // Bottom right of the safe area (the point of view's caption sits bottom left), else bottom
+    // left, else at the top (clear of the HUD).
+    const bw = Math.max(bar.px, tw) + 4;
+    const left = this.safe.left + 14;
+    const right = width - this.safe.right - 14 - bw;
+    const bottom = height - this.safe.bottom - 34;
+    const top = this.safe.top + 8;
+    const r = layout.place([
+      { x: right, y: bottom, w: bw, h: 26 },
+      { x: left, y: bottom, w: bw, h: 26 },
+      { x: left, y: top, w: bw, h: 26 },
+      { x: right, y: top, w: bw, h: 26 },
+    ]);
+    if (!r) return;
+    const x = r.x + 2;
+    const y = r.y + 20;
+    ctx.strokeStyle = this.options.theme.ink;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash(NO_DASH);
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(x, y - 5);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + bar.px, y);
+    ctx.lineTo(x + bar.px, y - 5);
+    ctx.stroke();
+    ctx.fillText(cache.text, x, y - 12);
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 1;
+  }
+
+  /** Focal length of the camera in CSS px (vertical). */
+  private focalPx(): number {
+    return this.options.canvas.clientHeight / 2 / Math.tan((this.camera.fov * DEG) / 2);
+  }
+
+  /**
+   * True-scale scene: a body (SCENE_BODIES index `self`, −1 for another point) hidden behind the
+   * Earth, a visited globe or the Sun.
+   */
+  private sceneHidden(p: THREE.Vector3, self: number): boolean {
+    if (self !== SCENE_INDEX.Earth && this.hiddenByEarth(p, false)) return true;
+    if (self === 0) return false;
+    const a = this.pov.anchors;
+    return hiddenBySphere(
+      this.camera.position,
+      p,
+      false,
+      a.positions[0]!,
+      a.radii[0]!,
+      this.bodyTmp,
+    );
   }
 
   /**
@@ -2187,34 +2537,9 @@ export class SpaceView {
     }
   }
 
-  /** Keeps labels off the disc of a Sun glyph (half-size `r` CSS px) at the world point p. */
-  private reserveGlyph(layout: LabelLayout, p: THREE.Vector3, r: number): void {
-    const s = this.screenOf(p, false);
-    if (s) layout.place([{ x: s[0] - r, y: s[1] - r, w: 2 * r, h: 2 * r }]);
-  }
-
   /** Apparent radius (CSS px) of a sphere of radius r at the world point p. */
   private pixelRadius(p: THREE.Vector3, r: number): number {
-    const d = Math.max(r * 1.001, this.camera.position.distanceTo(p));
-    const focalPx = this.options.canvas.clientHeight / 2 / Math.tan((this.camera.fov * DEG) / 2);
-    return (r / Math.sqrt(d * d - r * r)) * focalPx;
-  }
-
-  /** « Vu du sol »: today's sub-solar point, a ringed dot on the globe (#128). */
-  private drawSubSolarPoint(): void {
-    const p = this.pov.anchors.subSolar;
-    if (this.hiddenByEarth(p, false)) return;
-    const s = this.screenOf(p, false);
-    if (!s) return;
-    const ctx = this.ctx;
-    ctx.beginPath();
-    ctx.arc(s[0], s[1], 2.5, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(s[0], s[1], 6, 0, 2 * Math.PI);
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = this.options.theme.ink;
-    ctx.stroke();
+    return apparentRadiusPx(r, this.camera.position.distanceTo(p), this.focalPx());
   }
 
   /**
@@ -2310,6 +2635,25 @@ export class SpaceView {
   private drawSelectionMarker(): void {
     const marked = this.marked;
     if (!marked) return;
+    if (this.weights.ecliptic + this.weights.heliocentric >= 0.5) {
+      // True-scale scene (#131): round the body's marker or disc, as drawn (stars: none).
+      const i =
+        marked.kind === "sun"
+          ? 0
+          : marked.kind === "moon"
+            ? SCENE_INDEX.Moon
+            : marked.kind === "planet"
+              ? SCENE_INDEX[PLANETS[marked.index]!]
+              : -1;
+      if (i < 0 || !this.sceneOk[i]) return;
+      const xyr = this.sceneScreen;
+      const ink = this.options.theme.ink;
+      const r = Math.max(STAR_MARKER_RADIUS, xyr[3 * i + 2]! + MARKER_GAP);
+      this.markerPattern = inkPattern(this.ctx, ink, this.markerPattern);
+      drawMarker(this.ctx, xyr[3 * i]!, xyr[3 * i + 1]!, r, 1, ink, this.markerPattern.pattern);
+      this.ctx.globalAlpha = 1;
+      return;
+    }
     const dir = this.frameTmp.marker;
     let radius = STAR_MARKER_RADIUS;
     if (marked.kind === "star") {
@@ -2359,8 +2703,7 @@ export class SpaceView {
   private pick(x: number, y: number): SkySelection | null {
     const onGlobe = this.pickGlobe(x, y);
     if (onGlobe) return onGlobe;
-    if (this.weights.heliocentric >= 0.5) return this.pickPlanetDiagram(x, y);
-    if (this.weights.ecliptic >= 0.5) return null;
+    if (this.weights.ecliptic + this.weights.heliocentric >= 0.5) return this.pickScene(x, y);
     let best: SkySelection | null = null;
     let bestDist = Infinity;
     const consider = (dir: THREE.Vector3, radius: number, selection: SkySelection) => {
@@ -2393,22 +2736,47 @@ export class SpaceView {
     return best;
   }
 
-  /** « Le système solaire » (#128): the planet whose drawn globe is under (x, y), CSS px. */
-  private pickPlanetDiagram(x: number, y: number): SkySelection | null {
-    if (!this.pov.planetShown()) return null;
-    const a = this.pov.anchors;
+  /**
+   * The true-scale scene (#131): the body whose marker or disc (as drawn in the last frame) is
+   * under (x, y), CSS px. The Sun, the Moon and the planets are selected (the caller starts the
+   * visit); a tap on the Earth brings the camera to it (focusBody), as the « zoom on the Earth »
+   * of « Les saisons ».
+   */
+  private pickScene(x: number, y: number): SkySelection | null {
+    const xyr = this.sceneScreen;
     let best = -1;
     let bestDist = Infinity;
-    for (let i = 0; i < PLANETS.length; i++) {
-      const p = a.planets[i]!;
-      const r = Math.max(22, this.pixelRadius(p, a.planetRadius[i]!) + 6);
-      if (this.hiddenByEarth(p, false)) continue;
-      const s = this.screenOf(p, false);
-      if (!s) continue;
-      const d = Math.hypot(s[0] - x, s[1] - y);
-      if (d < r && d < bestDist) [best, bestDist] = [i, d];
+    for (let i = 0; i < SCENE_BODIES.length; i++) {
+      if (!this.sceneOk[i]) continue;
+      const d = Math.hypot(xyr[3 * i]! - x, xyr[3 * i + 1]! - y);
+      if (d < Math.max(22, xyr[3 * i + 2]! + 6) && d < bestDist) {
+        best = i;
+        bestDist = d;
+      }
     }
-    return best < 0 ? null : { kind: "planet", planet: PLANETS[best]! };
+    if (best < 0) return null;
+    const body = SCENE_BODIES[best]!;
+    if (body === "Earth") {
+      this.focusBody(best);
+      return null;
+    }
+    if (body === "Sun" || body === "Moon") return { kind: "body", body };
+    return { kind: "planet", planet: body };
+  }
+
+  /**
+   * True-scale scene: the camera travels to a body (a few of its radii away, the angles kept)
+   * and follows it as the date moves.
+   */
+  private focusBody(index: number): void {
+    if (!this.pov.ready) return;
+    const a = this.pov.anchors;
+    const t = this.toFrame(a.positions[index]!, this.frameTmp.a);
+    const dist = Math.max(this.distMin(), 4.5 * a.radii[index]!);
+    const { lon, lat } = this.orbit;
+    const to = { lon, lat, dist, tx: t.x, ty: t.y, tz: t.z };
+    this.moveTo(to, this.reducedMotion, FRAME_TRANSITION_MS);
+    this.setFollow(index);
   }
 
   // --- Body-centred frame (#123)
@@ -2496,23 +2864,20 @@ export class SpaceView {
   }
 
   /**
-   * Size (Earth radii) of what the frame's camera orbits: the body in the body frame, the Earth's
-   * orbit (8) or Saturn's (≈ 25) in the diagrams (#128), else the Earth. Scales the zoom limits
-   * and the orbit gesture.
+   * Size (Earth radii) of what the frame's camera orbits: the body in the body frame, else the
+   * Earth. Scales the zoom limits and the orbit gesture round a globe.
    */
   private radius(id: ReferenceFrameId = this.frameId): number {
-    if (id === "body") return bodyRadius(this.bodyFrame.body);
-    if (id === "ecliptic") return SEASONS_SCALE;
-    if (id === "heliocentric") return 25;
-    return 1;
+    return id === "body" ? bodyRadius(this.bodyFrame.body) : 1;
   }
 
+  /** Closest camera distance to the point looked at (true-scale scene: SCENE_DIST). */
   private distMin(id: ReferenceFrameId = this.frameId): number {
-    return DIST_MIN * this.radius(id);
+    return isSunCentred(id) ? SCENE_DIST.min : DIST_MIN * this.radius(id);
   }
 
   private distMax(id: ReferenceFrameId = this.frameId): number {
-    return DIST_MAX * this.radius(id);
+    return isSunCentred(id) ? SCENE_DIST.max : DIST_MAX * this.radius(id);
   }
 
   /** Centre (world) of the frame's target: the body's globe, or the Earth's. */
@@ -2647,11 +3012,16 @@ export class SpaceView {
   }
 
   /**
-   * Near and far planes: the near plane half-way to the closest surface (the Earth's, or a body
-   * globe's), at most 0.01 round the Earth as before; the far plane beyond the Earth and the
-   * globes (the sky sits on it whatever its distance).
+   * Near and far planes, adapted to the zoom (#131): the near plane half-way to the closest
+   * surface (the Earth's, a visited globe's, or any globe of the true-scale scene), at most 0.01
+   * round the Earth as before, or 2 % of the distance looked at in the true-scale scene (the
+   * orbits passing by the camera); the far plane beyond the globes and, in the true-scale scene,
+   * 45 au beyond the Sun (the sky sits on it whatever its distance). The ratio stays below
+   * ≈ 10⁷: with a 24-bit depth buffer, what is large enough to be seen (≥ 1 px) is resolved in
+   * depth, so nothing z-fights at any zoom.
    */
   private updateClipping(earthDist: number): void {
+    const cam = this.camera.position;
     let surface = earthDist - 1;
     let far = Math.max(100, earthDist + 2);
     let globes = false;
@@ -2660,18 +3030,17 @@ export class SpaceView {
       if (!g.object.visible) continue;
       globes = true;
       const r = bodyRadius(g.getBody());
-      const d = this.camera.position.distanceTo(g.object.position);
+      const d = cam.distanceTo(g.object.position);
       surface = Math.min(surface, d - r);
       far = Math.max(far, d + 3 * r);
     }
-    // Sun-centred diagrams (#128): the orbits and the backdrop round the drawn Sun.
     let cap = globes ? Infinity : 0.01;
-    const w = this.weights;
-    if (w.ecliptic + w.heliocentric > 0) {
-      const toTarget = this.camera.position.distanceTo(this.poseTarget);
-      const extent = w.heliocentric > 0 ? BACKDROP_RADIUS + 4 : SEASONS_SCALE * 1.1 + 3;
-      far = Math.max(far, (toTarget + extent) * 1.1 + this.poseTarget.length());
-      if (!globes) cap = Math.max(0.01, 0.05 * toTarget);
+    if (this.pov.sceneShown()) {
+      const a = this.pov.anchors;
+      for (let i = 0; i < SCENE_BODIES.length; i++)
+        surface = Math.min(surface, cam.distanceTo(a.positions[i]!) - a.radii[i]!);
+      cap = Math.max(0.01, 0.02 * cam.distanceTo(this.poseTarget));
+      far = Math.max(far, cam.distanceTo(a.positions[0]!) + 45 * AU);
     }
     // Near the ground (flight) the ground below the eye is closer than the usual near plane.
     const near = Math.max(1e-4, Math.min(cap, surface * 0.5));
@@ -2699,14 +3068,141 @@ export class SpaceView {
     return body === "Moon" ? { kind: "body", body: "Moon" } : { kind: "planet", planet: body };
   }
 
+  /**
+   * Zoom by `factor` (< 1: closer) towards the point under (x, y), CSS px (#131): that point
+   * stays where it is on screen, the camera and the point looked at being scaled about it (the
+   * distance is multiplied: a logarithmic zoom). The point is a body's centre when the fingers
+   * are on or near its marker or small disc (true-scale scene: the camera then follows that
+   * body and never enters it), else where the line of sight meets a globe, the ecliptic
+   * (true-scale scene) or the plane of the point looked at.
+   */
+  private zoomAt(factor: number, x: number, y: number): void {
+    if (this.frameTween || this.flight) {
+      this.zoom(factor);
+      return;
+    }
+    if (this.stale) this.refresh();
+    this.placeCamera();
+    const o = this.orbit;
+    const d0 = o.dist;
+    const anchor = this.zoomTmp.anchor;
+    const least = this.zoomAnchor(x, y, anchor);
+    this.zoom(this.sceneFrame() ? Math.max(factor, Math.min(1, least)) : factor);
+    if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
+    const f = o.dist / d0;
+    const t = this.zoomTmp.target.copy(this.poseTarget).sub(anchor).multiplyScalar(f).add(anchor);
+    this.toFrame(t, t);
+    o.tx = t.x;
+    o.ty = t.y;
+    o.tz = t.z;
+    this.clampPan();
+    if (this.sceneFrame()) {
+      if (this.snapped >= 0) this.setFollow(this.snapped);
+      else this.chooseFollow();
+    }
+    this.dirty = true;
+  }
+
+  /**
+   * The zoom's anchor under (x, y) CSS px (world, `out`), see zoomAt. Returns the smallest zoom
+   * factor that keeps the camera out of the body anchored (0 when none); sets `snapped`.
+   */
+  private zoomAnchor(x: number, y: number, out: THREE.Vector3): number {
+    const cam = this.camera.position;
+    const ray = this.rayThrough(x, y, this.zoomTmp.ray);
+    this.snapped = -1;
+    const scene = this.sceneFrame() && this.pov.sceneShown();
+    const a = this.pov.anchors;
+    if (scene) {
+      // On or near a body's marker or small disc (as drawn in the last frame): its centre.
+      const xyr = this.sceneScreen;
+      let best = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < SCENE_BODIES.length; i++) {
+        if (!this.sceneOk[i] || xyr[3 * i + 2]! > 2 * SNAP_PX) continue;
+        const d = Math.hypot(x - xyr[3 * i]!, y - xyr[3 * i + 1]!);
+        if (d < Math.max(SNAP_PX, xyr[3 * i + 2]! + 8) && d < bestDist) {
+          best = i;
+          bestDist = d;
+        }
+      }
+      if (best >= 0) {
+        const c = a.positions[best]!;
+        out.copy(c);
+        this.snapped = best;
+        return (SURFACE_MARGIN * a.radii[best]!) / Math.max(1e-9, cam.distanceTo(c));
+      }
+    }
+    // The first globe along the line of sight: the Earth, the visited body, the scene's.
+    let tBest = Infinity;
+    let rBest = 0;
+    const count = 2 + (scene ? SCENE_BODIES.length : 0);
+    for (let k = 0; k < count; k++) {
+      if (k === 1 && !this.globe3d.object.visible) continue;
+      const c = k === 0 ? ORIGIN : k === 1 ? this.globe3d.object.position : a.positions[k - 2]!;
+      const r = k === 0 ? 1 : k === 1 ? bodyRadius(this.globe3d.getBody()) : a.radii[k - 2]!;
+      const t = raySphere(cam.x - c.x, cam.y - c.y, cam.z - c.z, ray.x, ray.y, ray.z, r);
+      if (t > 0 && t < tBest) {
+        tBest = t;
+        rBest = r;
+      }
+    }
+    if (tBest < Infinity) {
+      out.copy(cam).addScaledVector(ray, tBest);
+      return (0.15 * rBest) / tBest;
+    }
+    const dist = cam.distanceTo(this.poseTarget);
+    if (this.sceneFrame()) {
+      // The ecliptic, through the Sun (the frame's pole is its normal).
+      const n = this.frameUp;
+      const denom = ray.dot(n);
+      if (Math.abs(denom) > 1e-6) {
+        const t = this.zoomTmp.target.copy(this.frameOrigin).sub(cam).dot(n) / denom;
+        if (t > 0 && t < 10 * dist) {
+          out.copy(cam).addScaledVector(ray, t);
+          return 0;
+        }
+      }
+    }
+    // The plane of the point looked at, square to the line of sight.
+    const forward = this.zoomTmp.target.copy(this.poseTarget).sub(cam).normalize();
+    const along = Math.max(1e-6, ray.dot(forward));
+    out.copy(cam).addScaledVector(ray, dist / along);
+    return 0;
+  }
+
+  /** World direction (unit) of the line of sight through (x, y), CSS px. Fills `out`. */
+  private rayThrough(x: number, y: number, out: THREE.Vector3): THREE.Vector3 {
+    const { clientWidth: w, clientHeight: h } = this.options.canvas;
+    return out
+      .set((2 * x) / Math.max(1, w) - 1, 1 - (2 * y) / Math.max(1, h), 0.5)
+      .unproject(this.camera)
+      .sub(this.camera.position)
+      .normalize();
+  }
+
+  /**
+   * True-scale scene: the camera of the orbit (not of a transition) is inside a globe (a pan
+   * that would take it there is refused).
+   */
+  private cameraInBody(): boolean {
+    if (!this.pov.ready) return false;
+    const z = this.zoomTmp;
+    orbitPose(this.frameQuat, this.frameOrigin, this.orbit, z.cam, z.q, z.target);
+    const a = this.pov.anchors;
+    for (let i = 0; i < SCENE_BODIES.length; i++)
+      if (z.cam.distanceTo(a.positions[i]!) < 1.02 * a.radii[i]!) return true;
+    return false;
+  }
+
   private zoom(factor: number): void {
     const requested = this.orbit.dist * factor;
     this.orbit.dist = Math.max(this.distMin(), Math.min(this.distMax(), requested));
     this.dirty = true;
     // Zooming in past the closest distance on "you are here": into the sky (#37). Only round the
-    // Earth (not round a body, nor in the sun-centred diagrams).
+    // Earth (not round a body, nor in the true-scale scene).
     if (
-      (this.frameId !== "stars" && this.frameId !== "earth") ||
+      this.frameId !== "stars" ||
       !this.options.onEnterSky ||
       !this.overZoom.push(DIST_MIN / requested, performance.now())
     )

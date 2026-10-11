@@ -1,18 +1,21 @@
 /**
- * Touch and mouse gestures of the 3D views (#107): the constellation in 3D and the Earth view.
- * Pure maths and small state machines, no DOM, no WebGL: unit-tested in gestures.test.ts.
+ * Touch and mouse gestures of the 3D views (#107, #131): the constellation in 3D and the Earth
+ * view (all its points of view, the visit included). Pure maths and small state machines, no
+ * DOM, no WebGL: unit-tested in gestures.test.ts.
  *
  * Conventions: screen coordinates in CSS px, y down; angles on screen in radians, positive
  * clockwise (atan2 in y-down coordinates). Nothing here allocates once constructed, so the
  * pointer handlers stay allocation-free (60 fps on a mid-range Android).
  *
- * Gestures (the convention of 3D and map apps):
- * - one finger: orbit round the target point, with inertia;
- * - two fingers: drag = pan the target parallel to the screen, pinch = zoom towards the point
- *   between the fingers, twist = roll round the line of sight (where the view allows it). Each
- *   component starts only past its own threshold, so a pinch does not pan nor twist by accident;
+ * Gestures (the convention of map apps, #131):
+ * - one finger: pan (translate) the target point parallel to the screen, with a light inertia;
+ * - two fingers: drag both = rotate (orbit) round the target, pinch = zoom towards the point
+ *   between the fingers, twist = roll round the line of sight (where the view allows it: not in
+ *   the Earth view, which keeps north up). Each component starts only past its own threshold,
+ *   and the drag only when the fingers move together, so a pinch neither turns nor rolls the
+ *   view by accident;
  * - double tap: recentre on what is under the finger, or reset the view;
- * - mouse: drag = orbit, right button or Shift + drag = pan, wheel = zoom towards the cursor.
+ * - mouse: drag = pan, right button or Shift + drag = rotate, wheel = zoom towards the cursor.
  */
 
 export interface Point2 {
@@ -27,8 +30,13 @@ export const GESTURE = {
   /** Two taps closer than this in time (ms) and space (CSS px) make a double tap. */
   doubleTapMs: 300,
   doubleTapPx: 32,
-  /** Two fingers: centroid travel before the pan starts, CSS px. */
-  panSlop: 10,
+  /** Two fingers: centroid travel before the drag (rotation) starts, CSS px. */
+  dragSlop: 12,
+  /**
+   * Two fingers: the drag starts only while the centroid has moved more than this share of the
+   * change of the spread (fingers moving together, not a pinch drifting sideways).
+   */
+  dragOverPinch: 1,
   /** Two fingers: relative change of their spread before the pinch starts (|ln s/s0|). */
   pinchSlop: 0.06,
   /** Two fingers: rotation before the twist starts, radians (12°). */
@@ -40,6 +48,8 @@ export const GESTURE = {
   resumeSlop: 14,
   /** Inertia: velocity time constant, ms (≈ a per-frame friction of 0.93 at 60 fps). */
   inertiaTauMs: 240,
+  /** Light inertia of the one-finger pan, ms (≈ 0.88 per frame: a short glide). */
+  panInertiaTauMs: 130,
   /** A release later than this after the last move (ms) does not fling (finger held still). */
   flingIdleMs: 70,
   /** Velocity smoothing time constant, ms (exponential moving average of the drag speed). */
@@ -80,7 +90,7 @@ export function wrapDegrees(deg: number): number {
 
 /** Increments of a two-finger gesture since the previous sample. */
 export interface TwoFingerDelta {
-  /** Centroid motion, CSS px (0 until the pan starts). */
+  /** Centroid motion, CSS px (0 until the drag starts): the rotation. */
   dx: number;
   dy: number;
   /** Spread ratio new/old (1 until the pinch starts): > 1 when the fingers part. */
@@ -93,12 +103,12 @@ export interface TwoFingerDelta {
 }
 
 /**
- * Recognises the components of a two-finger gesture. Each one (pan, pinch, twist) starts once
+ * Recognises the components of a two-finger gesture. Each one (drag, pinch, twist) starts once
  * its own threshold is passed since the fingers came down, then stays on until they lift; only
  * the motion after its start is applied, so nothing jumps when it engages.
  */
 export class TwoFingerGesture {
-  pan = false;
+  drag = false;
   pinch = false;
   twist = false;
   private readonly c0: Point2 = { x: 0, y: 0 };
@@ -119,7 +129,7 @@ export class TwoFingerGesture {
     this.prev.y = this.c0.y;
     this.s0 = this.prevSpread = Math.max(1, spread(a, b));
     this.a0 = this.prevAngle = angle(a, b);
-    this.pan = this.pinch = this.twist = false;
+    this.drag = this.pinch = this.twist = false;
   }
 
   /** One of the fingers moved: fills `out` with the increments to apply, returns it. */
@@ -127,19 +137,24 @@ export class TwoFingerGesture {
     const c = centroid(a, b, this.c);
     const s = Math.max(1, spread(a, b));
     const ang = angle(a, b);
-    if (!this.pan && Math.hypot(c.x - this.c0.x, c.y - this.c0.y) > GESTURE.panSlop)
-      this.pan = true;
+    const travel = Math.hypot(c.x - this.c0.x, c.y - this.c0.y);
+    if (
+      !this.drag &&
+      travel > GESTURE.dragSlop &&
+      travel > GESTURE.dragOverPinch * Math.abs(s - this.s0)
+    )
+      this.drag = true;
     if (!this.pinch && Math.abs(Math.log(s / this.s0)) > GESTURE.pinchSlop) this.pinch = true;
     // The angle of fingers almost touching is noise.
     if (
       this.twistEnabled &&
       !this.twist &&
-      s > 2 * GESTURE.panSlop &&
+      s > 2 * GESTURE.dragSlop &&
       Math.abs(wrapAngle(ang - this.a0)) > GESTURE.twistSlop
     )
       this.twist = true;
-    out.dx = this.pan ? c.x - this.prev.x : 0;
-    out.dy = this.pan ? c.y - this.prev.y : 0;
+    out.dx = this.drag ? c.x - this.prev.x : 0;
+    out.dy = this.drag ? c.y - this.prev.y : 0;
     out.scale = this.pinch ? s / this.prevSpread : 1;
     out.rotation = this.twist ? wrapAngle(ang - this.prevAngle) : 0;
     out.cx = c.x;
@@ -153,7 +168,7 @@ export class TwoFingerGesture {
 
   /** Some component engaged: the gesture was not a tap. */
   get engaged(): boolean {
-    return this.pan || this.pinch || this.twist;
+    return this.drag || this.pinch || this.twist;
   }
 }
 
@@ -263,11 +278,14 @@ export class Velocity {
     if (now - this.last > GESTURE.flingIdleMs) this.x = this.y = 0;
   }
 
-  /** Advances the free motion by `dtMs`: fills `out` with the increment, then decays. */
-  step(dtMs: number, out: Point2): Point2 {
+  /**
+   * Advances the free motion by `dtMs`: fills `out` with the increment, then decays with the
+   * time constant `tauMs`.
+   */
+  step(dtMs: number, out: Point2, tauMs: number = GESTURE.inertiaTauMs): Point2 {
     out.x = this.x * dtMs;
     out.y = this.y * dtMs;
-    const f = decay(dtMs);
+    const f = decay(dtMs, tauMs);
     this.x *= f;
     this.y *= f;
     return out;
