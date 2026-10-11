@@ -1127,7 +1127,29 @@ export class SpaceView {
     this.placeCamera();
     for (const t of [this.uniforms.uRelief.value, this.uniforms.uLights.value])
       this.renderer.initTexture(t);
+    // The true-scale scene and the visit's globes too (#134): hidden now, their first frame (on
+    // the way into or out of a visit) would stall on their shaders. Compiling is not enough:
+    // the first draw of each program still waited for it (80–220 ms under SwiftShader), so they
+    // are drawn once here, culling off.
+    const hidden: THREE.Object3D[] = [];
+    const culled: THREE.Object3D[] = [];
+    for (const root of [this.pov.object, this.globe3d.object, this.fadingGlobe.object])
+      root.traverse((o) => {
+        if (!o.visible) {
+          hidden.push(o);
+          o.visible = true;
+        }
+        if (o.frustumCulled) {
+          culled.push(o);
+          o.frustumCulled = false;
+        }
+      });
     await this.renderer.compileAsync(this.scene, this.camera);
+    if (!this.contextLost) this.renderer.render(this.scene, this.camera);
+    for (const o of hidden) o.visible = false;
+    for (const o of culled) o.frustumCulled = true;
+    this.stale = true; // visibility set again from the point of view
+    this.refresh();
     // One frame while hidden (the canvas keeps its layout): uploads the geometry buffers too.
     if (!this.contextLost && this.options.canvas.clientWidth > 0) this.render();
   }
