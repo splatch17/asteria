@@ -2,12 +2,14 @@
  * Points of view of the Earth view (#128, #131): the scales and framings that turn each
  * reference frame into a scene telling one phenomenon.
  *
- * 1. "stars" — La Terre tourne: the whole Earth, the Sun's light coming from the side.
- * 2. "ecliptic" — Les saisons: a framing of the true-scale solar system on the Earth's orbit,
+ * 1. "ecliptic" — Les saisons: a framing of the true-scale solar system on the Earth's orbit,
  *    with the equinoxes and solstices marked on it and the direction of the Earth's axis.
- * 3. "heliocentric" — Le système solaire: the true-scale solar system, from Neptune's orbit down
+ * 2. "heliocentric" — Le système solaire: the true-scale solar system, from Neptune's orbit down
  *    to a planet's surface with a continuous logarithmic zoom.
- * 4. "body" — Visiter un astre (#123, body-frame.ts).
+ * 3. "body" — Visiter un astre (#123, body-frame.ts).
+ *
+ * « La Terre tourne » was removed in #139: the Earth is seen turning within the scene, in the
+ * stars' rest frame, or still under a turning sky in the Earth's (rest-frames.ts).
  *
  * Everything is at true scale (#131): one scene unit is the Earth's equatorial radius, the
  * Earth's centre is at the origin, the world axes are the mean equator and equinox of date. The

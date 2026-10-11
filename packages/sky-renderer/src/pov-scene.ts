@@ -1,8 +1,6 @@
 /**
  * Anchors of the Earth view's points of view (#128, #131), drawn in the engraved ink.
  *
- * - La Terre tourne: an arrow round the axis above the North Pole (the Earth's rotation). The
- *   Sun's glyph is drawn on the overlay by the view, on the side its light comes from.
  * - The true-scale solar system (#131), shared by « Les saisons » and « Le système solaire »:
  *   the Sun as a globe of its true radius (engraved: limb-darkened Bayer dither), the Moon and
  *   the planets as globes of their true radii at their true places, and their orbits (osculating
@@ -55,8 +53,6 @@ import {
 } from "./orbits";
 import type { ReferenceFrameId } from "./reference-frames";
 
-/** Rotation arrow of « La Terre tourne »: a circle round the axis above the North Pole. */
-export const SPIN_ARROW = Object.freeze({ height: 1.2, radius: 0.62 });
 /** Index of each body in SCENE_BODIES (anchors.positions, anchors.radii). */
 export const SCENE_INDEX = Object.freeze(
   Object.fromEntries(SCENE_BODIES.map((b, i) => [b, i])) as Record<SceneBody, number>,
@@ -65,7 +61,6 @@ export const SCENE_INDEX = Object.freeze(
 const PLANET_STEP_D = 0.05;
 const MOON_STEP_S = 600;
 const DAY_MS = 86_400_000;
-const DEG = Math.PI / 180;
 /** Dashes of the solstice and equinox lines, in au (≈ 3 px when 1 au ≈ 160 px). */
 const SEASON_DASH = 0.02 * AU;
 /** Opacity of the other orbits in « Les saisons » relative to the solar system. */
@@ -138,8 +133,6 @@ export class PovScene {
   readonly object = new THREE.Group();
   /** World positions read by the view for markers, labels, picking and the overlay. */
   readonly anchors = {
-    /** Tip of the rotation arrow of « La Terre tourne ». */
-    spinTip: new THREE.Vector3(),
     /** SCENE_BODIES order: true positions (world) and radii (Earth radii). */
     positions: SCENE_BODIES.map(() => new THREE.Vector3()),
     radii: SCENE_BODIES.map((b) => trueRadius(b)),
@@ -150,8 +143,6 @@ export class PovScene {
   ready = false;
 
   private readonly weighted: Weighted[] = [];
-  // « La Terre tourne »
-  private readonly spin: THREE.LineSegments;
   // True-scale scene
   private readonly sun: THREE.Mesh;
   private readonly sunUniforms;
@@ -184,30 +175,6 @@ export class PovScene {
   private readonly when = { before: new Date(0), after: new Date(0) };
 
   constructor(engraved: EngravedUniforms) {
-    // --- « La Terre tourne »: arrow round the axis above the North Pole, 290° counterclockwise
-    // seen from the north (west to east).
-    const spin: number[] = [];
-    const [cz, r, end] = [SPIN_ARROW.height, SPIN_ARROW.radius, 290 * DEG];
-    const at = (a: number) => [r * Math.cos(a), r * Math.sin(a), cz];
-    for (let i = 0; i < 48; i++) spin.push(...at((end * i) / 48), ...at((end * (i + 1)) / 48));
-    const tip = at(end);
-    this.anchors.spinTip.set(tip[0]!, tip[1]!, tip[2]!);
-    const tangent = [-Math.sin(end), Math.cos(end), 0];
-    const radial = [Math.cos(end), Math.sin(end), 0];
-    for (const side of [1, -1]) {
-      spin.push(...tip);
-      spin.push(
-        tip[0]! - 0.2 * tangent[0]! + side * 0.11 * radial[0]!,
-        tip[1]! - 0.2 * tangent[1]! + side * 0.11 * radial[1]!,
-        cz,
-      );
-    }
-    const spinGeometry = new THREE.BufferGeometry();
-    spinGeometry.setAttribute("position", new THREE.Float32BufferAttribute(spin, 3));
-    this.spin = new THREE.LineSegments(spinGeometry, this.material(0.9, false));
-    this.register(this.spin, (w) => w.stars);
-    this.object.add(this.spin);
-
     // --- The Sun at its true radius
     this.sunUniforms = {
       ...engraved,
@@ -260,7 +227,7 @@ export class PovScene {
     this.register(this.seasonLines, (w) => w.ecliptic);
     this.seasons.add(this.seasonLines);
     this.object.add(this.seasons);
-    this.setWeights({ stars: 0, ecliptic: 0, heliocentric: 0, body: 0 });
+    this.setWeights({ ecliptic: 0, heliocentric: 0, body: 0 });
   }
 
   /** Realistic surfaces for the globes (and the realistic Sun's night ink). */
@@ -322,7 +289,7 @@ export class PovScene {
     for (const { material, object, weight, base } of this.weighted) {
       const k = Math.min(1, weight(w));
       material.opacity = base * k;
-      object.visible = k > 0 && (object === this.spin || this.ready);
+      object.visible = k > 0 && this.ready;
     }
     const shown = this.ready && scene(w) >= 0.5;
     this.sun.visible = shown;

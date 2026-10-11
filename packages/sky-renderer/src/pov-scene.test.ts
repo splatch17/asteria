@@ -14,8 +14,7 @@ const scene = () =>
   });
 const date = new Date("2026-10-10T09:00:00Z");
 const prec = new THREE.Matrix3().set(...precessionMatrix(date));
-const weights = (id: "stars" | "ecliptic" | "heliocentric" | "body") => ({
-  stars: 0,
+const weights = (id: "ecliptic" | "heliocentric" | "body") => ({
   ecliptic: 0,
   heliocentric: 0,
   body: 0,
@@ -66,8 +65,6 @@ describe("PovScene: the true-scale solar system (#131)", () => {
     expect(pov.sceneShown()).toBe(true);
     pov.setWeights(weights("ecliptic"));
     expect(pov.sceneShown()).toBe(true);
-    pov.setWeights(weights("stars"));
-    expect(pov.sceneShown()).toBe(false);
     pov.setWeights(weights("body"));
     expect(pov.sceneShown()).toBe(false);
   });

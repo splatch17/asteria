@@ -17,5 +17,6 @@ export * from "./highlight";
 export * from "./deepsky-style";
 export * from "./deepsky";
 export * from "./reference-frames";
+export * from "./rest-frames";
 export * from "./body-frame";
 export * from "./points-of-view";
