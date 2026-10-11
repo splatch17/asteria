@@ -152,6 +152,20 @@
     <circle cx="8" cy="8" r="4.5" />
     <path d="M8 1 V4.5 M8 11.5 V15 M1 8 H4.5 M11.5 8 H15" />
     <circle cx="8" cy="8" r="1.2" class="fill" />
+  {:else if name === "menu"}
+    <!-- Three engraved rules, the last one shorter, and a star: the menu (#130). -->
+    <path d="M2 4 H14 M2 8 H14 M2 12 H9" />
+    <path d={sparkle(12.6, 12, 2.1)} class="fill" />
+  {:else if name === "help"}
+    <!-- A question mark in a ring: help (#130). -->
+    <circle cx="8" cy="8" r="6.2" />
+    <path d="M6 6.2 C6 4.9 7 4.3 8 4.3 C9.2 4.3 10 5.1 10 6.1 C10 7.6 8 7.7 8 9.4" />
+    <circle cx="8" cy="11.6" r="0.9" class="fill" />
+  {:else if name === "north"}
+    <!-- A compass needle: face north (#130, was the compass dial). -->
+    <circle cx="8" cy="8" r="6.5" class="thin" />
+    <path d="M8 2.6 L10 8 L6 8 Z" class="fill" />
+    <path d="M8 13.4 L10 8 L6 8 Z" />
   {/if}
 </svg>
 

@@ -1,32 +1,30 @@
 <script lang="ts">
-  // Header of the map and Earth views: view title, place, coordinates and displayed time.
-  // A soft scrim of the theme's background keeps it readable over the Moon, planets and bright
-  // stars without hiding the sky (#74).
+  // Header of the map and Earth views (#130): one discreet line, « #02 // CARTE DU CIEL · PARIS ».
+  // The date and time are on the time line at the bottom, the coordinates in the menu. A short
+  // scrim of the theme's background keeps it readable over bright stars (#74). Fades out in
+  // immersive mode.
   import { _ } from "@asteria/ui";
 
   let {
+    index,
     title,
-    loading = false,
     place,
-    coords,
-    time,
-    live,
-    relative,
+    loading = false,
     locating,
+    hidden = false,
     element = $bindable(),
-    height = $bindable(90),
+    height = $bindable(20),
   }: {
-    /** e.g. "#02 // Carte du ciel". */
+    /** Section number, e.g. "#02". */
+    index: string;
+    /** View or point of view, e.g. "Carte du ciel", "La Terre tourne". */
     title: string;
+    place: string;
     /** Shown after the title (Earth view loading). */
     loading?: boolean;
-    place: string;
-    coords: string;
-    time: string;
-    live: boolean;
-    /** Signed offset from now, when not live. */
-    relative: string;
     locating: "idle" | "busy" | "error";
+    /** Immersive mode: faded out. */
+    hidden?: boolean;
     element?: HTMLElement | undefined;
     height?: number;
   } = $props();
@@ -34,23 +32,19 @@
 
 <div
   class="scrim"
+  class:hidden
   aria-hidden="true"
-  style:height={`calc(max(16px, env(safe-area-inset-top)) + ${height + 36}px)`}
+  style:height={`calc(max(16px, env(safe-area-inset-top)) + ${height + 28}px)`}
 ></div>
-<header class="top" bind:this={element} bind:clientHeight={height}>
-  <p class="meta">
-    {title}
-    {#if loading}· {$_("space.loading")}{/if}
-  </p>
-  <p class="where">{place}</p>
-  <p class="when">
-    {coords} · {time}
-    {#if live}<span class="live">● {$_("time.live")}</span>{:else}<span class="live"
-        >{relative}</span
-      >{/if}
+<header class="top" class:hidden bind:this={element} bind:clientHeight={height}>
+  <p class="line">
+    <span class="index">{index} //</span>
+    <span class="title">{title}</span>
+    <span class="place">· {place}</span>
+    {#if loading}<span class="place">· {$_("space.loading")}</span>{/if}
   </p>
   {#if locating !== "idle"}
-    <p class="meta" role="status">
+    <p class="status" role="status">
       {locating === "busy" ? $_("place.locating") : $_("place.locateError")}
     </p>
   {/if}
@@ -67,48 +61,49 @@
     pointer-events: none;
     background: linear-gradient(
       to bottom,
-      color-mix(in srgb, var(--ast-bg) 78%, transparent) 0%,
-      color-mix(in srgb, var(--ast-bg) 62%, transparent) 55%,
+      color-mix(in srgb, var(--ast-bg) 70%, transparent) 0%,
       color-mix(in srgb, var(--ast-bg) 0%, transparent) 100%
     );
   }
-  /* Stops short of the dials column (44 px + 12 px gap) so the date never runs under it. */
+  /* Stops short of the mini-globe (56 px + 12 px gap) in the top right corner. */
   .top {
     position: fixed;
     z-index: 2;
     top: max(16px, env(safe-area-inset-top));
     left: max(16px, env(safe-area-inset-left));
-    right: calc(max(16px, env(safe-area-inset-right)) + 56px);
+    right: calc(max(16px, env(safe-area-inset-right)) + 68px);
     pointer-events: none;
     text-shadow: 0 0 6px var(--ast-bg);
   }
-  .meta,
-  .where,
-  .when {
+  .scrim,
+  .top {
+    transition: opacity 220ms var(--ast-ease-out);
+  }
+  .hidden {
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .scrim,
+    .top {
+      transition: none;
+    }
+  }
+  .line,
+  .status {
     margin: 0;
     font-size: 11px;
+    line-height: 16px;
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
-  }
-  .meta {
-    color: var(--ast-fg-muted);
-  }
-  .where {
-    margin-top: 6px;
-    font-family: var(--ast-font-display);
-    font-weight: 700;
-    font-size: 28px;
-    letter-spacing: 0.02em;
-    line-height: 1;
-    color: var(--ast-fg);
-  }
-  .when {
-    margin-top: 4px;
-    color: var(--ast-fg-muted);
-  }
-  .live {
     white-space: nowrap;
-    margin-left: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--ast-fg-muted);
+  }
+  .title {
     color: var(--ast-fg);
+  }
+  .status {
+    margin-top: 2px;
   }
 </style>
