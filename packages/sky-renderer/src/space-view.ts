@@ -381,6 +381,8 @@ export class SpaceView {
   private readonly sceneOrder = new Int8Array(SCENE_BODIES.length);
   /** North end of the Earth's axis tick (« Les saisons »), CSS px; NaN when not drawn. */
   private readonly axisTip = new THREE.Vector2(NaN, NaN);
+  /** The last tap was answered by the view itself (focus on the Earth), see pickScene. */
+  private tapHandled = false;
   /** The body a zoom was anchored on (SCENE_BODIES index), −1 for none. */
   private snapped = -1;
   private readonly zoomTmp = {
@@ -1335,7 +1337,13 @@ export class SpaceView {
         this.options.onInteract?.();
         this.zoomAt(factor, x, y);
       },
-      tap: (x: number, y: number) => this.options.onSelect?.(this.pick(x, y)),
+      tap: (x: number, y: number) => {
+        this.tapHandled = false;
+        const selection = this.pick(x, y);
+        // A tap the view answered itself (the Earth of the true-scale scene): not a selection,
+        // nor a tap on the empty sky.
+        if (!this.tapHandled) this.options.onSelect?.(selection);
+      },
       doubleTap: (x: number, y: number) => this.centreAt(x, y),
       changed: () => (this.dirty = true),
     };
@@ -2172,7 +2180,15 @@ export class SpaceView {
       if (i === 0) continue;
       const p = a.positions[i]!;
       const alpha = markerOpacity(this.pixelRadius(p, a.radii[i]!));
-      if (seasons && i === e) this.drawAxisTick(p, xyr[3 * i]!, xyr[3 * i + 1]!, 1);
+      if (seasons && i === e) {
+        // The axis' direction on the marker; once the globe shows, its true axis (1.5 radii).
+        if (alpha > 0) this.drawAxisTick(p, xyr[3 * i]!, xyr[3 * i + 1]!, alpha);
+        else {
+          const top = this.screenOf(this.frameTmp.tilt.set(0, 0, 1.55), false);
+          if (top) this.axisTip.set(top[0], top[1]);
+          else this.axisTip.set(NaN, NaN);
+        }
+      }
       if (alpha <= 0) continue;
       const faint = seasons && i !== e ? 0.6 : 1;
       this.drawPhase(p, xyr[3 * i]!, xyr[3 * i + 1]!, MARKER_PX, alpha * faint);
@@ -2758,6 +2774,7 @@ export class SpaceView {
     const body = SCENE_BODIES[best]!;
     if (body === "Earth") {
       this.focusBody(best);
+      this.tapHandled = true;
       return null;
     }
     if (body === "Sun" || body === "Moon") return { kind: "body", body };
@@ -2772,7 +2789,12 @@ export class SpaceView {
     if (!this.pov.ready) return;
     const a = this.pov.anchors;
     const t = this.toFrame(a.positions[index]!, this.frameTmp.a);
-    const dist = Math.max(this.distMin(), 4.5 * a.radii[index]!);
+    // The globe filling about half of the safe area, as « La Terre tourne » frames the Earth.
+    const { w: safeW, h: safeH } = this.safeSize();
+    const h = Math.max(1, this.options.canvas.clientHeight);
+    const r = a.radii[index]!;
+    const fit = fitDistance(r, r, ORBIT_FOV, h, safeW, safeH, FRAMING.earthFill, true);
+    const dist = Math.max(this.distMin(), fit);
     const { lon, lat } = this.orbit;
     const to = { lon, lat, dist, tx: t.x, ty: t.y, tz: t.z };
     this.moveTo(to, this.reducedMotion, FRAME_TRANSITION_MS);
