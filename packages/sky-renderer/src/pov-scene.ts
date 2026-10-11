@@ -2,7 +2,7 @@
  * Anchors of the Earth view's points of view (#128, #131), drawn in the engraved ink.
  *
  * - La Terre tourne: an arrow round the axis above the North Pole (the Earth's rotation). The
- *   Sun's light is drawn on the overlay by the view (it comes from beyond the screen).
+ *   Sun's glyph is drawn on the overlay by the view, on the side its light comes from.
  * - The true-scale solar system (#131), shared by « Les saisons » and « Le système solaire »:
  *   the Sun as a globe of its true radius (engraved: limb-darkened Bayer dither), the Moon and
  *   the planets as globes of their true radii at their true places, and their orbits (osculating

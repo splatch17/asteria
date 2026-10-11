@@ -261,14 +261,10 @@ const MARKER_MERGE_PX = 9;
 const AXIS_TICK_PX = 13;
 /** Longest scale bar, CSS px. */
 const SCALE_BAR_PX = 110;
-/** Engraved dashes of the overlay (Sun's light), CSS px; allocated once. */
-const DASH = [5, 4];
 /** « Les saisons »: the Earth's label merges with a mark's within this many days of it. */
 const SEASON_NEAR_DAYS = 20;
 /** Angles (radians) tried around the outward direction for a label with a leader line. */
 const LEADER_FAN = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2] as const;
-/** Offsets of the Sun's rays from the Earth's centre line, in Earth radii on screen. */
-const SUN_RAYS = [-0.6, 0, 0.6] as const;
 const NO_DASH: number[] = [];
 
 /** Earth-fixed unit vector for a geographic position. */
@@ -1173,7 +1169,7 @@ export class SpaceView {
       orbit.lat = FRAMING.earthLat;
       if (this.bodies) {
         // Camera along pole × Sun: the Sun on the left of the screen, the pole up; the Earth
-        // shifted to the right, leaving room for the Sun's light (drawSunlight).
+        // shifted to the right, leaving room for the Sun's glyph (drawSunlight).
         const sun = this.dirAt(0, this.frameTmp.a);
         const side = this.frameTmp.b.crossVectors(Z_AXIS, sun);
         if (side.lengthSq() > 1e-9) {
@@ -2559,9 +2555,9 @@ export class SpaceView {
   }
 
   /**
-   * « La Terre tourne » (#128): the Sun's light reaching the Earth from the side, drawn on the
-   * overlay: the Sun's glyph at the edge of the safe area (or where the Sun is, if on screen) and
-   * three engraved dashed rays to the lit limb. Allocation-free.
+   * « La Terre tourne » (#128): where the Sun's light comes from, drawn on the overlay: the Sun's
+   * glyph at the edge of the safe area (or where the Sun is, if on screen) and its name; the lit
+   * side of the globe shows the rest (#134: no rays). Allocation-free.
    */
   private drawSunlight(layout: LabelLayout): void {
     if (!this.bodies) return;
@@ -2607,31 +2603,6 @@ export class SpaceView {
       ctx.lineTo(gx + 16 * Math.cos(a), gy + 16 * Math.sin(a));
     }
     ctx.stroke();
-    // Three parallel rays, from the Sun's side to the lit limb, with arrowheads.
-    ctx.setLineDash(DASH);
-    ctx.globalAlpha = 0.85;
-    for (const k of SUN_RAYS) {
-      const o = k * radius;
-      const along = Math.sqrt(Math.max(0, radius * radius - o * o)) + 6;
-      const sx = gx - uy * o - ux * 24;
-      const sy = gy + ux * o - uy * 24;
-      const ex = cx - uy * o + ux * along;
-      const ey = cy + ux * o + uy * along;
-      if ((sx - ex) * ux + (sy - ey) * uy <= 8) continue;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      ctx.setLineDash(NO_DASH);
-      ctx.beginPath();
-      ctx.moveTo(ex + ux * 7 - uy * 4, ey + uy * 7 + ux * 4);
-      ctx.lineTo(ex, ey);
-      ctx.lineTo(ex + ux * 7 + uy * 4, ey + uy * 7 - ux * 4);
-      ctx.stroke();
-      ctx.setLineDash(DASH);
-    }
-    ctx.setLineDash(NO_DASH);
-    ctx.globalAlpha = 1;
     // Its name beside the glyph.
     const text = this.options.labels.sun.toUpperCase();
     const tw = ctx.measureText(text).width;
