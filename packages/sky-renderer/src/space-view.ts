@@ -100,6 +100,17 @@ import {
   type ScaleBar,
 } from "./points-of-view";
 import { GestureInput } from "./gesture-input";
+import {
+  CROSSFADE_MS,
+  PinchExit,
+  contextFraming,
+  inView,
+  returnFraction,
+  returnTarget,
+  sceneFade,
+  shiftProgress,
+  type ContextFraming,
+} from "./visit-return";
 import { easeOut, panLimit, panScale, raySphere, wrapDegrees } from "./gestures";
 
 export type { SpaceTextureName } from "./space-realistic";
@@ -179,6 +190,11 @@ export interface SpaceViewOptions {
    * the caller lands in the sky map (see flyToSky).
    */
   onEnterSky?: () => void;
+  /**
+   * The view changed its point of view by itself (#134: pinching out of a visit returns to the
+   * solar system): the caller updates its state (setFrame with the same id does nothing).
+   */
+  onFrameChange?: (id: ReferenceFrameId) => void;
 }
 
 /** A flight between the sky map's point of view and the orbit (#37), see flight.ts. */
@@ -317,11 +333,24 @@ export class SpaceView {
     t: number;
     readonly quat: THREE.Quaternion;
     readonly target: THREE.Vector3;
+    /**
+     * Between a visit and the true-scale scene (#134): the visited body's geometric position
+     * minus its light-time corrected one (world), blended over the transition (see
+     * visit-return.ts); "out" leaves the visit, "in" arrives, null otherwise.
+     */
+    readonly shift: THREE.Vector3;
+    blend: "in" | "out" | null;
   } | null = null;
   private readonly frameTweenState = {
     quat: new THREE.Quaternion(),
     target: new THREE.Vector3(),
+    shift: new THREE.Vector3(),
   };
+  /**
+   * Share (0 … 1) of the light-time offset applied to the visited globe in this frame: 0 at its
+   * light-time corrected place (the visit), 1 at its geometric place (the true-scale scene).
+   */
+  private visitBlend = 0;
   // --- Body-centred frame (#123), see body-frame.ts and body-globe.ts
   private readonly bodyFrame = new BodyFrame("Moon");
   /** Globe of the target body; and of the body being left, during a transition. */
@@ -346,7 +375,32 @@ export class SpaceView {
   private globesApplied = false;
   /** The first refresh in the body frame places the camera round the body. */
   private pendingBodyOrbit = false;
-  /** Where the camera was round the Earth before leaving for a body: back there on return. */
+  /**
+   * The true-scale scene's framing before a visit (#134): the way back returns to it when the
+   * body is well inside it. `follow`: the body the camera followed (SCENE_BODIES index, −1 for
+   * none) and the point looked at relative to it, so that a date moved during the visit is
+   * followed.
+   */
+  private savedScene: {
+    frame: ReferenceFrameId;
+    orbit: EarthOrbit;
+    follow: number;
+    offset: THREE.Vector3;
+  } | null = null;
+  /** Pinching out of a visit past its farthest distance returns to the solar system (#134). */
+  private readonly pinchExit = new PinchExit();
+  /** Opacity of the true-scale scene's overlay (markers, names, scale bar), see sceneFade. */
+  private sceneAlpha = 1;
+  /** Reduced motion: the snapshot of the last frame faded out over the new one (#134). */
+  private crossfade: HTMLCanvasElement | null = null;
+  private crossfadeTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly returnTmp = {
+    framing: { lon: 0, lat: 0, halfW: 0, halfH: 0 } as ContextFraming,
+    rel: new THREE.Vector3(),
+    cam: new THREE.Vector3(),
+    q: new THREE.Quaternion(),
+    target: new THREE.Vector3(),
+  };
   // --- Points of view (#128), see points-of-view.ts and pov-scene.ts
   private readonly pov: PovScene;
   /** Weight of each point of view: 1 when shown, blended during a transition. */
@@ -950,6 +1004,21 @@ export class SpaceView {
     this.globe3d.setBody(body);
   }
 
+  /**
+   * Leaves the visit for the true-scale solar system (#134): the point of view the visit was
+   * entered from (« Le système solaire » or « Les saisons »), else « Le système solaire ». The
+   * camera recedes from the body (visit-return.ts) in `duration` ms (at least
+   * BODY_TRANSITION_MS; 0 jumps, crossfaded under reduced motion). onFrameChange tells the
+   * caller. Nothing outside a visit.
+   */
+  exitVisit({ duration = BODY_TRANSITION_MS }: { duration?: number } = {}): void {
+    if (this.frameId !== "body" || this.flight) return;
+    const saved = this.savedScene?.frame;
+    const id = saved && isSunCentred(saved) ? saved : "heliocentric";
+    this.changeFrame(id, this.bodyFrame.body, duration);
+    this.options.onFrameChange?.(id);
+  }
+
   getBodyTarget(): BodyTarget {
     return this.bodyFrame.body;
   }
@@ -1093,6 +1162,8 @@ export class SpaceView {
     this.real?.globeMaterial.dispose();
     this.globe3d.dispose();
     this.fadingGlobe.dispose();
+    clearTimeout(this.crossfadeTimer);
+    this.crossfade?.remove();
     this.pov.dispose();
     this.renderer.dispose();
   }
@@ -1522,8 +1593,11 @@ export class SpaceView {
     const tw = this.frameTween;
     if (tw) {
       // A trip to or from a body (#123) first turns towards the destination, then travels;
-      // a frame change round the Earth does both together.
-      const trip = tw.fromBody !== null || this.frameId === "body";
+      // a frame change round the Earth does both together, and so does the way back from a
+      // visit to the solar system (#134): the camera recedes looking at the body, which only
+      // leaves the centre once the distance has grown (the inverse of the way in).
+      const back = tw.blend === "out";
+      const trip = !back && (tw.fromBody !== null || this.frameId === "body");
       const move = trip ? flightEase((tw.t - 0.15) / 0.85) : tw.k;
       const { look, dest, up } = this.tripTmp;
       dest.copy(target);
@@ -1535,8 +1609,19 @@ export class SpaceView {
       // of appearing in the last frames, and the whole solar system opens out of the Earth
       // (travelFraction).
       const span = tw.target.distanceTo(dest);
-      const remaining = 1 - travelFraction(move, span, tw.dist, this.orbit.dist);
-      target.lerpVectors(dest, tw.target, remaining);
+      const f = back
+        ? returnFraction(move, tw.dist, this.orbit.dist)
+        : travelFraction(move, span, tw.dist, this.orbit.dist);
+      if (back) {
+        // The globe and the point looked at absorb the light-time offset together (nothing
+        // moves on screen), then the point travels to the solar system's framing.
+        this.visitBlend = shiftProgress(tw.t);
+        returnTarget(dest, tw.target, tw.shift, this.visitBlend, f, target);
+      } else {
+        // Way in: the offset is absorbed as the point arrives, while the body is still far.
+        this.visitBlend = tw.blend === "in" ? 1 - f : 0;
+        target.lerpVectors(dest, tw.target, 1 - f);
+      }
       // Back from the target along the slerped view axis, the distance interpolated
       // geometrically (the same for a frame change round the Earth, 4 → 1.1 for a trip to the
       // Moon, so that the approach slows down near the body).
@@ -1548,9 +1633,38 @@ export class SpaceView {
         look.setFromRotationMatrix(this.tripTmp.m);
         quaternion.slerpQuaternions(tw.quat, look, flightEase(tw.t / 0.4));
       }
+      this.placeVisitedGlobe();
     }
     this.setFov(ORBIT_FOV);
     this.camera.updateMatrixWorld();
+  }
+
+  /**
+   * Between a visit and the true-scale scene (#134): the visited globe at its light-time
+   * corrected place plus visitBlend × the offset to its geometric place. Allocation-free.
+   */
+  private placeVisitedGlobe(): void {
+    const tw = this.frameTween;
+    if (!tw?.blend || !this.worldPosOk) return;
+    const globe = tw.blend === "out" ? this.fadingGlobe : this.globe3d;
+    const lightTime = this.worldPos[bodyKind(globe.getBody()) + 1]!;
+    globe.object.position.copy(lightTime).addScaledVector(tw.shift, this.visitBlend);
+  }
+
+  /**
+   * The body whose visited globe stands for it in the true-scale scene during a transition
+   * between the two (#134): its scene globe is hidden, its marker drawn on the visited globe.
+   */
+  private blendedBody(): BodyTarget | null {
+    const tw = this.frameTween;
+    if (!tw?.blend) return null;
+    return tw.blend === "out" ? tw.fromBody : this.bodyFrame.body;
+  }
+
+  /** A body's place in the true-scale scene's overlay: its visited globe's when blended. */
+  private scenePosition(i: number, visited: number): THREE.Vector3 {
+    if (i !== visited) return this.pov.anchors.positions[i]!;
+    return (this.frameTween?.blend === "out" ? this.fadingGlobe : this.globe3d).object.position;
   }
 
   private setFov(fov: number): void {
@@ -1873,7 +1987,7 @@ export class SpaceView {
     this.updateWeights();
     const w = this.weights;
     const sunCentred = w.ecliptic + w.heliocentric;
-    this.pov.setWeights(w);
+    this.pov.setWeights(w, this.blendedBody());
     this.pov.setCamera(this.camera.position);
     this.updateClipping(dist);
     this.blendSky();
@@ -2069,7 +2183,14 @@ export class SpaceView {
       this.labelSpin(layout, labels.rotation);
     }
     this.sceneOk.fill(0);
-    if (w.ecliptic + w.heliocentric >= 0.5 && this.pov.sceneShown()) this.labelScene(layout, font);
+    // The scene's overlay fades in and out with its point of view (#134).
+    const scene = w.ecliptic + w.heliocentric;
+    if (scene > 0 && this.pov.ready) {
+      this.sceneAlpha = sceneFade(scene);
+      this.labelScene(layout, font);
+      this.sceneAlpha = 1;
+      this.ctx.globalAlpha = 1;
+    }
   }
 
   /**
@@ -2123,11 +2244,15 @@ export class SpaceView {
     const seasons = this.weights.ecliptic >= 0.5;
     const xyr = this.sceneScreen;
     const ok = this.sceneOk;
+    // Between a visit and the scene (#134): the visited body's marker on its visited globe, at
+    // full opacity (it takes over from the globe as the camera recedes).
+    const blended = this.blendedBody();
+    const visited = blended ? SCENE_INDEX[blended] : -1;
     this.drawScaleBar(layout, font);
     // Screen places, merging of the crowded markers, discs reserved before any label.
     let count = 0;
     for (let i = 0; i < SCENE_BODIES.length; i++) {
-      const p = a.positions[i]!;
+      const p = this.scenePosition(i, visited);
       if (this.sceneHidden(p, i)) continue;
       const s = this.screenOf(p, false);
       if (!s) continue;
@@ -2174,7 +2299,7 @@ export class SpaceView {
     for (let j = 0; j < count; j++) {
       const i = this.sceneOrder[j]!;
       if (i === 0) continue;
-      const p = a.positions[i]!;
+      const p = this.scenePosition(i, visited);
       const alpha = markerOpacity(this.pixelRadius(p, a.radii[i]!));
       if (seasons && i === e) {
         // The axis' direction on the marker; once the globe shows, its true axis (1.5 radii).
@@ -2187,9 +2312,12 @@ export class SpaceView {
       }
       if (alpha <= 0) continue;
       const faint = seasons && i !== e ? 0.6 : 1;
+      const fade = this.sceneAlpha;
+      if (i === visited) this.sceneAlpha = 1;
       this.drawPhase(p, xyr[3 * i]!, xyr[3 * i + 1]!, MARKER_PX, alpha * faint);
+      this.sceneAlpha = fade;
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.sceneAlpha;
     // « Les saisons »: the season mark nearest in time to the date shown.
     let near = -1;
     let nearDays = Infinity;
@@ -2222,7 +2350,7 @@ export class SpaceView {
     }
     if (seasons) this.labelSeasonMarks(layout, font, merged ? near : -1, sx, sy);
     font("700 10px", "0.12em");
-    if (seasons) ctx.globalAlpha = 0.75;
+    if (seasons) ctx.globalAlpha = 0.75 * this.sceneAlpha;
     for (let j = 0; j < count; j++) {
       const i = this.sceneOrder[j]!;
       if (i === 0 || i === e) continue;
@@ -2231,7 +2359,7 @@ export class SpaceView {
       if (!text) continue;
       this.labelOutward(layout, text, xyr[3 * i]!, xyr[3 * i + 1]!, xyr[3 * i + 2]! + 2, sx, sy);
     }
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.sceneAlpha;
     if (seasons && labels.axis && ok[e] && Number.isFinite(this.axisTip.x)) {
       // The axis' name at the north end of the Earth's tick, only where it fits beside it.
       font("400 10px", "0.06em");
@@ -2285,7 +2413,7 @@ export class SpaceView {
         this.drawPhase(p, x, y, MARKER_PX - 0.5, 0.7);
         layout.place([{ x: x - MARKER_PX, y: y - MARKER_PX, w: 2 * MARKER_PX, h: 2 * MARKER_PX }]);
       }
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = this.sceneAlpha;
       if (i === skip || !format) continue;
       this.labelOutward(layout, texts.texts[i]!, x, y, MARKER_PX + 2, sx, sy);
     }
@@ -2302,7 +2430,7 @@ export class SpaceView {
     const toCam = this.frameTmp.moon.copy(this.camera.position).sub(p).normalize();
     const u = this.screenDirection(p, toSun);
     const cosA = toSun.normalize().dot(toCam);
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * this.sceneAlpha;
     ctx.setLineDash(NO_DASH);
     ctx.beginPath();
     ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -2339,7 +2467,7 @@ export class SpaceView {
     const ctx = this.ctx;
     const ux = u.x;
     const uy = u.y;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * this.sceneAlpha;
     ctx.setLineDash(NO_DASH);
     ctx.beginPath();
     ctx.moveTo(x - ux * AXIS_TICK_PX, y - uy * AXIS_TICK_PX);
@@ -2384,7 +2512,7 @@ export class SpaceView {
   private drawSunGlow(x: number, y: number, r: number): void {
     const ctx = this.ctx;
     const R = Math.max(r, 2.5);
-    ctx.globalAlpha = r < 40 ? 0.95 : Math.max(0.3, 0.95 - (r - 40) / 250);
+    ctx.globalAlpha = (r < 40 ? 0.95 : Math.max(0.3, 0.95 - (r - 40) / 250)) * this.sceneAlpha;
     ctx.setLineDash(NO_DASH);
     ctx.lineWidth = 1.2;
     ctx.beginPath();
@@ -2403,7 +2531,7 @@ export class SpaceView {
       ctx.fill();
     }
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.sceneAlpha;
   }
 
   /**
@@ -2448,7 +2576,7 @@ export class SpaceView {
     ctx.strokeStyle = this.options.theme.ink;
     ctx.lineWidth = 1.2;
     ctx.setLineDash(NO_DASH);
-    ctx.globalAlpha = 0.9;
+    ctx.globalAlpha = 0.9 * this.sceneAlpha;
     ctx.beginPath();
     ctx.moveTo(x, y - 5);
     ctx.lineTo(x, y);
@@ -2457,7 +2585,7 @@ export class SpaceView {
     ctx.stroke();
     ctx.fillText(cache.text, x, y - 12);
     ctx.lineWidth = 1;
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = this.sceneAlpha;
   }
 
   /** Focal length of the camera in CSS px (vertical). */
@@ -2537,13 +2665,13 @@ export class SpaceView {
         if (!placed) continue;
         ctx.fillText(t, placed.x, placed.y + h / 2);
         ctx.strokeStyle = this.options.theme.ink;
-        ctx.globalAlpha = 0.6;
+        ctx.globalAlpha = 0.6 * this.sceneAlpha;
         ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(x + dx * (r + 2), y + dy * (r + 2));
         ctx.lineTo(ex, ey);
         ctx.stroke();
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = this.sceneAlpha;
         return;
       }
     }
@@ -2784,14 +2912,20 @@ export class SpaceView {
     if (this.stale) this.refresh();
     this.input.stopInertia();
     this.camTween = null;
+    this.pinchExit.reset();
+    // Reduced motion: no flight, the frame before the change fades out over the new one.
+    if (duration <= 0 && this.reducedMotion && this.running && !this.flight) this.startCrossfade();
     // The camera now (mid-transition included), frozen as the slerp's start.
     this.placeCamera();
     const state = this.frameTweenState;
     state.quat.copy(this.camera.quaternion);
     state.target.copy(this.poseTarget);
+    state.shift.set(0, 0, 0);
     const dist = this.camera.position.distanceTo(this.poseTarget);
     const from = this.frameId;
     const fromBody = from === "body" ? this.bodyFrame.body : null;
+    // Into a visit from the true-scale scene: its framing, for the way back (#134).
+    if (id === "body" && isSunCentred(from)) this.saveScene(from);
     if (fromBody) {
       // The globe of the body left stays drawn during the transition.
       [this.globe3d, this.fadingGlobe] = [this.fadingGlobe, this.globe3d];
@@ -2801,14 +2935,148 @@ export class SpaceView {
     this.globe3d.setBody(body);
     this.pendingBodyOrbit = false;
     const ms = id === "body" || fromBody ? Math.max(duration, BODY_TRANSITION_MS) : duration;
+    const blend =
+      fromBody && isSunCentred(id) ? "out" : id === "body" && isSunCentred(from) ? "in" : null;
     this.frameTween =
       duration > 0 && !this.flight
-        ? { from, fromBody, dist, start: performance.now(), duration: ms, k: 0, t: 0, ...state }
+        ? {
+            from,
+            fromBody,
+            dist,
+            start: performance.now(),
+            duration: ms,
+            k: 0,
+            t: 0,
+            blend,
+            ...state,
+          }
         : null;
     this.refresh(); // the new frame, positions, anchors and globes
-    // Each point of view opens on its own framing (#128).
-    this.orbit = this.defaultOrbit(id);
+    // Each point of view opens on its own framing (#128); back from a visit, see returnOrbit.
+    this.orbit =
+      blend === "out" && fromBody ? this.returnOrbit(id, fromBody) : this.defaultOrbit(id);
+    // The light-time offset of the visited body, absorbed over the transition (#134).
+    if (blend && this.frameTween) this.visitShift(fromBody ?? body, state.shift);
     this.dirty = true;
+  }
+
+  /**
+   * The visited body's geometric position (true-scale scene) minus its light-time corrected one
+   * (visit), world (#134): zero when either is unknown.
+   */
+  private visitShift(body: BodyTarget, out: THREE.Vector3): THREE.Vector3 {
+    out.set(0, 0, 0);
+    if (!this.pov.ready || !this.worldPosOk) return out;
+    return out
+      .copy(this.pov.anchors.positions[SCENE_INDEX[body]]!)
+      .sub(this.worldPos[bodyKind(body) + 1]!);
+  }
+
+  /** Keeps the true-scale scene's framing before a visit (#134), see savedScene. */
+  private saveScene(frame: ReferenceFrameId): void {
+    const saved = (this.savedScene ??= {
+      frame,
+      orbit: { ...this.orbit },
+      follow: -1,
+      offset: new THREE.Vector3(),
+    });
+    saved.frame = frame;
+    Object.assign(saved.orbit, this.orbit);
+    saved.follow = this.follow >= 0 && Number.isFinite(this.followAt.x) ? this.follow : -1;
+    if (saved.follow >= 0)
+      saved.offset.set(this.orbit.tx, this.orbit.ty, this.orbit.tz).sub(this.followAt);
+  }
+
+  /**
+   * Where the way back from a visit of `body` ends (#134), in the Sun-centred frame `id` (call
+   * after refresh): the framing before the visit when the body is well inside it (its point
+   * looked at following its body if it did), else framed on the body with its primary
+   * (contextFraming). The camera then follows the body when it is the point looked at.
+   */
+  private returnOrbit(id: ReferenceFrameId, body: BodyTarget): EarthOrbit {
+    const index = SCENE_INDEX[body];
+    if (!this.pov.ready) {
+      this.setFollow(-1);
+      return this.defaultOrbit(id);
+    }
+    const r = this.returnTmp;
+    const positions = this.pov.anchors.positions;
+    const saved = this.savedScene;
+    if (saved && saved.frame === id) {
+      const orbit = { ...saved.orbit };
+      if (saved.follow >= 0) {
+        const p = this.toFrame(positions[saved.follow]!, r.rel).add(saved.offset);
+        [orbit.tx, orbit.ty, orbit.tz] = [p.x, p.y, p.z];
+      }
+      // The body well inside the safe area of that framing: back there.
+      orbitPose(this.frameQuat, this.frameOrigin, orbit, r.cam, r.q, r.target);
+      const { w, h } = this.safeSize();
+      if (inView(r.cam, r.q, positions[index]!, this.focalAt(ORBIT_FOV), w / 2, h / 2, 24)) {
+        this.setFollow(saved.follow);
+        return orbit;
+      }
+    }
+    // Framed on the body, its primary (the Sun, or the Earth for the Moon) above it.
+    const at = this.toFrame(positions[index]!, r.target);
+    const primary = body === "Moon" ? SCENE_INDEX.Earth : SCENE_INDEX.Sun;
+    const rel = this.toFrame(positions[primary]!, r.rel).negate().add(at);
+    const framing = contextFraming(rel, r.framing);
+    const h = Math.max(1, this.options.canvas.clientHeight);
+    const { w: safeW, h: safeH } = this.safeSize();
+    const dist = fitDistance(framing.halfW, framing.halfH, ORBIT_FOV, h, safeW, safeH, 0.9);
+    this.setFollow(index);
+    return {
+      lon: framing.lon,
+      lat: framing.lat,
+      dist: Math.max(this.distMin(id), Math.min(this.distMax(id), dist)),
+      tx: at.x,
+      ty: at.y,
+      tz: at.z,
+    };
+  }
+
+  /** Focal length (CSS px) of the orbit camera for a vertical field `fovDeg`. */
+  private focalAt(fovDeg: number): number {
+    return this.options.canvas.clientHeight / 2 / Math.tan((fovDeg * DEG) / 2);
+  }
+
+  /**
+   * Reduced motion (#134): the frame shown now, copied to a canvas laid over the view and faded
+   * out in CROSSFADE_MS while the new point of view is drawn under it. One canvas, reused.
+   */
+  private startCrossfade(): void {
+    const { canvas, overlay } = this.options;
+    if (this.contextLost || !canvas.clientWidth || !overlay.parentElement) return;
+    // Drawn again now, so that the WebGL buffer is still readable in this task.
+    this.render();
+    let c = this.crossfade;
+    if (!c) {
+      c = document.createElement("canvas");
+      c.setAttribute("aria-hidden", "true");
+      Object.assign(c.style, {
+        position: "fixed",
+        inset: "0",
+        width: "100%",
+        height: "100%",
+        pointerEvents: "none",
+      });
+      this.crossfade = c;
+    }
+    c.width = canvas.width;
+    c.height = canvas.height;
+    const g = c.getContext("2d");
+    if (!g) return;
+    g.drawImage(canvas, 0, 0);
+    g.drawImage(overlay, 0, 0, c.width, c.height);
+    c.style.transition = "none";
+    c.style.opacity = "1";
+    overlay.after(c);
+    void c.offsetWidth; // the fade starts from 1
+    c.style.transition = `opacity ${CROSSFADE_MS}ms ease-out`;
+    c.style.opacity = "0";
+    clearTimeout(this.crossfadeTimer);
+    const fading = c;
+    this.crossfadeTimer = setTimeout(() => fading.remove(), CROSSFADE_MS + 60);
   }
 
   /**
@@ -2830,9 +3098,11 @@ export class SpaceView {
             duration: body ? Math.max(duration, BODY_TRANSITION_MS) : duration,
             k: 0,
             t: 0,
+            blend: null,
             ...state,
           }
         : null;
+    state.shift.set(0, 0, 0);
     this.orbit = this.defaultOrbit();
     this.update();
   }
@@ -3081,7 +3351,8 @@ export class SpaceView {
     const anchor = this.zoomTmp.anchor;
     const least = this.zoomAnchor(x, y, anchor);
     this.zoom(this.sceneFrame() ? Math.max(factor, Math.min(1, least)) : factor);
-    if (this.flight) return; // zoomed into the sky (#37): the flight owns the camera
+    // Zoomed into the sky (#37) or out of a visit (#134): the flight or the transition owns it.
+    if (this.flight || this.frameTween) return;
     const f = o.dist / d0;
     const t = this.zoomTmp.target.copy(this.poseTarget).sub(anchor).multiplyScalar(f).add(anchor);
     this.toFrame(t, t);
@@ -3192,6 +3463,13 @@ export class SpaceView {
     const requested = this.orbit.dist * factor;
     this.orbit.dist = Math.max(this.distMin(), Math.min(this.distMax(), requested));
     this.dirty = true;
+    // Pinching out of a visit past its farthest distance: back to the solar system (#134), on
+    // from where the camera is.
+    if (this.frameId === "body") {
+      if (!this.frameTween && this.pinchExit.push(requested, this.distMax(), performance.now()))
+        this.exitVisit({ duration: this.reducedMotion ? 0 : BODY_TRANSITION_MS });
+      return;
+    }
     // Zooming in past the closest distance on "you are here": into the sky (#37). Only round the
     // Earth (not round a body, nor in the true-scale scene).
     if (

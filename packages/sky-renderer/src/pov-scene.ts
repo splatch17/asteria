@@ -34,7 +34,13 @@ import {
   type SeasonKind,
 } from "@asteria/astro-core";
 import { BodyGlobe, type EngravedUniforms, type SurfaceUniforms } from "./body-globe";
-import { BODY_TARGETS, EARTH_RADIUS_KM, bodyPole, worldPosition } from "./body-frame";
+import {
+  BODY_TARGETS,
+  EARTH_RADIUS_KM,
+  bodyPole,
+  worldPosition,
+  type BodyTarget,
+} from "./body-frame";
 import { dither } from "./shaders";
 import { planetAxes } from "./space-style";
 import { AU, SCENE_BODIES, trueRadius, type SceneBody } from "./points-of-view";
@@ -308,8 +314,11 @@ export class PovScene {
     this.ready = true;
   }
 
-  /** Opacities and visibility from the points of view's weights. */
-  setWeights(w: PovWeights): void {
+  /**
+   * Opacities and visibility from the points of view's weights. `hidden`: a body whose visited
+   * globe stands for it during a transition to or from a visit (#134), its own globe not drawn.
+   */
+  setWeights(w: PovWeights, hidden: BodyTarget | null = null): void {
     for (const { material, object, weight, base } of this.weighted) {
       const k = Math.min(1, weight(w));
       material.opacity = base * k;
@@ -317,7 +326,8 @@ export class PovScene {
     }
     const shown = this.ready && scene(w) >= 0.5;
     this.sun.visible = shown;
-    for (const g of this.globes) g.setVisible(shown);
+    for (let k = 0; k < this.globes.length; k++)
+      this.globes[k]!.setVisible(shown && BODY_TARGETS[k] !== hidden);
   }
 
   /** The true-scale scene's globes are drawn (for picking, labels and the clipping planes). */
