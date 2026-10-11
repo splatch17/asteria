@@ -290,7 +290,7 @@
         />
         <MenuTile
           id="hide"
-          icon="expand"
+          icon="hide"
           label={$_("menu.hide.short")}
           detail={$_("hud.hide")}
           hint={$_("hud.hide.hint")}
@@ -537,13 +537,13 @@
   .line {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
     min-height: 44px;
     padding-left: 4px;
     color: var(--ast-fg-muted);
   }
   .line + .line {
-    border-top: 1px solid var(--ast-hairline);
+    margin-top: 6px;
   }
   .data {
     flex: 1;
@@ -577,9 +577,6 @@
     border-radius: var(--ast-radius);
     cursor: pointer;
   }
-  .icon + .icon {
-    margin-left: -4px;
-  }
   .icon:disabled {
     cursor: default;
     opacity: 0.4;
@@ -607,7 +604,6 @@
   .more[aria-expanded="true"] {
     color: var(--ast-fg);
     border-style: solid;
-    border-bottom-color: transparent;
   }
   .more-body {
     padding: 8px 0 0;
@@ -633,7 +629,8 @@
   .readout {
     flex: none;
     margin: 0;
-    min-height: 40px;
+    /* Two lines reserved: the sheet does not jump when a hint wraps. */
+    min-height: 44px;
     padding: 7px 12px 8px;
     box-sizing: border-box;
     border-top: 1px solid var(--ast-hairline);

@@ -171,7 +171,7 @@
   }
   .tile.on {
     color: var(--ast-fg);
-    background: color-mix(in srgb, var(--ast-fg) 13%, transparent);
+    background: color-mix(in srgb, var(--ast-fg) 18%, transparent);
     border-color: var(--ast-fg);
   }
   .tile.on::after {

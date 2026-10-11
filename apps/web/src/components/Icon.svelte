@@ -166,6 +166,11 @@
     <circle cx="8" cy="8" r="6.5" class="thin" />
     <path d="M8 2.6 L10 8 L6 8 Z" class="fill" />
     <path d="M8 13.4 L10 8 L6 8 Z" />
+  {:else if name === "hide"}
+    <!-- An engraved eye, struck through: hide the interface (#135). -->
+    <path d="M1.5 8 C3.6 4.6 12.4 4.6 14.5 8 C12.4 11.4 3.6 11.4 1.5 8 Z" />
+    <circle cx="8" cy="8" r="1.9" class="fill" />
+    <path d="M3 13.5 L13 2.5" />
   {/if}
 </svg>
 
