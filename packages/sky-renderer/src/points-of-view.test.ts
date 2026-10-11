@@ -1,86 +1,89 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import {
-  ORBITING_BODIES,
+  PLANETS,
+  geocentricPosition,
   heliocentricPosition,
   meanObliquity,
   precessionMatrix,
   seasons,
 } from "@asteria/astro-core";
 import {
-  SEASONS_EARTH_ENLARGEMENT,
-  SEASONS_SCALE,
-  compressedRadius,
-  diagramPoint,
-  diagramSun,
-  eclipticLongitude,
+  AU,
+  AU_KM,
+  GLOBE_MIN_PX,
+  MARKER_FADE_START_PX,
+  apparentRadiusPx,
   fitDistance,
-  lineOfSight,
-  planetDrawRadius,
+  markerOpacity,
+  scaleBar,
+  travelFraction,
+  trueRadius,
+  trueScalePosition,
 } from "./points-of-view";
+import { EARTH_RADIUS_KM } from "./body-frame";
 
 const prec = (d: Date) => new THREE.Matrix3().set(...precessionMatrix(d));
 const DEG = Math.PI / 180;
+const date = new Date("2026-10-10T00:00:00Z");
 
-describe("scales", () => {
-  it("enlarges the Earth ≈ 3 900 times in « Les saisons »", () => {
-    // 149 597 870.7 km / 6 378.137 km / 6
-    expect(SEASONS_EARTH_ENLARGEMENT).toBeCloseTo(3909.1, 1);
+describe("true scale (#131)", () => {
+  it("puts 1 au at 23 454.8 Earth radii (IAU 2012 au, WGS 84 radius)", () => {
+    expect(AU).toBeCloseTo(149_597_870.7 / 6378.137, 6);
+    expect(AU).toBeCloseTo(23_454.8, 1);
   });
 
-  it("compresses distances monotonically, orbits at least 1.5 Earth radii apart", () => {
-    const radii = ORBITING_BODIES.map((b) =>
-      compressedRadius(heliocentricPosition(b, new Date("2026-10-10T00:00:00Z")).distanceAu),
-    );
-    for (let i = 1; i < radii.length; i++) expect(radii[i]!).toBeGreaterThan(radii[i - 1]! + 1.5);
-    expect(radii[radii.length - 1]!).toBeLessThan(34);
-    expect(compressedRadius(0)).toBe(0);
+  it("uses the true radii: Sun 109.08, Jupiter 11.21, Moon 0.2724 Earth radii", () => {
+    expect(trueRadius("Earth")).toBe(1);
+    expect(trueRadius("Sun")).toBeCloseTo(695_700 / 6378.137, 9);
+    expect(trueRadius("Sun")).toBeCloseTo(109.08, 2);
+    expect(trueRadius("Jupiter")).toBeCloseTo(11.209, 3);
+    expect(trueRadius("Moon")).toBeCloseTo(0.2724, 4);
+    // Ratios of true radii: Jupiter / Earth 11.2, Sun / Jupiter 9.73.
+    expect(trueRadius("Sun") / trueRadius("Jupiter")).toBeCloseTo(9.731, 3);
   });
 
-  it("orders drawn sizes as the true ones, the Earth at 1", () => {
-    expect(planetDrawRadius("Earth")).toBe(1);
-    expect(planetDrawRadius("Jupiter")).toBeGreaterThan(planetDrawRadius("Saturn"));
-    expect(planetDrawRadius("Saturn")).toBeGreaterThan(planetDrawRadius("Uranus"));
-    expect(planetDrawRadius("Mercury")).toBeLessThan(planetDrawRadius("Mars"));
-    expect(planetDrawRadius("Jupiter")).toBeLessThan(2);
-  });
-});
-
-describe("diagram geometry", () => {
-  const date = new Date("2026-10-10T00:00:00Z");
-  const p = prec(date);
-
-  it("places the Sun 1 au × scale from the Earth (seasons), in its true direction", () => {
-    const sun = diagramSun("seasons", date, p, new THREE.Vector3());
+  it("places the Sun at the Earth–Sun distance, in its true direction", () => {
+    const p = prec(date);
+    const sun = trueScalePosition("Sun", date, p, new THREE.Vector3());
     const h = heliocentricPosition("Earth", date);
-    expect(sun.length()).toBeCloseTo(SEASONS_SCALE * h.distanceAu, 9);
-    // Direction: minus the Earth's heliocentric vector, precessed to the date.
-    const dir = new THREE.Vector3(-h.x, -h.y, -h.z).applyMatrix3(p).normalize();
-    expect(sun.clone().normalize().angleTo(dir)).toBeLessThan(1e-7);
+    // The true distance in Earth radii (≈ 1.0 au in October).
+    expect(sun.length() / (h.distanceAu * AU)).toBeCloseTo(1, 12);
+    // The same as the astrometric geocentric Sun within 30 km (light time: the Sun's motion
+    // about the barycentre in 8.3 min is a few km), i.e. 0.005 Earth radii.
+    const g = geocentricPosition("Sun", date);
+    const geo = new THREE.Vector3(g.x, g.y, g.z).divideScalar(EARTH_RADIUS_KM).applyMatrix3(p);
+    expect(sun.distanceTo(geo)).toBeLessThan(0.005);
   });
 
-  it("keeps heliocentric directions when compressing", () => {
-    const h = heliocentricPosition("Jupiter", date);
-    const v = diagramPoint("solar", h, p, new THREE.Vector3());
-    expect(v.length()).toBeCloseTo(compressedRadius(h.distanceAu), 9);
-    const dir = new THREE.Vector3(h.x, h.y, h.z).applyMatrix3(p);
-    expect(v.angleTo(dir)).toBeLessThan(1e-7); // acos rounding
+  it("keeps the true ratios of the planets' distances from the Sun", () => {
+    const p = prec(date);
+    const sun = trueScalePosition("Sun", date, p, new THREE.Vector3());
+    const d = (planet: (typeof PLANETS)[number]) =>
+      trueScalePosition(planet, date, p, new THREE.Vector3()).distanceTo(sun);
+    for (const planet of PLANETS) {
+      const r = heliocentricPosition(planet, date).distanceAu;
+      expect(d(planet) / AU / r).toBeCloseTo(1, 9);
+    }
+    // Neptune / Earth ≈ 30, Jupiter / Mercury ≈ 13 (at that date, from the JPL-tested positions).
+    const earth = heliocentricPosition("Earth", date).distanceAu;
+    expect(d("Neptune") / AU / earth).toBeGreaterThan(29);
+    expect(d("Neptune") / AU / earth).toBeLessThan(31);
   });
 
   it("draws the Earth's axis at the mean obliquity (IAU 2006) from the orbit's pole", () => {
-    // Orbit pole: normal to two drawn Earth positions a quarter of a year apart, seen from the
-    // Sun; the Earth's axis is the world z (pole of date). Tolerance 0.01° (the ecliptic of the
-    // orbit differs from the mean ecliptic by the planetary perturbations, < 1″).
-    const a = diagramSun("seasons", date, p, new THREE.Vector3()).negate();
+    // Orbit pole: normal to two Earth positions a quarter of a year apart, seen from the Sun;
+    // the Earth's axis is the world z (pole of date). Tolerance 0.01°.
+    const p = prec(date);
+    const a = trueScalePosition("Sun", date, p, new THREE.Vector3()).negate();
     const later = new Date(date.getTime() + 91 * 86_400_000);
-    const b = diagramSun("seasons", later, p, new THREE.Vector3()).negate();
+    const b = trueScalePosition("Sun", later, p, new THREE.Vector3()).negate();
     const pole = new THREE.Vector3().crossVectors(a, b).normalize();
     const tilt = pole.angleTo(new THREE.Vector3(0, 0, 1)) / DEG;
     expect(Math.abs(tilt - meanObliquity(date))).toBeLessThan(0.01);
   });
 
   it("puts the Earth at the solstices where the Sun's ecliptic longitude is 90° and 270°", () => {
-    // Heliocentric longitude of the Earth = geocentric longitude of the Sun + 180°.
     const s = seasons(2026);
     const eps = meanObliquity(s.juneSolstice) * DEG;
     const toEcliptic = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -eps);
@@ -90,15 +93,83 @@ describe("diagram geometry", () => {
       [s.septemberEquinox, 180],
       [s.decemberSolstice, 270],
     ] as const) {
-      const earth = diagramSun("seasons", d, prec(d), new THREE.Vector3())
+      const earth = trueScalePosition("Sun", d, prec(d), new THREE.Vector3())
         .negate()
         .applyQuaternion(toEcliptic);
-      const lon = eclipticLongitude(earth);
-      // Aberration (20″) and nutation (≤ 17″) separate the apparent from the geometric
-      // longitude: tolerance 0.02°.
+      const lon = (Math.atan2(earth.y, earth.x) / DEG + 360) % 360;
+      // Aberration (20″) and nutation (≤ 17″): tolerance 0.02°.
       const diff = Math.abs(((lon - sunLon - 180 + 540) % 360) - 180);
       expect(diff).toBeLessThan(0.02);
     }
+  });
+});
+
+describe("markers (#131)", () => {
+  it("fades the marker out between 3 px and GLOBE_MIN_PX (6 px) of the true globe", () => {
+    expect(GLOBE_MIN_PX).toBe(6);
+    expect(markerOpacity(0)).toBe(1);
+    expect(markerOpacity(MARKER_FADE_START_PX)).toBe(1);
+    expect(markerOpacity(4.5)).toBeCloseTo(0.5, 12);
+    expect(markerOpacity(GLOBE_MIN_PX)).toBe(0);
+    expect(markerOpacity(100)).toBe(0);
+    expect(markerOpacity(Infinity)).toBe(0);
+  });
+
+  it("measures the apparent radius of a globe (its limb)", () => {
+    expect(apparentRadiusPx(1, 2, 100)).toBeCloseTo(100 / Math.sqrt(3), 12);
+    expect(apparentRadiusPx(1, 0.5, 100)).toBe(Infinity);
+    // Jupiter seen from the Earth at opposition (4.2 au) with a 1000 px focal: 0.11 px — a marker.
+    const px = apparentRadiusPx(trueRadius("Jupiter"), 4.2 * AU, 1000);
+    expect(markerOpacity(px)).toBe(1);
+    // From 1.5 million km, the same Jupiter is 48 px: its globe, no marker.
+    const near = apparentRadiusPx(trueRadius("Jupiter"), 1.5e6 / EARTH_RADIUS_KM, 1000);
+    expect(near).toBeGreaterThan(40);
+    expect(markerOpacity(near)).toBe(0);
+  });
+});
+
+describe("scaleBar", () => {
+  const bar = { value: 0, unit: "km" as "km" | "au", px: 0 };
+  it("rounds to 1, 2 or 5 × 10ⁿ km, not longer than the room given", () => {
+    scaleBar(1000, 110, bar); // 110 000 km
+    expect(bar).toEqual({ value: 100_000, unit: "km", px: 100 });
+    scaleBar(30, 110, bar); // 3 300 km
+    expect(bar.value).toBe(2000);
+    scaleBar(0.5, 110, bar); // 55 km
+    expect(bar.value).toBe(50);
+  });
+
+  it("switches to au from 0.1 au", () => {
+    scaleBar(AU_KM / 100, 110, bar); // 1.1 au
+    expect(bar).toEqual({ value: 1, unit: "au", px: 100 });
+    scaleBar(AU_KM / 5, 110, bar); // 22 au
+    expect(bar.value).toBe(20);
+    expect(bar.unit).toBe("au");
+    scaleBar(AU_KM / 600, 110, bar); // 0.18 au
+    expect(bar.value).toBeCloseTo(0.1, 12);
+    expect(bar.unit).toBe("au");
+  });
+});
+
+describe("travelFraction", () => {
+  it("starts at 0, ends at 1, linear for a short move", () => {
+    for (const [d0, d1] of [
+      [4, 2e6],
+      [2e6, 4],
+      [10, 10],
+    ]) {
+      expect(travelFraction(0, 23_000, d0!, d1!)).toBeCloseTo(0, 12);
+      expect(travelFraction(1, 23_000, d0!, d1!)).toBeCloseTo(1, 12);
+    }
+    expect(travelFraction(0.3, 1e-3, 100, 50)).toBeCloseTo(0.3, 4);
+  });
+
+  it("keeps the target near its start while zooming out, near its end while zooming in", () => {
+    // From the Earth (4 R⊕) out to the whole system (2·10⁶ R⊕), 1 au of travel: at mid-way the
+    // camera is at 2 800 R⊕ and the target has moved less than 2 % of the way.
+    expect(travelFraction(0.5, 23_455, 4, 2e6)).toBeLessThan(0.02);
+    // Back in: the target is already 99 % there.
+    expect(travelFraction(0.5, 23_455, 2e6, 4)).toBeGreaterThan(0.98);
   });
 });
 
@@ -113,33 +184,5 @@ describe("fitDistance", () => {
     const d = fitDistance(1, 1, 40, 780, 300, 500, 0.6, true);
     const focal = 390 / Math.tan(20 * DEG);
     expect((focal * 1) / Math.sqrt(d * d - 1)).toBeCloseTo(90, 9);
-  });
-});
-
-describe("lineOfSight", () => {
-  it("meets the backdrop beyond the target", () => {
-    const out = new THREE.Vector3();
-    expect(lineOfSight(new THREE.Vector3(1, 0, 0), new THREE.Vector3(2, 0, 0), 5, out)).toBe(true);
-    expect(out.x).toBeCloseTo(5, 12);
-    expect(lineOfSight(new THREE.Vector3(1, 0, 0), new THREE.Vector3(1, 0, 0), 5, out)).toBe(false);
-  });
-
-  it("shows Mars' retrograde motion around its opposition of 2027-02-19 (compressed scale)", () => {
-    // The Earth → Mars line drawn in the compressed diagram turns backwards (decreasing
-    // ecliptic longitude on the backdrop) for some weeks around the opposition, forwards
-    // three months before and after.
-    const lonAt = (iso: string) => {
-      const d = new Date(iso);
-      const p = prec(d);
-      const e = diagramPoint("solar", heliocentricPosition("Earth", d), p, new THREE.Vector3());
-      const m = diagramPoint("solar", heliocentricPosition("Mars", d), p, new THREE.Vector3());
-      const hit = new THREE.Vector3();
-      expect(lineOfSight(e, m, 40, hit)).toBe(true);
-      return eclipticLongitude(hit.applyAxisAngle(new THREE.Vector3(1, 0, 0), -23.44 * DEG));
-    };
-    const rate = (a: string, b: string) => ((lonAt(b) - lonAt(a) + 540) % 360) - 180;
-    expect(rate("2027-02-12", "2027-02-26")).toBeLessThan(0);
-    expect(rate("2026-11-01", "2026-11-15")).toBeGreaterThan(0);
-    expect(rate("2027-05-20", "2027-06-03")).toBeGreaterThan(0);
   });
 });

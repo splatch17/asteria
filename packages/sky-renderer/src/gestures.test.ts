@@ -64,7 +64,7 @@ describe("TwoFingerGesture", () => {
     expect(g.engaged).toBe(false);
   });
 
-  it("a pure pinch zooms without panning nor twisting", () => {
+  it("a pure pinch zooms without rotating nor twisting", () => {
     const g = new TwoFingerGesture();
     g.start(...pair(200, 300, 80, 20));
     let scale = 1;
@@ -78,14 +78,14 @@ describe("TwoFingerGesture", () => {
       expect(d.cy).toBe(300);
     }
     expect(g.pinch).toBe(true);
-    expect(g.pan || g.twist).toBe(false);
+    expect(g.drag || g.twist).toBe(false);
     // Only the change after the threshold is applied: no jump when it engages.
     const engagedAt = 80 * Math.exp(GESTURE.pinchSlop);
     expect(scale).toBeGreaterThan(160 / (engagedAt + 2) - 1e-9);
     expect(scale).toBeLessThan(160 / 80);
   });
 
-  it("a two-finger drag pans by the centroid's motion once past the slop", () => {
+  it("a two-finger drag (the rotation) follows the centroid once past the slop", () => {
     const g = new TwoFingerGesture();
     g.start(...pair(200, 300, 60, 0));
     let x = 0;
@@ -97,9 +97,9 @@ describe("TwoFingerGesture", () => {
       expect(d.scale).toBe(1);
       expect(d.rotation).toBe(0);
     }
-    expect(g.pan).toBe(true);
-    // Travel 60 × 30 px, minus what was spent under the threshold (≤ panSlop + one step).
-    expect(60 - x).toBeLessThanOrEqual(GESTURE.panSlop + 2);
+    expect(g.drag).toBe(true);
+    // Travel 60 × 30 px, minus what was spent under the threshold (≤ dragSlop + one step).
+    expect(60 - x).toBeLessThanOrEqual(GESTURE.dragSlop + 2);
     expect(x).toBeGreaterThan(0);
     expect(y / x).toBeCloseTo(0.5, 1);
   });
@@ -110,9 +110,18 @@ describe("TwoFingerGesture", () => {
     let rot = 0;
     for (let deg = 1; deg <= 45; deg++) rot += g.move(...pair(200, 300, 80, deg), out).rotation;
     expect(g.twist).toBe(true);
-    expect(g.pinch || g.pan).toBe(false);
+    expect(g.pinch || g.drag).toBe(false);
     expect(rot / DEG).toBeGreaterThan(45 - GESTURE.twistSlop / DEG - 1.01);
     expect(rot / DEG).toBeLessThanOrEqual(45 - GESTURE.twistSlop / DEG + 1.01);
+  });
+
+  it("a pinch drifting sideways does not rotate (#131)", () => {
+    const g = new TwoFingerGesture();
+    g.start(...pair(200, 300, 60, 0));
+    // The fingers part by 120 px while their centroid drifts 20 px.
+    for (let k = 1; k <= 30; k++) g.move(...pair(200 + (2 * k) / 3, 300, 60 + 2 * k, 0), out);
+    expect(g.pinch).toBe(true);
+    expect(g.drag).toBe(false);
   });
 
   it("never twists when disabled (Earth view: north up)", () => {

@@ -73,7 +73,7 @@ function setup(withRoll = true) {
 }
 
 describe("GestureInput", () => {
-  it("orbits with one finger, past the tap slop, then glides (inertia)", () => {
+  it("pans with one finger, past the tap slop, then glides a little (#131)", () => {
     const { input, calls, ev, tick } = setup();
     ev("pointerdown", 1, 100, 100);
     for (let k = 1; k <= 20; k++) {
@@ -81,16 +81,21 @@ describe("GestureInput", () => {
       ev("pointermove", 1, 100 + 5 * k, 100);
     }
     // The first moves under the tap slop are not applied.
-    expect(calls.orbit[0]).toBeGreaterThan(100 - GESTURE.tapSlop - 5);
-    expect(calls.orbit[0]).toBeLessThanOrEqual(100);
+    expect(calls.pan[0]).toBeGreaterThan(100 - GESTURE.tapSlop - 5);
+    expect(calls.pan[0]).toBeLessThanOrEqual(100);
+    expect(calls.orbitCalls).toBe(0);
     tick(10);
     ev("pointerup", 1, 200, 100);
     expect(calls.taps).toBe(0);
-    const dragged = calls.orbit[0]!;
+    const dragged = calls.pan[0]!;
     let frames = 0;
     while (input.step(16)) frames++;
-    expect(frames).toBeGreaterThan(10);
-    expect(calls.orbit[0]).toBeGreaterThan(dragged + 20); // still turning in the same direction
+    // A light inertia: a short glide in the same direction.
+    expect(frames).toBeGreaterThan(5);
+    expect(frames).toBeLessThan(60);
+    expect(calls.pan[0]).toBeGreaterThan(dragged + 10);
+    expect(calls.pan[0]).toBeLessThan(dragged + 60);
+    expect(calls.orbitCalls).toBe(0);
     expect(input.step(16)).toBe(false);
   });
 
@@ -106,7 +111,7 @@ describe("GestureInput", () => {
     expect(calls.orbitCalls).toBe(0);
   });
 
-  it("pinches without orbiting, and lifting one finger does not swing the view", () => {
+  it("pinches without rotating, and lifting one finger does not move the view", () => {
     const { input, calls, ev, tick } = setup();
     ev("pointerdown", 1, 100, 300);
     tick(5);
@@ -127,11 +132,12 @@ describe("GestureInput", () => {
     ev("pointermove", 2, 268, 305);
     ev("pointerup", 2, 268, 305);
     expect(calls.orbitCalls).toBe(0);
+    expect(calls.pan).toEqual([0, 0]);
     expect(calls.taps).toBe(0);
     expect(input.step(16)).toBe(false); // no fling
   });
 
-  it("the finger left after a pinch orbits once it clearly moves on", () => {
+  it("the finger left after a pinch pans once it clearly moves on", () => {
     const { calls, ev, tick } = setup();
     ev("pointerdown", 1, 100, 300);
     ev("pointerdown", 2, 200, 300);
@@ -140,11 +146,12 @@ describe("GestureInput", () => {
       tick(16);
       ev("pointermove", 2, 200 + 4 * k, 300);
     }
-    expect(calls.orbit[0]).toBeGreaterThan(0);
-    expect(calls.orbit[0]).toBeLessThanOrEqual(40 - GESTURE.resumeSlop + 4);
+    expect(calls.pan[0]).toBeGreaterThan(0);
+    expect(calls.pan[0]).toBeLessThanOrEqual(40 - GESTURE.resumeSlop + 4);
+    expect(calls.orbitCalls).toBe(0);
   });
 
-  it("pans and twists with two fingers", () => {
+  it("rotates and twists with two fingers (#131)", () => {
     const { calls, ev, tick } = setup();
     ev("pointerdown", 1, 100, 300);
     ev("pointerdown", 2, 200, 300);
@@ -153,7 +160,8 @@ describe("GestureInput", () => {
       ev("pointermove", 1, 100 + 2 * k, 300 + k);
       ev("pointermove", 2, 200 + 2 * k, 300 + k);
     }
-    expect(calls.pan[0]).toBeGreaterThan(40);
+    expect(calls.orbit[0]).toBeGreaterThan(40);
+    expect(calls.pan).toEqual([0, 0]);
     expect(calls.zoom).toBe(1);
     expect(calls.roll).toBe(0);
     // Then a twist about the centroid (clockwise).
@@ -167,19 +175,24 @@ describe("GestureInput", () => {
     expect(calls.roll).toBeGreaterThan((20 * Math.PI) / 180);
   });
 
-  it("pans with the mouse's right button or Shift", () => {
+  it("pans with the mouse's left button, rotates with the right button or Shift (#131)", () => {
     const { calls, ev, tick } = setup();
+    ev("pointerdown", 3, 100, 100, { pointerType: "mouse" });
+    ev("pointermove", 3, 104, 100, { pointerType: "mouse" });
+    ev("pointerup", 3, 104, 100, { pointerType: "mouse" });
+    expect(calls.pan[0]).toBe(4); // no slop for a mouse
+    expect(calls.orbitCalls).toBe(0);
     ev("pointerdown", 1, 100, 100, { pointerType: "mouse", button: 2 });
     for (let k = 1; k <= 5; k++) {
       tick(16);
       ev("pointermove", 1, 100 + 3 * k, 100, { pointerType: "mouse" });
     }
     ev("pointerup", 1, 115, 100, { pointerType: "mouse" });
-    expect(calls.pan[0]).toBe(15); // no slop for a mouse
-    expect(calls.orbitCalls).toBe(0);
+    expect(calls.orbit[0]).toBe(15);
+    expect(calls.pan[0]).toBe(4);
     ev("pointerdown", 1, 100, 100, { pointerType: "mouse", shiftKey: true });
     ev("pointermove", 1, 100, 110, { pointerType: "mouse" });
-    expect(calls.pan[1]).toBe(10);
+    expect(calls.orbit[1]).toBe(10);
   });
 
   it("ignores everything while disabled (transition, flight)", () => {
