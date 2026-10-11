@@ -195,6 +195,8 @@ export interface SpaceViewOptions {
    * solar system): the caller updates its state (setFrame with the same id does nothing).
    */
   onFrameChange?: (id: ReferenceFrameId) => void;
+  /** Duration (ms) of the way back from a visit by pinching out (#134); 0: crossfade. */
+  exitDuration?: () => number;
 }
 
 /** A flight between the sky map's point of view and the orbit (#37), see flight.ts. */
@@ -2056,7 +2058,7 @@ export class SpaceView {
     for (let i = 0; i < 2; i++) {
       const g = i === 0 ? this.globe3d : this.fadingGlobe;
       // A globe still smaller than its glyph (globeShown) does not hide anything yet.
-      if (!g.object.visible || !this.isGlobe(bodyKind(g.getBody()))) continue;
+      if (!this.globeShown(g)) continue;
       const r = bodyRadius(g.getBody());
       if (hiddenBySphere(cam, p, atInfinity, g.object.position, r, tmp)) return true;
     }
@@ -3213,10 +3215,19 @@ export class SpaceView {
     return kind === this.globeKindA || kind === this.globeKindB;
   }
 
-  /** Hides the glyphs of the bodies drawn as globes (engraved and realistic), once per change. */
+  /**
+   * Hides the glyphs of the bodies drawn as globes (engraved and realistic), once per change.
+   * Between a visit and the true-scale scene (#134) the visited body's sky glyph stays hidden
+   * however small its globe: its scene marker stands for it, on the globe.
+   */
   private applyGlobes(): void {
-    const a = this.globeShown(this.globe3d) ? bodyKind(this.globe3d.getBody()) : -1;
-    const b = this.globeShown(this.fadingGlobe) ? bodyKind(this.fadingGlobe.getBody()) : -1;
+    const blend = this.frameTween?.blend ?? null;
+    const a =
+      blend === "in" || this.globeShown(this.globe3d) ? bodyKind(this.globe3d.getBody()) : -1;
+    const b =
+      blend === "out" || this.globeShown(this.fadingGlobe)
+        ? bodyKind(this.fadingGlobe.getBody())
+        : -1;
     if (this.globesApplied && a === this.globeKindA && b === this.globeKindB) return;
     this.globesApplied = true;
     this.globeKindA = a;
@@ -3467,7 +3478,9 @@ export class SpaceView {
     // from where the camera is.
     if (this.frameId === "body") {
       if (!this.frameTween && this.pinchExit.push(requested, this.distMax(), performance.now()))
-        this.exitVisit({ duration: this.reducedMotion ? 0 : BODY_TRANSITION_MS });
+        this.exitVisit({
+          duration: this.options.exitDuration?.() ?? (this.reducedMotion ? 0 : BODY_TRANSITION_MS),
+        });
       return;
     }
     // Zooming in past the closest distance on "you are here": into the sky (#37). Only round the

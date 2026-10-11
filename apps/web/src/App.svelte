@@ -553,6 +553,7 @@
         spaceFrame = id;
         frameNote = null;
       },
+      exitDuration: frameDuration,
       style: spaceStyle,
       monochrome: night,
       loadTexture: (name) => getImage(`space/${name}.webp`),
