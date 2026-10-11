@@ -1,7 +1,7 @@
 <script lang="ts">
   // Bottom line of the interface (#130): play/pause and the displayed date (a tap unfolds the
-  // time slider above it), then the field actions only: search and, where it works, sensor
-  // pointing; then the menu. Everything else is in the menu.
+  // time slider above it), then sensor pointing where it works in the field, then the menu.
+  // The search is at the top right of the sky map (#138); everything else is in the menu.
   import type { Snippet } from "svelte";
   import { _ } from "@asteria/ui";
   import Icon from "./Icon.svelte";
@@ -14,10 +14,6 @@
     relative,
     timeOpen,
     ontime,
-    search,
-    searchOpen,
-    onsearch,
-    searchButton = $bindable(),
     pointing,
     onpoint,
     menuOpen,
@@ -36,11 +32,6 @@
     timeOpen: boolean;
     /** Unfolds or folds the time controls. */
     ontime: () => void;
-    /** The search is offered (sky map). */
-    search: boolean;
-    searchOpen: boolean;
-    onsearch: () => void;
-    searchButton?: HTMLButtonElement | undefined;
     /** Direct sensor pointing button: null when not offered here (it stays in the menu). */
     pointing: boolean | null;
     onpoint: () => void;
@@ -77,19 +68,6 @@
     <span class="state" class:live>{live ? `● ${$_("time.live")}` : relative}</span>
     <span class="sr-only">{timeOpen ? $_("time.collapse") : $_("time.expand")}</span>
   </button>
-  {#if search}
-    <button
-      class="icon"
-      bind:this={searchButton}
-      onclick={onsearch}
-      aria-haspopup="dialog"
-      aria-expanded={searchOpen}
-      aria-label={$_("search.open")}
-      title={$_("search.open")}
-    >
-      <Icon name="search" size={18} />
-    </button>
-  {/if}
   {#if pointing !== null}
     <button
       class="icon"

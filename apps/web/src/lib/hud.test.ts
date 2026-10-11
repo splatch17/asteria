@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { immersiveAfterTap, pointingShortcut } from "./hud";
+import fr from "@asteria/ui/locales/fr.json";
+import {
+  compassHeading,
+  compassPoint,
+  immersiveAfterTap,
+  needleRotation,
+  pointingShortcut,
+} from "./hud";
 
 const env = (over: Partial<Parameters<typeof pointingShortcut>[0]> = {}) => ({
   coarse: true,
@@ -36,5 +43,30 @@ describe("tap on the sky", () => {
   it("any tap brings a hidden interface back, an object tap included", () => {
     expect(immersiveAfterTap({ ...rest, immersive: true })).toBe(false);
     expect(immersiveAfterTap({ ...rest, immersive: true, hit: true })).toBe(false);
+  });
+});
+
+describe("compass (#138)", () => {
+  it("reads the heading in whole degrees in [0, 360)", () => {
+    expect(compassHeading(0)).toBe(0);
+    expect(compassHeading(180)).toBe(180);
+    expect(compassHeading(-90)).toBe(270);
+    expect(compassHeading(725.2)).toBe(5);
+    expect(compassHeading(359.7)).toBe(0);
+    expect(compassHeading(Number.NaN)).toBe(0);
+  });
+  it("names the eight points of the compass", () => {
+    expect([0, 44, 90, 135, 180, 225, 270, 315, 338].map(compassPoint)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 0,
+    ]);
+  });
+  it("turns the needle against the view: north up facing north, down facing south", () => {
+    expect(needleRotation(0) + 0).toBe(0);
+    expect(needleRotation(180)).toBe(-180);
+    expect(needleRotation(90, 10)).toBe(-100);
+  });
+  it("has a French name for each point", () => {
+    const messages = fr as Record<string, string>;
+    for (let i = 0; i < 8; i++) expect(messages[`compass.dir.${i}`]).toBeTruthy();
   });
 });

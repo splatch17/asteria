@@ -1,23 +1,21 @@
 <script lang="ts">
-  // Layers of the current view (#54) as menu tiles (#135): the everyday ones (`tier="main"`) or
-  // the rarer ones of « Plus de réglages ». No wrapper: the tiles join the caller's grid, next to
-  // its own tiles. The menu owns the dialog, focus, closing and the detail readout.
+  // Layers of one section (#54: Ciel, Système solaire, Repères) as menu tiles (#135), in the
+  // menu's « Affichage » panel (#138). No wrapper: the tiles join the caller's grid. The menu owns
+  // the dialog, focus, closing and the detail readout.
   import { _ } from "@asteria/ui";
   import type { SkyLayers } from "@asteria/sky-renderer";
-  import { layersFor, type LayerKey, type LayerView } from "../lib/layers";
+  import type { LayerEntry, LayerKey } from "../lib/layers";
   import MenuTile from "./MenuTile.svelte";
 
   let {
-    view,
-    tier,
+    entries,
     layers,
     onchange,
     unavailable = [],
     oninfo,
   }: {
-    /** Current view: only the layers it renders are offered. */
-    view: LayerView;
-    tier: "main" | "more";
+    /** The section's layers honoured by the current view (`sectionsFor`). */
+    entries: readonly LayerEntry[];
     layers: Readonly<SkyLayers>;
     onchange: (key: LayerKey, value: boolean) => void;
     /** Layers whose data could not be loaded (#101): shown off and disabled, with a notice. */
@@ -27,8 +25,6 @@
       on: boolean,
     ) => void;
   } = $props();
-
-  const entries = $derived(layersFor(view, tier));
 </script>
 
 {#each entries as entry (entry.key)}
