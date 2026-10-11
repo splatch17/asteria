@@ -313,6 +313,8 @@
   "frame.body.lightHours": "lumière {h, number} h {min, number} min",
   "frame.body.scale": "L'astre et la Terre sont à l'échelle réelle ; le Soleil, la Lune et les planètes vus au loin sont agrandis pour rester visibles.",
   "frame.body.header": "Visite : {body}",
+  "frame.body.back": "Système solaire",
+  "frame.body.backHint": "Revenir au système solaire (ou écarter les doigts au-delà de l'astre)",
   "frame.heliocentric.discovery": "Le Soleil et les huit planètes à leur vraie place et à leur vraie taille : l'espace est immense ! Écartez deux doigts pour vous approcher d'une planète, touchez-la pour la visiter.",
   "frame.heliocentric.amateur": "Tout est à l'échelle réelle, distances et tailles. Approchez-vous d'une planète en écartant deux doigts : quand son vrai globe devient visible, son repère s'efface. Le curseur du temps fait avancer les planètes.",
   "frame.heliocentric.expert": "Positions héliocentriques géométriques (astronomy-engine, à 15″ de JPL Horizons DE441), rayons UAI, orbites osculatrices à la date ; zoom logarithmique continu de l'orbite de Neptune à la surface d'une planète.",

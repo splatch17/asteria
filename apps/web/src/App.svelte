@@ -548,6 +548,12 @@
           chooseBody(body);
       },
       onEnterSky: () => flyToSky(),
+      // Pinched out of a visit (#134): back in the solar system, no demonstration started.
+      onFrameChange: (id) => {
+        spaceFrame = id;
+        frameNote = null;
+      },
+      exitDuration: frameDuration,
       style: spaceStyle,
       monochrome: night,
       loadTexture: (name) => getImage(`space/${name}.webp`),
@@ -954,8 +960,10 @@
   let lineElement = $state<HTMLElement>();
   let globeButton = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
+  /** « ← Système solaire » during a visit (#134): kept free of labels while shown. */
+  let visitBack = $state<HTMLElement>();
   const hudBlocks = () =>
-    [header, bottomNav, globeButton].filter((el) => el !== undefined && el !== null);
+    [header, bottomNav, globeButton, visitBack].filter((el) => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
     const rects = immersive
@@ -970,6 +978,7 @@
   }
   $effect(() => {
     void immersive;
+    void visitBack;
     if (status === "ready") tick().then(updateGraduationExclusions);
   });
   /**
@@ -1135,6 +1144,15 @@
       light,
     };
   });
+
+  /**
+   * Out of a visit without the menu (#134): the camera recedes from the body to the solar
+   * system (the view's onFrameChange updates the point of view); a crossfade in reduced motion.
+   */
+  function leaveVisit() {
+    pauseDemo();
+    space?.exitVisit({ duration: frameDuration() });
+  }
 
   /** A frame is chosen in the selector: switch, and say in one sentence what it shows. */
   function chooseFrame(id: ReferenceFrameId) {
@@ -1500,7 +1518,13 @@
     }),
   );
   const placeName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
-  const toastTop = $derived(`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16}px)`);
+  /** « ← Système solaire » under the header during a visit (#134); toasts go below it. */
+  const showVisitBack = $derived(
+    mode === "space" && spaceFrame === "body" && !flying && !immersive && !!space,
+  );
+  const toastTop = $derived(
+    `calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16 + (showVisitBack ? 26 : 0)}px)`,
+  );
 </script>
 
 <!-- During a flight (#37) both views are shown: the map on top, fading, and not touchable. -->
@@ -1528,6 +1552,21 @@
   {locating}
   hidden={immersive}
 />
+
+{#if showVisitBack}
+  <!-- Out of a visit without the menu (#134); pinching out past the body does the same. -->
+  <button
+    bind:this={visitBack}
+    class="visit-back"
+    style:top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight - 2}px)`}
+    title={$_("frame.body.backHint")}
+    aria-label={$_("frame.body.backHint")}
+    onclick={leaveVisit}
+  >
+    <span aria-hidden="true">←</span>
+    {$_("frame.body.back")}
+  </button>
+{/if}
 
 {#if frameOpen && mode === "space"}
   <FramePanel
@@ -1922,6 +1961,36 @@
     letter-spacing: 0;
     height: auto;
     display: block;
+  }
+  /* « ← Système solaire » (#134): an engraved line of the header, not a button block; the
+     padding makes a finger-sized target around small type. */
+  .visit-back {
+    position: fixed;
+    z-index: 3;
+    left: max(8px, calc(env(safe-area-inset-left) - 8px));
+    margin: 0;
+    padding: 6px 8px;
+    height: auto;
+    min-height: 0;
+    display: inline-flex;
+    gap: 6px;
+    align-items: baseline;
+    border: 0;
+    background: none;
+    font: 10px/14px var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+    text-shadow: 0 0 6px var(--ast-bg);
+    text-decoration: underline;
+    text-decoration-color: var(--ast-hairline);
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .visit-back:hover,
+  .visit-back:focus-visible {
+    color: var(--ast-fg);
+    text-decoration-color: currentColor;
   }
   /* One line at rest (#130); a tap shows the whole caption. */
   .scale-note {
