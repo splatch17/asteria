@@ -22,7 +22,7 @@
     bottom: string;
     onselect: (id: RestFrameId) => void;
     /** The chip's container, for the HUD's label exclusions. */
-    element?: HTMLElement;
+    element?: HTMLElement | undefined;
   } = $props();
 
   let open = $state(false);
