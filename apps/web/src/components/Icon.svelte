@@ -171,6 +171,22 @@
     <path d="M1.5 8 C3.6 4.6 12.4 4.6 14.5 8 C12.4 11.4 3.6 11.4 1.5 8 Z" />
     <circle cx="8" cy="8" r="1.9" class="fill" />
     <path d="M3 13.5 L13 2.5" />
+  {:else if name === "eye"}
+    <!-- An engraved eye with a star in the pupil: the menu's « Vue » panel (#138). -->
+    <path d="M1.5 8 C3.6 4.2 12.4 4.2 14.5 8 C12.4 11.8 3.6 11.8 1.5 8 Z" />
+    <circle cx="8" cy="8" r="2.4" />
+    <path d={sparkle(8, 8, 1.3)} class="fill" />
+  {:else if name === "placeTime"}
+    <!-- A place marker over a dial's rule: « Lieu et temps » (#138). -->
+    <path d="M8 12.6 C5 9.4 4 7.8 4 5.8 A4 4 0 0 1 12 5.8 C12 7.8 11 9.4 8 12.6 Z" />
+    <circle cx="8" cy="5.8" r="1.3" class="fill" />
+    <path d="M2 14.6 H14 M4 14.6 V13.4 M12 14.6 V13.4" class="thin" />
+  {:else if name === "settings"}
+    <!-- Three engraved sliders: « Réglages » (#138). -->
+    <path d="M2 4 H14 M2 8 H14 M2 12 H14" class="thin" />
+    <rect x="9" y="2.4" width="2.4" height="3.2" class="fill" />
+    <rect x="4" y="6.4" width="2.4" height="3.2" class="fill" />
+    <rect x="10.4" y="10.4" width="2.4" height="3.2" class="fill" />
   {/if}
 </svg>
 

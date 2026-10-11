@@ -1,6 +1,7 @@
 <script lang="ts">
   // Mini-globe of the sky view (#38): the Earth centred on the observer, with the terminator of
-  // the displayed date; a tap flies to the Earth view (#37). Drawn on demand by MiniGlobe.
+  // the displayed date; a tap flies to the Earth view (#37). Drawn on demand by MiniGlobe. Laid
+  // out by SkyTools, between the search and the compass (#138).
   import { onDestroy, onMount } from "svelte";
   import { _ } from "@asteria/ui";
   import { unitVector, type Vec3 } from "@asteria/astro-core";
@@ -16,7 +17,6 @@
   const SIZE = 56;
 
   let {
-    top,
     images,
     place,
     sun,
@@ -28,8 +28,6 @@
     hidden = false,
     element = $bindable(),
   }: {
-    /** CSS `top` (below the dials column). */
-    top: string;
     images: MiniGlobeImages | null;
     place: { latitude: number; longitude: number };
     /** Sun, astrometric J2000 (degrees). */
@@ -75,7 +73,6 @@
 <button
   class="globe"
   {hidden}
-  style:top
   style:--size={`${SIZE}px`}
   bind:this={element}
   onclick={onopen}
@@ -87,9 +84,6 @@
 
 <style>
   .globe {
-    position: fixed;
-    z-index: 2;
-    right: max(16px, env(safe-area-inset-right));
     width: var(--size);
     height: var(--size);
     padding: 0;

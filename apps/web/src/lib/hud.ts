@@ -5,7 +5,7 @@
 import { preflight, type SensorEnvironment } from "./sensors";
 
 /**
- * Sensor pointing gets a direct button next to the search only where it can work in the field:
+ * Sensor pointing gets a direct button on the time line only where it can work in the field:
  * a touch screen, a secure context and an orientation source. Elsewhere it stays in the menu
  * (where a tap still explains why it cannot start).
  */
@@ -34,4 +34,27 @@ export interface SkyTapContext {
 export function immersiveAfterTap(c: SkyTapContext): boolean {
   if (c.immersive) return false;
   return !c.hit && !c.selected && !c.overlay;
+}
+
+/**
+ * Compass of the sky map (#138): heading of the view's centre, whole degrees in [0, 360), from
+ * the map's azimuth (degrees from north through east, any turn count).
+ */
+export function compassHeading(azimuth: number): number {
+  if (!Number.isFinite(azimuth)) return 0;
+  const h = Math.round(((azimuth % 360) + 360) % 360);
+  return h === 360 ? 0 : h;
+}
+
+/** Eight-point direction of a heading: 0 north, 1 north-east… 7 north-west (i18n `compass.dir.N`). */
+export function compassPoint(heading: number): number {
+  return Math.round((((heading % 360) + 360) % 360) / 45) % 8;
+}
+
+/**
+ * Rotation of the needle, degrees clockwise on screen: north is up when the view faces north,
+ * and the needle turns against the view's heading and roll (a rolled view turns the sky).
+ */
+export function needleRotation(azimuth: number, roll = 0): number {
+  return -azimuth - roll;
 }

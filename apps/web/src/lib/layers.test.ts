@@ -4,7 +4,6 @@ import {
   LAYER_SECTIONS,
   graduationFormatter,
   isLevel,
-  layersFor,
   layersFromUrl,
   restoreLayers,
   sectionsFor,
@@ -83,34 +82,37 @@ describe("layer catalogue", () => {
   });
 });
 
-describe("layersFor (#135)", () => {
-  const keys = (view: "sky" | "space", tier: "main" | "more") =>
-    layersFor(view, tier).map((e) => e.key);
+describe("Affichage panel (#138)", () => {
+  const keys = (view: "sky" | "space") =>
+    sectionsFor(view).map((s) => [s.id, s.entries.map((e) => e.key)]);
 
-  it("puts the everyday layers in the main grid, in catalogue order", () => {
-    expect(keys("sky", "main")).toEqual([
-      "constellationLines",
-      "constellationNames",
-      "constellationFigures",
-      "starNames",
-      "deepSky",
-      "planets",
+  it("groups every layer of a view by section, in catalogue order", () => {
+    expect(keys("sky")).toEqual([
+      [
+        "sky",
+        [
+          "constellationLines",
+          "constellationNames",
+          "constellationFigures",
+          "starNames",
+          "deepSky",
+          "seeThroughGround",
+          "realisticDaylight",
+        ],
+      ],
+      ["solar", ["planets", "allPaths"]],
+      ["guides", ["equatorialGrid", "azimuthalGrid", "ecliptic", "miniGlobe"]],
     ]);
-    expect(keys("space", "main")).toEqual(["constellationLines", "planets"]);
-  });
-
-  it("keeps every other layer in « Plus de réglages »: none is lost", () => {
-    for (const view of ["sky", "space"] as const) {
-      const all = sectionsFor(view).flatMap((s) => s.entries.map((e) => e.key));
-      expect([...keys(view, "main"), ...keys(view, "more")].sort()).toEqual(all.sort());
-    }
-    expect(keys("sky", "more")).toContain("equatorialGrid");
-    expect(keys("space", "more")).toEqual(["equatorialGrid", "ecliptic"]);
+    expect(keys("space")).toEqual([
+      ["sky", ["constellationLines"]],
+      ["solar", ["planets"]],
+      ["guides", ["equatorialGrid", "ecliptic"]],
+    ]);
   });
 
   it("gives short tile labels that fit a quarter of a phone sheet (two lines of 11)", () => {
     const messages = fr as Record<string, string>;
-    for (const e of layersFor("sky", "main").concat(layersFor("sky", "more"))) {
+    for (const e of sectionsFor("sky").flatMap((s) => s.entries)) {
       const short = messages[`layers.${e.key}.short`]!;
       expect(
         short.split(" ").every((w) => w.length <= 11),
