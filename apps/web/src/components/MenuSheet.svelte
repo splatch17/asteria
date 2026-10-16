@@ -58,6 +58,7 @@
     fullscreen,
     onfullscreen,
     oncredits,
+    online,
     offline,
     onofflineretry,
     onhide,
@@ -101,6 +102,8 @@
     onfullscreen: () => void;
     oncredits: () => void;
     /** Offline copy of the app (#142); « unsupported »: line hidden (development, old browser). */
+    /** The phone has a network (#146): a green or red light in the settings. */
+    online: boolean;
     offline: OfflineState;
     onofflineretry: () => void;
     /** Hides the interface (immersive mode), closing the menu. */
@@ -427,6 +430,15 @@
           {oninfo}
         />
       </div>
+      <div class="line network">
+        <span class="data">
+          <span class="main">{$_("network.title")}</span>
+          <span class="sub" role="status">
+            <span class="light" class:on={online} aria-hidden="true"></span>
+            {online ? $_("network.online") : $_("network.offline")}
+          </span>
+        </span>
+      </div>
       {#if offline.state !== "unsupported"}
         <div class="line offline">
           <span class="data">
@@ -708,8 +720,23 @@
     cursor: default;
     opacity: 0.4;
   }
-  .offline {
+  .network {
     margin-top: 12px;
+  }
+  /* Network light (#146): green when connected, red offline — a signal, outside the palette. */
+  .light {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 5px;
+    border-radius: 50%;
+    vertical-align: 0;
+    background: #ff5a4f;
+    box-shadow: 0 0 6px #ff5a4f;
+  }
+  .light.on {
+    background: #5fd47a;
+    box-shadow: 0 0 6px #5fd47a;
   }
   .sub.ok {
     color: var(--ast-fg);

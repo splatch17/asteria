@@ -7,6 +7,14 @@ import type { OfflineState } from "./offline";
  */
 export const offline = $state<{ current: OfflineState }>({ current: { state: "unsupported" } });
 
+/** Network state (#146), from the browser: « Connecté » or « Hors ligne » in the settings. */
+export const network = $state({ online: navigator.onLine });
+
+export function watchNetwork(): void {
+  addEventListener("online", () => (network.online = true));
+  addEventListener("offline", () => (network.online = false));
+}
+
 export function startOffline(): void {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
   offline.current = { state: "idle", done: 0, total: 0, bytes: 0 };

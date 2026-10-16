@@ -93,7 +93,7 @@
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
   import { watchCompass } from "./lib/device-compass";
-  import { offline, retryOffline } from "./lib/offline-client.svelte";
+  import { network, offline, retryOffline } from "./lib/offline-client.svelte";
   import {
     apparentSize,
     deepSkyLabel,
@@ -2030,6 +2030,7 @@
     fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
+    online={network.online}
     offline={offline.current}
     onofflineretry={retryOffline}
     onhide={fromMenu(() => (immersive = true))}
