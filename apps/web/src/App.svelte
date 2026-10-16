@@ -665,8 +665,7 @@
             flying = null;
             skyView.style.opacity = "";
             updateGraduationExclusions();
-            // Entering the Earth view shows its point of view at work (#128).
-            if (!instant) startDemo(spaceFrame);
+            // No demonstration on arrival (#158): the Earth stays still, seen from above.
             done();
           },
         },

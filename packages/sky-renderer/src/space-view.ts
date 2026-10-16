@@ -1858,9 +1858,17 @@ export class SpaceView {
     if (!f) return;
     this.flight = null;
     if (f.direction === "out") {
-      // Hand over to the orbit camera exactly where the flight ends; in the body frame, travel
-      // on to the body from there.
-      this.travelToDefault(f.duration > 0 ? FRAME_TRANSITION_MS : 0);
+      if (isSunCentred(this.frameId) && !this.attached()) {
+        // The solar system (#158): stay where the flight ends, the Earth seen from above, in
+        // the style chosen; pinching out opens the whole solar system round it.
+        this.frameTween = null;
+        orbitInFrame(this.camera.position, ORIGIN, this.frameQuat, this.frameOrigin, this.orbit);
+        this.update();
+      } else {
+        // Hand over to the orbit camera exactly where the flight ends; in the body frame,
+        // travel on to the body from there.
+        this.travelToDefault(f.duration > 0 ? FRAME_TRANSITION_MS : 0);
+      }
     }
     this.dirty = true;
     f.options.onDone?.();

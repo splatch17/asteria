@@ -27,6 +27,7 @@
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-16 — #158 Depuis la carte, la vue s'arrête sur la Terre vue de haut (thème choisi) au lieu de partir seule vers le système solaire ; on dézoome en continu jusqu'au système solaire. Plus de démonstration à l'arrivée. Capture `docs/design/earth-zoom-out/`.
 - 2026-10-16 — #156 Carte : tourner deux doigts fait tourner le ciel autour du centre (avec le pincement pour zoomer). Capture `docs/design/free-pan/two-finger-twist.png`.
 - 2026-10-16 — #154 Carte : plus aucune rotation automatique au relâcher ; la boussole remet la vue droite face au nord.
 - 2026-10-16 — #152 Carte : au-dessus de 60° le ciel suit le doigt librement (caméra tournée sur ses axes, pas de demi-tour au zénith) ; horizon redressé au relâcher sous 60°. Capture `docs/design/free-pan/`.
