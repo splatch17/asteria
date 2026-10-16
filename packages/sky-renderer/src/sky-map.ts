@@ -68,6 +68,7 @@ import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import {
   backCutoff,
+  FREE_PAN_ALTITUDE,
   maxFov,
   panView,
   projectStereo,
@@ -2115,9 +2116,14 @@ export class SkyMap {
 
     const end = (e: PointerEvent) => {
       if (!this.pointers.delete(e.pointerId)) return;
-      // Over the zenith (#150): the view looks down the other side upside down; it turns
-      // the right way up once the finger lifts.
-      if (this.pointers.size === 0 && !this.pointing && Math.abs(this.view.roll ?? 0) > 90)
+      // A view rolled by a free pan near the zenith (#152) is levelled once the finger lifts
+      // back near the horizon; up there it stays as the finger left it.
+      if (
+        this.pointers.size === 0 &&
+        !this.pointing &&
+        Math.abs(this.view.roll ?? 0) > 1e-6 &&
+        Math.abs(this.view.altitude) < FREE_PAN_ALTITUDE
+      )
         this.animateTo({ roll: 0 }, 450);
       if (this.pointers.size === 0 && this.moved < 6) {
         const rect = canvas.getBoundingClientRect();

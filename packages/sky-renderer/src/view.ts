@@ -105,28 +105,45 @@ export function viewAnimationProgress(now: number, start: number, duration: numb
   return 1 - (1 - t) ** 3;
 }
 
-/** Near the zenith a sideways drag turns the azimuth at most 1/this faster than at the horizon. */
-const MIN_AZIMUTH_SCALE = 0.25;
+/** Above this altitude (and below its opposite) the sky follows the finger freely (#152). */
+export const FREE_PAN_ALTITUDE = 60;
 
 /**
- * Pans the view by a finger's drag (#150), the drag already turned into degrees of the field:
- * `yaw` towards the screen's right, `pitch` towards its top. Sideways, the azimuth turns by
- * yaw / cos(altitude), so that the sky at the centre follows the finger (capped near the zenith).
- * Upwards, the view goes over the zenith instead of stopping there: it then looks down the other
- * side upside down (roll 180°), and the same drag keeps going the same way; SkyMap straightens
- * it when the finger lifts. Below the horizon, the same through the nadir.
+ * Pans the view by a finger's drag, the drag already turned into degrees of the field: `yaw`
+ * towards the screen's right, `pitch` towards its top.
+ *
+ * Near the horizon the horizon stays level: yaw turns the azimuth (scaled by 1 / cos(altitude),
+ * so the sky at the centre follows the finger), pitch the altitude. Higher up, where an
+ * alt-azimuth view has no "up", the camera turns about its own axes (#152): the sky follows the
+ * finger in every direction around the zenith, without spinning about it nor flipping over; the
+ * screen may then be rolled. A rolled view keeps panning that way; SkyMap levels it again once
+ * the finger lifts below FREE_PAN_ALTITUDE.
  */
 export function panView(view: ViewState, yaw: number, pitch: number): ViewState {
-  const flipped = Math.abs(view.roll ?? 0) > 90;
-  const sign = flipped ? -1 : 1;
-  const scale = Math.max(MIN_AZIMUTH_SCALE, Math.cos(view.altitude * RAD));
-  let azimuth = view.azimuth + (sign * yaw) / scale;
-  let altitude = view.altitude + sign * pitch;
-  let roll = flipped ? 180 : 0;
-  if (altitude > 90 || altitude < -90) {
-    altitude = Math.sign(altitude) * 180 - altitude;
-    azimuth += 180;
-    roll = flipped ? 0 : 180;
+  const roll = view.roll ?? 0;
+  if (Math.abs(roll) < 1e-6 && Math.abs(view.altitude) < FREE_PAN_ALTITUDE) {
+    const azimuth = view.azimuth + yaw / Math.cos(view.altitude * RAD);
+    return {
+      ...view,
+      azimuth: ((azimuth % 360) + 360) % 360,
+      altitude: view.altitude + pitch,
+      roll: 0,
+    };
   }
-  return { ...view, azimuth: ((azimuth % 360) + 360) % 360, altitude, roll };
+  const [r0, r1, r2, u0, u1, u2, f0, f1, f2] = viewMatrix(view);
+  const [cy, sy] = [Math.cos(yaw * RAD), Math.sin(yaw * RAD)];
+  const [cp, sp] = [Math.cos(pitch * RAD), Math.sin(pitch * RAD)];
+  // Yaw: forward turns towards right; then pitch: forward turns towards up.
+  const fy: Vec3 = [f0 * cy + r0 * sy, f1 * cy + r1 * sy, f2 * cy + r2 * sy];
+  const f: Vec3 = [fy[0] * cp + u0 * sp, fy[1] * cp + u1 * sp, fy[2] * cp + u2 * sp];
+  const u: Vec3 = [u0 * cp - fy[0] * sp, u1 * cp - fy[1] * sp, u2 * cp - fy[2] * sp];
+  const altitude = Math.asin(Math.max(-1, Math.min(1, f[2]))) / RAD;
+  const azimuth = (((Math.atan2(f[1], f[0]) / RAD) % 360) + 360) % 360;
+  // Roll as in viewMatrix: up = cos ρ · up0 + sin ρ · right0.
+  const a = azimuth * RAD;
+  const h = altitude * RAD;
+  const right0: Vec3 = [-Math.sin(a), Math.cos(a), 0];
+  const up0: Vec3 = [-Math.sin(h) * Math.cos(a), -Math.sin(h) * Math.sin(a), Math.cos(h)];
+  const dot = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  return { ...view, azimuth, altitude, roll: Math.atan2(dot(u, right0), dot(u, up0)) / RAD };
 }

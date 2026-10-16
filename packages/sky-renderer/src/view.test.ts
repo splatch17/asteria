@@ -78,33 +78,44 @@ describe("viewAnimationProgress", () => {
   });
 });
 
-describe("panView (#150)", () => {
-  const base = { azimuth: 180, altitude: 20, fov: 60, roll: 0 };
-  it("turns and tilts like before, the sky at the centre following the finger", () => {
+describe("panView (#152)", () => {
+  const base: ViewState = { azimuth: 180, altitude: 20, fov: 60, roll: 0 };
+  const dir = (s: ViewState) => {
+    const a = (s.azimuth * Math.PI) / 180;
+    const h = (s.altitude * Math.PI) / 180;
+    return [Math.cos(h) * Math.cos(a), Math.cos(h) * Math.sin(a), Math.sin(h)];
+  };
+  const angle = (p: ViewState, q: ViewState) => {
+    const [a, b] = [dir(p), dir(q)];
+    return (Math.acos(Math.min(1, a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!)) * 180) / Math.PI;
+  };
+  it("near the horizon, turns and tilts with the horizon level", () => {
     const v = panView(base, 10, 0);
     expect(v.azimuth).toBeCloseTo(180 + 10 / Math.cos(20 * (Math.PI / 180)), 6);
     expect(v.altitude).toBe(20);
     expect(v.roll).toBe(0);
     const w = panView(base, 0, 15);
     expect(w.altitude).toBe(35);
-    expect(w.azimuth).toBe(180);
+    expect(w.roll).toBe(0);
   });
-  it("goes over the zenith and keeps going the same way, upside down", () => {
-    let v: ViewState = { ...base };
-    for (let i = 0; i < 12; i++) v = panView(v, 0, 10); // 20° + 120° of drag upwards
-    expect(v.altitude).toBeCloseTo(40, 9);
-    expect(v.azimuth).toBeCloseTo(0, 9);
-    expect(v.roll).toBe(180);
-    // Dragging back comes back over the zenith, the right way up.
-    for (let i = 0; i < 12; i++) v = panView(v, 0, -10);
-    expect(v.altitude).toBeCloseTo(20, 9);
-    expect(v.azimuth).toBeCloseTo(180, 9);
-    expect(v.roll).toBe(0);
+  it("near the zenith, moves the centre by the drag in any direction, never spinning", () => {
+    const top: ViewState = { azimuth: 180, altitude: 85, fov: 60, roll: 0 };
+    for (const [yaw, pitch] of [
+      [3, 0],
+      [-3, 0],
+      [0, 3],
+      [2, -2],
+    ] as const)
+      expect(angle(top, panView(top, yaw, pitch))).toBeCloseTo(Math.hypot(yaw, pitch), 3);
   });
-  it("caps the turn near the zenith, and mirrors sideways drags when upside down", () => {
-    const top = panView({ ...base, altitude: 89 }, 1, 0);
-    expect(top.azimuth - 180).toBeCloseTo(4, 9);
-    const flipped = panView({ ...base, roll: 180 }, 10, 0);
-    expect(flipped.azimuth).toBeLessThan(180);
+  it("crosses the zenith smoothly and comes back the same way, without a half-turn", () => {
+    let v: ViewState = { ...base, altitude: 70 };
+    const path: ViewState[] = [];
+    for (let i = 0; i < 10; i++) path.push((v = panView(v, 0, 5))); // 70° + 50°: past the zenith
+    for (let i = 1; i < path.length; i++) expect(angle(path[i - 1]!, path[i]!)).toBeCloseTo(5, 6);
+    for (let i = 0; i < 10; i++) v = panView(v, 0, -5);
+    expect(v.altitude).toBeCloseTo(70, 6);
+    expect(v.azimuth).toBeCloseTo(180, 6);
+    expect(Math.abs(v.roll ?? 0)).toBeLessThan(1e-6);
   });
 });
