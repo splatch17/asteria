@@ -116,8 +116,8 @@ export const FREE_PAN_ALTITUDE = 60;
  * so the sky at the centre follows the finger), pitch the altitude. Higher up, where an
  * alt-azimuth view has no "up", the camera turns about its own axes (#152): the sky follows the
  * finger in every direction around the zenith, without spinning about it nor flipping over; the
- * screen may then be rolled. A rolled view keeps panning that way; SkyMap levels it again once
- * the finger lifts below FREE_PAN_ALTITUDE.
+ * screen may then be rolled. A rolled view keeps panning that way and is never turned back on
+ * its own (#154): the compass (« face au nord ») levels it.
  */
 export function panView(view: ViewState, yaw: number, pitch: number): ViewState {
   const roll = view.roll ?? 0;
