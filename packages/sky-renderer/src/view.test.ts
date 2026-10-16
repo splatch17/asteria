@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { applyMat3 } from "@asteria/astro-core";
 import {
+  panView,
   projectStereo,
   stereoScale,
   unprojectStereo,
   viewAnimationProgress,
   viewMatrix,
+  type ViewState,
 } from "./view";
 
 describe("viewMatrix", () => {
@@ -73,5 +75,36 @@ describe("viewAnimationProgress", () => {
   it("ends at once without a duration (reduced motion), never NaN", () => {
     expect(viewAnimationProgress(1000, 1000, 0)).toBe(1);
     expect(viewAnimationProgress(1000, 1000, -5)).toBe(1);
+  });
+});
+
+describe("panView (#150)", () => {
+  const base = { azimuth: 180, altitude: 20, fov: 60, roll: 0 };
+  it("turns and tilts like before, the sky at the centre following the finger", () => {
+    const v = panView(base, 10, 0);
+    expect(v.azimuth).toBeCloseTo(180 + 10 / Math.cos(20 * (Math.PI / 180)), 6);
+    expect(v.altitude).toBe(20);
+    expect(v.roll).toBe(0);
+    const w = panView(base, 0, 15);
+    expect(w.altitude).toBe(35);
+    expect(w.azimuth).toBe(180);
+  });
+  it("goes over the zenith and keeps going the same way, upside down", () => {
+    let v: ViewState = { ...base };
+    for (let i = 0; i < 12; i++) v = panView(v, 0, 10); // 20° + 120° of drag upwards
+    expect(v.altitude).toBeCloseTo(40, 9);
+    expect(v.azimuth).toBeCloseTo(0, 9);
+    expect(v.roll).toBe(180);
+    // Dragging back comes back over the zenith, the right way up.
+    for (let i = 0; i < 12; i++) v = panView(v, 0, -10);
+    expect(v.altitude).toBeCloseTo(20, 9);
+    expect(v.azimuth).toBeCloseTo(180, 9);
+    expect(v.roll).toBe(0);
+  });
+  it("caps the turn near the zenith, and mirrors sideways drags when upside down", () => {
+    const top = panView({ ...base, altitude: 89 }, 1, 0);
+    expect(top.azimuth - 180).toBeCloseTo(4, 9);
+    const flipped = panView({ ...base, roll: 180 }, 10, 0);
+    expect(flipped.azimuth).toBeLessThan(180);
   });
 });
