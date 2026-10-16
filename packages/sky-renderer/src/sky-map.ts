@@ -69,6 +69,7 @@ import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGr
 import {
   backCutoff,
   maxFov,
+  panView,
   projectStereo,
   stereoScale,
   unprojectStereo,
@@ -424,6 +425,7 @@ export class SkyMap {
   private readonly screenPt: [number, number] = [0, 0];
   /** Magnitudes of the catalogue (sorted), for pickStar. */
   private readonly mags: Float32Array;
+  /** Inertia of a pan: camera yaw and pitch per frame, degrees (panView). */
   private velocity = { az: 0, alt: 0 };
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private moved = 0;
@@ -748,6 +750,9 @@ export class SkyMap {
     const from = { ...this.view };
     const to = { ...from, ...target };
     to.azimuth = from.azimuth + ((((to.azimuth - from.azimuth) % 360) + 540) % 360) - 180;
+    // A view rolled over the zenith (#150) comes back level, the short way round.
+    const roll = from.roll ?? 0;
+    to.roll = roll + (((((target.roll ?? 0) - roll) % 360) + 540) % 360) - 180;
     this.velocity = { az: 0, alt: 0 };
     this.animation = { from, to, start: performance.now(), duration };
   }
@@ -1094,7 +1099,7 @@ export class SkyMap {
   }
 
   private clampView(): void {
-    this.view.altitude = Math.max(-89.9, Math.min(89.9, this.view.altitude));
+    this.view.altitude = Math.max(-90, Math.min(90, this.view.altitude));
     this.view.azimuth = ((this.view.azimuth % 360) + 360) % 360;
     // Widest field: depends on the screen's shape (maxFov, #89).
     this.view.fov = Math.max(FOV_MIN, Math.min(maxFov(this.size.w / this.size.h), this.view.fov));
@@ -1126,8 +1131,7 @@ export class SkyMap {
       !this.pointers.size &&
       (Math.abs(this.velocity.az) > 0.001 || Math.abs(this.velocity.alt) > 0.001)
     ) {
-      this.view.azimuth += this.velocity.az;
-      this.view.altitude += this.velocity.alt;
+      Object.assign(this.view, panView(this.view, this.velocity.az, this.velocity.alt));
       this.velocity.az *= FRICTION;
       this.velocity.alt *= FRICTION;
       this.clampView();
@@ -1139,6 +1143,8 @@ export class SkyMap {
       this.view.azimuth = from.azimuth + (to.azimuth - from.azimuth) * e;
       this.view.altitude = from.altitude + (to.altitude - from.altitude) * e;
       this.view.fov = from.fov + (to.fov - from.fov) * e;
+      const roll = from.roll ?? 0;
+      this.view.roll = roll + ((to.roll ?? 0) - roll) * e;
       if (e >= 1) this.animation = null;
       this.clampView();
       this.dirty = true;
@@ -2092,10 +2098,10 @@ export class SkyMap {
           this.options.onPointingDrag?.((-dx * this.view.fov) / canvas.clientHeight);
         } else if (this.pointers.size === 1) {
           this.animation = null;
+          // The sky follows the finger, over the zenith too (#150).
           const degPerPx = this.view.fov / canvas.clientHeight;
           this.velocity = { az: -dx * degPerPx, alt: dy * degPerPx };
-          this.view.azimuth += this.velocity.az;
-          this.view.altitude += this.velocity.alt;
+          Object.assign(this.view, panView(this.view, this.velocity.az, this.velocity.alt));
         } else if (this.pointers.size === 2) {
           const d = this.pinchDistance();
           if (pinchDist > 0) this.zoomBy(pinchDist / d);
@@ -2109,6 +2115,10 @@ export class SkyMap {
 
     const end = (e: PointerEvent) => {
       if (!this.pointers.delete(e.pointerId)) return;
+      // Over the zenith (#150): the view looks down the other side upside down; it turns
+      // the right way up once the finger lifts.
+      if (this.pointers.size === 0 && !this.pointing && Math.abs(this.view.roll ?? 0) > 90)
+        this.animateTo({ roll: 0 }, 450);
       if (this.pointers.size === 0 && this.moved < 6) {
         const rect = canvas.getBoundingClientRect();
         this.options.onSelect?.(this.pick(e.clientX - rect.left, e.clientY - rect.top));

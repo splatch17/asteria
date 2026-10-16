@@ -104,3 +104,29 @@ export function viewAnimationProgress(now: number, start: number, duration: numb
   const t = duration > 0 ? Math.min(1, Math.max(0, (now - start) / duration)) : 1;
   return 1 - (1 - t) ** 3;
 }
+
+/** Near the zenith a sideways drag turns the azimuth at most 1/this faster than at the horizon. */
+const MIN_AZIMUTH_SCALE = 0.25;
+
+/**
+ * Pans the view by a finger's drag (#150), the drag already turned into degrees of the field:
+ * `yaw` towards the screen's right, `pitch` towards its top. Sideways, the azimuth turns by
+ * yaw / cos(altitude), so that the sky at the centre follows the finger (capped near the zenith).
+ * Upwards, the view goes over the zenith instead of stopping there: it then looks down the other
+ * side upside down (roll 180°), and the same drag keeps going the same way; SkyMap straightens
+ * it when the finger lifts. Below the horizon, the same through the nadir.
+ */
+export function panView(view: ViewState, yaw: number, pitch: number): ViewState {
+  const flipped = Math.abs(view.roll ?? 0) > 90;
+  const sign = flipped ? -1 : 1;
+  const scale = Math.max(MIN_AZIMUTH_SCALE, Math.cos(view.altitude * RAD));
+  let azimuth = view.azimuth + (sign * yaw) / scale;
+  let altitude = view.altitude + sign * pitch;
+  let roll = flipped ? 180 : 0;
+  if (altitude > 90 || altitude < -90) {
+    altitude = Math.sign(altitude) * 180 - altitude;
+    azimuth += 180;
+    roll = flipped ? 0 : 180;
+  }
+  return { ...view, azimuth: ((azimuth % 360) + 360) % 360, altitude, roll };
+}
