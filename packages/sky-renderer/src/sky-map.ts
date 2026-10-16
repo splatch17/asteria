@@ -2071,6 +2071,8 @@ export class SkyMap {
     const signal = this.listeners.signal;
     canvas.style.touchAction = "none";
     let pinchDist = 0;
+    /** Angle of the line between the two fingers (radians), for the twist (#156). */
+    let pinchAngle = NaN;
 
     canvas.addEventListener(
       "pointerdown",
@@ -2079,7 +2081,10 @@ export class SkyMap {
         this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         this.velocity = { az: 0, alt: 0 };
         this.moved = 0;
-        if (this.pointers.size === 2) pinchDist = this.pinchDistance();
+        if (this.pointers.size === 2) {
+          pinchDist = this.pinchDistance();
+          pinchAngle = this.pinchAngle();
+        }
       },
       { signal },
     );
@@ -2106,6 +2111,15 @@ export class SkyMap {
           const d = this.pinchDistance();
           if (pinchDist > 0) this.zoomBy(pinchDist / d);
           pinchDist = d;
+          // Twist (#156): turning the two fingers turns the sky the same way, about the centre.
+          const angle = this.pinchAngle();
+          if (!this.pointing && Number.isFinite(pinchAngle)) {
+            const turn = ((((angle - pinchAngle) * 180) / Math.PI + 540) % 360) - 180;
+            const roll = (this.view.roll ?? 0) - turn;
+            this.view.roll = ((roll + 540) % 360) - 180;
+            this.animation = null;
+          }
+          pinchAngle = angle;
         }
         this.clampView();
         this.dirty = true;
@@ -2120,6 +2134,7 @@ export class SkyMap {
         this.options.onSelect?.(this.pick(e.clientX - rect.left, e.clientY - rect.top));
       }
       pinchDist = 0;
+      pinchAngle = NaN;
     };
     canvas.addEventListener("pointerup", end, { signal });
     canvas.addEventListener("pointercancel", end, { signal });
@@ -2139,6 +2154,11 @@ export class SkyMap {
   /** Pinch / wheel zoom; the field stops at maxFov (no flight to the Earth view, #89). */
   private zoomBy(factor: number): void {
     this.view.fov *= factor;
+  }
+
+  private pinchAngle(): number {
+    const [a, b] = [...this.pointers.values()];
+    return a && b ? Math.atan2(b.y - a.y, b.x - a.x) : NaN;
   }
 
   private pinchDistance(): number {
