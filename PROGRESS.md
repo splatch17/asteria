@@ -8,12 +8,6 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
-| #139 | « La Terre tourne » retiré ; puce « Fixe : Étoiles ▾ » (Étoiles, Soleil, Terre, planète) dans le système solaire, les saisons et la visite ; ERA dans astro-core, rotation testée contre SOFA (captures `docs/design/reference-frames/`, branche poussée, PR à ouvrir, à valider par le porteur) | Claude (agent) | `feat/139-reference-frames` | 2026-10-11 |
-| #138 | Recherche en haut à droite, petite boussole (tuile Nord retirée), menu en quatre panneaux à onglets Vue / Affichage / Lieu et temps / Réglages (captures `docs/design/menu-panels/`, branche poussée, PR à ouvrir, à valider par le porteur) | Claude (agent) | `feat/138-menu-panels` | 2026-10-11 |
-| #134 | Retour fluide de la visite au système solaire (dézoom continu, « ← Système solaire », sans saut de temps de lumière, fondu en mouvement réduit) ; flèches du Soleil retirées de « La Terre tourne » (captures `docs/design/visit-return/`, branche poussée, PR à ouvrir) | Claude (agent) | `feat/134-visit-return` | 2026-10-11 |
-| #135 | Menu visuel : tuiles, cartes des points de vue, « Plus de réglages » replié (captures `docs/design/menu-visual/`, à valider par le porteur) | Claude (agent) | `feat/135-menu-visual` | 2026-10-11 |
-| #101 | Ciel profond sur la carte et dans la recherche | Claude (agent) | `feat/101-deepsky-map` | 2026-10-09 |
-| #123 | Vue Terre : référentiel centré sur un astre | Claude (agent) | `feat/123-body-centred-frame` | 2026-10-10 |
 | #98 | Décalage de la visée capteurs (S23) | Claude (en attente de mesures porteur) | `fix/98-pointing-offset` | 2026-10-08 |
 
 ## ⛔ Blocages / décisions en attente
@@ -33,6 +27,8 @@
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-16 — #142 Mode hors ligne (PR à suivre) : service worker généré au build (`apps/web/offline.ts`, gabarit `src/sw/service-worker.js`) qui télécharge tout le build (code, polices woff2, catalogue, textures, figures, ciel profond) ; mise à jour incrémentale par empreinte de contenu ; état dans Réglages (« Hors ligne · Prêt · N Mo », progression, reprise) ; stockage persistant demandé ; « Ma position » repasse par le GPS sans réseau. Vérifié dans Chromium en mode avion (carte, système solaire, mise à jour) ; captures `docs/design/offline/`.
+- 2026-10-16 — Vague menu et référentiels fusionnée : #130/#131 (PR #132, #133), #135 tuiles (PR #136), #134 retour fluide de visite (PR #137), #138 recherche/boussole/panneaux (PR #140), #139 « La Terre tourne » retiré, puce « Fixe » (PR #141). #101 et #123 fusionnés auparavant.
 - 2026-10-10 — #122 Référentiels de la vue Terre (PR #125) : sélecteur (fixé sur les étoiles, lié à la Terre, plan de l'écliptique ; héliocentrique et centré sur un astre « Bientôt »), transition slerp 800 ms (instantanée en mouvement réduit), phrase pédagogique par niveau, repères pointillés de l'écliptique ; `meanObliquity` IAU 2006 dans astro-core (SOFA `iauObl06` < 0,001″). Découpage de #105 en #122/#123/#124.
 - 2026-10-09 — #107 Gestes tactiles des vues 3D (PR #121) : 1 doigt orbite avec inertie, 2 doigts déplacer/pincer vers les doigts/pivoter, double toucher centrer ou revenir, bouton recentrer, astuce de première utilisation ; angle d'ouverture de la vue 3D corrigé (38°).
 - 2026-10-09 — #95/#96 Figures illustrées des constellations Stellarium / Johan Meuris (PR #120) : pipeline `build_figures.py` (commit épinglé, licence contrôlée, atlas WebP 360 Ko), calage affine sur 3 étoiles d'ancrage (< 0,01″), trame 1-bit Bayer, calque « Figures des constellations » ; 84/85 figures (Télescope : #119).

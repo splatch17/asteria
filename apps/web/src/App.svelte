@@ -90,6 +90,7 @@
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
+  import { offline, retryOffline } from "./lib/offline-client.svelte";
   import {
     apparentSize,
     deepSkyLabel,
@@ -695,19 +696,32 @@
       return;
     }
     locating = "busy";
+    const found = ({ coords }: GeolocationPosition) => {
+      place = { name: "mine", latitude: coords.latitude, longitude: coords.longitude };
+      map?.setObserver(place);
+      locating = "idle";
+      try {
+        localStorage.setItem(PLACE_KEY, JSON.stringify(place));
+      } catch {
+        // not persisted: acceptable
+      }
+    };
+    // The quick network position first; without a network (offline in the field, #142) it
+    // fails, then the GPS itself, slower to get a first fix.
     navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        place = { name: "mine", latitude: coords.latitude, longitude: coords.longitude };
-        map?.setObserver(place);
-        locating = "idle";
-        try {
-          localStorage.setItem(PLACE_KEY, JSON.stringify(place));
-        } catch {
-          // not persisted: acceptable
+      found,
+      (e) => {
+        if (e.code === e.PERMISSION_DENIED) {
+          locating = "error";
+          return;
         }
+        navigator.geolocation.getCurrentPosition(found, () => (locating = "error"), {
+          enableHighAccuracy: true,
+          timeout: 90_000,
+          maximumAge: 3_600_000,
+        });
       },
-      () => (locating = "error"),
-      { enableHighAccuracy: false, timeout: 15_000, maximumAge: 600_000 },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 },
     );
   }
 
@@ -1996,6 +2010,8 @@
     fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
+    offline={offline.current}
+    onofflineretry={retryOffline}
     onhide={fromMenu(() => (immersive = true))}
     onclose={closeMenu}
   />
