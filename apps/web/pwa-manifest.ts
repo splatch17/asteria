@@ -6,8 +6,7 @@ import fr from "../../packages/ui/src/i18n/locales/fr.json";
  * at the root (dev) and under /asteria/ (GitHub Pages). Served in dev, emitted at build.
  *
  * `display: fullscreen` hides the status and navigation bars once installed (#59); browsers
- * without it fall back to standalone. No service worker: Chromium no longer requires one to
- * install (offline mode is a separate ticket).
+ * without it fall back to standalone. The service worker of the offline mode is offline.ts (#142).
  */
 export function pwaManifest(): Plugin {
   let base = "/";

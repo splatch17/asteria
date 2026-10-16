@@ -20,6 +20,7 @@
     tabForKey,
     type MenuPanel,
   } from "../lib/menu";
+  import { offlinePercent, type OfflineState } from "../lib/offline";
   import { readSetting, writeSetting } from "../lib/storage";
   import FramePicto from "./FramePicto.svelte";
   import Icon from "./Icon.svelte";
@@ -57,6 +58,8 @@
     fullscreen,
     onfullscreen,
     oncredits,
+    offline,
+    onofflineretry,
     onhide,
     onclose,
   }: {
@@ -97,6 +100,9 @@
     fullscreen: boolean | null;
     onfullscreen: () => void;
     oncredits: () => void;
+    /** Offline copy of the app (#142); « unsupported »: line hidden (development, old browser). */
+    offline: OfflineState;
+    onofflineretry: () => void;
     /** Hides the interface (immersive mode), closing the menu. */
     onhide: () => void;
     onclose: () => void;
@@ -421,6 +427,35 @@
           {oninfo}
         />
       </div>
+      {#if offline.state !== "unsupported"}
+        <div class="line offline">
+          <span class="data">
+            <span class="main">{$_("offline.title")}</span>
+            <span class="sub" role="status" class:ok={offline.state === "ready"}>
+              {#if offline.state === "ready"}
+                {$_("offline.ready", { values: { size: Math.round(offline.bytes / 1e6) } })}
+              {:else if offline.state === "downloading" && offline.total > 0}
+                {$_("offline.downloading", {
+                  values: { percent: offlinePercent(offline.done, offline.total) },
+                })}
+              {:else if offline.state === "error"}
+                {$_("offline.error")}
+              {:else}
+                {$_("offline.idle")}
+              {/if}
+            </span>
+          </span>
+          {#if offline.state === "error"}
+            <button
+              class="icon"
+              onclick={onofflineretry}
+              aria-label={$_("offline.retry")}
+              title={$_("offline.retry")}><Icon name="now" size={16} /></button
+            >
+          {/if}
+        </div>
+        <p class="note">{$_("offline.note")}</p>
+      {/if}
       <h3 id="menu-help">{$_("menu.section.help")}</h3>
       <ul class="help" aria-labelledby="menu-help">
         <li>{$_("menu.help.tapSky")}</li>
@@ -672,6 +707,12 @@
   .icon:disabled {
     cursor: default;
     opacity: 0.4;
+  }
+  .offline {
+    margin-top: 12px;
+  }
+  .sub.ok {
+    color: var(--ast-fg);
   }
   .note {
     margin: 12px 4px 0;

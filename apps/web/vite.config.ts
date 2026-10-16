@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import basicSsl from "@vitejs/plugin-basic-ssl";
+import { offlineServiceWorker } from "./offline";
 import { pwaManifest } from "./pwa-manifest";
 import { thirdPartyLicenses } from "./third-party-licenses";
 
@@ -32,6 +33,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     svelte(),
     pwaManifest(),
+    offlineServiceWorker(),
     thirdPartyLicenses(),
     ...(mode === "phone" ? [basicSsl()] : []),
   ],
