@@ -41,6 +41,8 @@
     propagateStar,
     unitVector,
     yearsSinceHipparcos,
+    decimalYear,
+    magneticDeclination,
     type Planet,
     type SeasonKind,
   } from "@asteria/astro-core";
@@ -90,6 +92,7 @@
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
+  import { watchCompass } from "./lib/device-compass";
   import { offline, retryOffline } from "./lib/offline-client.svelte";
   import {
     apparentSize,
@@ -390,6 +393,22 @@
     setView: (view) => map?.setView(view),
     setPointing: (on) => map?.setPointing(on),
     azimuth: () => viewAzimuth,
+    declination: () => declinationHere(),
+  });
+
+  // --- Real compass (#144): the phone's true heading, while the sky map's compass is shown.
+  /** Magnetic declination at the observer, now (WMM2025), degrees east. */
+  function declinationHere() {
+    return magneticDeclination(place.latitude, place.longitude, 0, decimalYear(new Date()));
+  }
+  let phoneHeading = $state<number | null>(null);
+  $effect(() => {
+    if (!(status === "ready" && mode === "sky" && !flying)) return;
+    const stop = watchCompass(declinationHere, (h) => (phoneHeading = h));
+    return () => {
+      stop();
+      phoneHeading = null;
+    };
   });
 
   // --- Single menu, time line and immersive mode (#130)
@@ -1684,6 +1703,7 @@
   bind:searchButton
   azimuth={viewAzimuth}
   roll={viewRoll}
+  {phoneHeading}
   northDisabled={pointer.state === "on"}
   onnorth={faceNorth}
   bind:element={skyTools}

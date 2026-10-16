@@ -1,7 +1,8 @@
 <script lang="ts">
   // Instruments of the sky map, top right (#138): the search, the mini-globe (#38) and a small
-  // engraved compass, stacked on one axis under the safe area. The compass needle follows the
-  // view's heading continuously; a tap faces north. Only on the sky map; faded out in immersive
+  // engraved compass, stacked on one axis under the safe area. With a phone compass, it is a real
+  // one (#144): the needle points to true north as the phone turns; otherwise it follows the
+  // view's heading. Either way a tap turns the view to face north. Only on the sky map; faded out in immersive
   // mode like the rest of the interface. The mini-globe is passed in (it keeps its own state).
   import type { Snippet } from "svelte";
   import { _ } from "@asteria/ui";
@@ -16,6 +17,7 @@
     searchButton = $bindable(),
     azimuth,
     roll,
+    phoneHeading = null,
     northDisabled,
     onnorth,
     globe,
@@ -31,6 +33,8 @@
     /** View heading, degrees from north through east, and roll (sensor pointing). */
     azimuth: number;
     roll: number;
+    /** True heading of the phone (magnetometer + declination), or null without a compass. */
+    phoneHeading?: number | null;
     /** Sensor pointing drives the view: the compass only reads. */
     northDisabled: boolean;
     onnorth: () => void;
@@ -39,7 +43,11 @@
     element?: HTMLElement | undefined;
   } = $props();
 
-  const heading = $derived(compassHeading(azimuth));
+  const real = $derived(phoneHeading !== null);
+  const heading = $derived(compassHeading(phoneHeading ?? azimuth));
+  const rotation = $derived(
+    phoneHeading !== null ? needleRotation(phoneHeading) : needleRotation(azimuth, roll),
+  );
   const values = $derived({ heading, dir: $_(`compass.dir.${compassPoint(heading)}`) });
 </script>
 
@@ -61,13 +69,17 @@
     data-heading={heading}
     onclick={onnorth}
     disabled={northDisabled}
-    aria-label={$_(northDisabled ? "compass.labelPointing" : "compass.label", { values })}
+    class:real
+    aria-label={$_(
+      northDisabled ? "compass.labelPointing" : real ? "compass.labelPhone" : "compass.label",
+      { values },
+    )}
     title={northDisabled ? $_("compass.pointing") : $_("compass.north")}
   >
     <svg viewBox="-20 -20 40 40" aria-hidden="true">
       <!-- Engraved dial: a hairline ring and eight ticks, the cardinal ones longer. -->
       <circle r="17" class="ring" />
-      <g transform={`rotate(${needleRotation(azimuth, roll)})`}>
+      <g transform={`rotate(${rotation})`}>
         {#each [45, 90, 135, 180, 225, 270, 315] as a (a)}
           <path
             d={a % 90 === 0 ? "M0 -17 V-14" : "M0 -17 V-15.5"}
@@ -81,6 +93,10 @@
           >{$_("compass.letter")}</text
         >
       </g>
+      {#if real}
+        <!-- Lubber line: the phone's own direction, fixed at the top of the dial. -->
+        <path d="M0 -20 L1.6 -17.4 L-1.6 -17.4 Z" class="lubber" />
+      {/if}
       <circle r="1.2" class="pivot" />
     </svg>
   </button>
@@ -156,6 +172,13 @@
     fill: none;
     stroke: var(--ast-hairline);
     stroke-width: 1;
+  }
+  /* A live compass: a firmer ring, and the lubber line. */
+  .compass.real .ring {
+    stroke: var(--ast-fg-muted);
+  }
+  .lubber {
+    fill: var(--ast-fg);
   }
   .compass:hover:not(:disabled) .ring {
     stroke: var(--ast-fg-muted);
