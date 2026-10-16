@@ -5,3 +5,4 @@ export * from "./bodies";
 export * from "./proper-motion";
 export * from "./heliocentric";
 export * from "./geomagnetism";
+export * from "./titan";

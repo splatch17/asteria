@@ -27,6 +27,7 @@
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-16 — #148 Titan sur la carte (Meeus 46, exemple 46.a à 0,01 rayon de Saturne), visible dès que le zoom le sépare de Saturne ; champ minimal de la carte 0,5° ; le trajet d'une planète touchée n'apparaît plus qu'avec le calque « Trajectoires des planètes ». Capture `docs/design/titan/`.
 - 2026-10-16 — #146 Voyant réseau dans Réglages (vert « Connecté », rouge « Hors ligne : l'appli utilise sa copie »), ligne « Copie hors ligne », aide de la boussole à jour. Captures `docs/design/network/`.
 - 2026-10-16 — #144 Vraie boussole : l'aiguille suit le magnétomètre du téléphone (nord géographique, repère fixe en haut), un toucher remet la vue au nord ; déclinaison WMM2025 dans `astro-core` (100 valeurs de test officielles), appliquée aussi à la visée (−18,6° en Guyane). Captures `docs/design/compass/`.
 - 2026-10-16 — #142 Mode hors ligne (PR à suivre) : service worker généré au build (`apps/web/offline.ts`, gabarit `src/sw/service-worker.js`) qui télécharge tout le build (code, polices woff2, catalogue, textures, figures, ciel profond) ; mise à jour incrémentale par empreinte de contenu ; état dans Réglages (« Hors ligne · Prêt · N Mo », progression, reprise) ; stockage persistant demandé ; « Ma position » repasse par le GPS sans réseau. Vérifié dans Chromium en mode avion (carte, système solaire, mise à jour) ; captures `docs/design/offline/`.
