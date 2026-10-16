@@ -13,7 +13,7 @@
 ## ⛔ Blocages / décisions en attente
 - Licence du code : gratuit en bêta, repo privé, pas de licence open source pour l'instant (tous droits réservés)
 - Choix final des polices et du style de figure (ticket #4)
-- #98 visée décalée : besoin des observations du porteur (sens, ampleur, constance, navigateur) ; déclinaison magnétique (WMM) absente, ≈ 1–2° en France
+- #98 visée décalée : besoin des observations du porteur (sens, ampleur, constance, navigateur) ; la déclinaison magnétique (≈ 2° en France) est corrigée depuis #144
 - Figures Stellarium : versions de licence non précisées par la source (Free Art License 1.3 et CC BY-SA 4.0 retenues), à confirmer
 
 ## ⏭️ Prochaines étapes
@@ -21,12 +21,13 @@
 2. Référentiels : #123 (centré sur un astre, en cours) puis #124 (héliocentrique)
 3. Figures : #110 (choix du style), #108 (Urania's Mirror), #109 (al-Sûfî), #119 (Télescope)
 4. Finitions : transition (#87), lisibilité de la vue 3D (#86), dégradé d'horizon réaliste sur la carte (reste de #55) ; flèche de guidage hors écran vers l'objet sélectionné ; bouton retour Android pour la recherche
-5. Traînées d'étoiles (#39) ; déclinaison magnétique (WMM) pour la visée
+5. Traînées d'étoiles (#39) 
 6. Génitifs latins des 88 constellations (source IAU à documenter) ; vérification en ligne des noms et constantes du ciel profond (SIMBAD/Wikidata, bloqués depuis le conteneur)
 7. Locale anglaise (catalogue `en.json`, contenu `packages/content/en/`)
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-16 — #144 Vraie boussole : l'aiguille suit le magnétomètre du téléphone (nord géographique, repère fixe en haut), un toucher remet la vue au nord ; déclinaison WMM2025 dans `astro-core` (100 valeurs de test officielles), appliquée aussi à la visée (−18,6° en Guyane). Captures `docs/design/compass/`.
 - 2026-10-16 — #142 Mode hors ligne (PR à suivre) : service worker généré au build (`apps/web/offline.ts`, gabarit `src/sw/service-worker.js`) qui télécharge tout le build (code, polices woff2, catalogue, textures, figures, ciel profond) ; mise à jour incrémentale par empreinte de contenu ; état dans Réglages (« Hors ligne · Prêt · N Mo », progression, reprise) ; stockage persistant demandé ; « Ma position » repasse par le GPS sans réseau. Vérifié dans Chromium en mode avion (carte, système solaire, mise à jour) ; captures `docs/design/offline/`.
 - 2026-10-16 — Vague menu et référentiels fusionnée : #130/#131 (PR #132, #133), #135 tuiles (PR #136), #134 retour fluide de visite (PR #137), #138 recherche/boussole/panneaux (PR #140), #139 « La Terre tourne » retiré, puce « Fixe » (PR #141). #101 et #123 fusionnés auparavant.
 - 2026-10-10 — #122 Référentiels de la vue Terre (PR #125) : sélecteur (fixé sur les étoiles, lié à la Terre, plan de l'écliptique ; héliocentrique et centré sur un astre « Bientôt »), transition slerp 800 ms (instantanée en mouvement réduit), phrase pédagogique par niveau, repères pointillés de l'écliptique ; `meanObliquity` IAU 2006 dans astro-core (SOFA `iauObl06` < 0,001″). Découpage de #105 en #122/#123/#124.

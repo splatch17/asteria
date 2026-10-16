@@ -191,6 +191,7 @@
   "time.yearBce": "{year} av. J.-C.",
   "compass.letter": "N",
   "compass.label": "Boussole : la vue regarde vers {dir} ({heading}°). Touchez pour faire face au nord.",
+  "compass.labelPhone": "Boussole : le téléphone pointe vers {dir} ({heading}°, nord géographique). Touchez pour remettre la vue face au nord.",
   "compass.labelPointing": "Boussole : la vue regarde vers {dir} ({heading}°), guidée par le téléphone.",
   "compass.pointing": "La visée guide la vue",
   "compass.dir.0": "le nord",

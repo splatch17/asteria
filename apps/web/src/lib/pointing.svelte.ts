@@ -42,6 +42,8 @@ export interface PointingHost {
   setPointing(on: boolean): void;
   /** Current heading of the map, degrees (kept when the relative mode starts). */
   azimuth(): number;
+  /** Magnetic declination here and now, degrees east (#144): compass headings are magnetic. */
+  declination?(): number;
 }
 
 export type PointingState = "off" | "waiting" | "on" | "failed";
@@ -81,6 +83,9 @@ export class SensorPointing {
       // Keep the map's current heading when the relative mode starts; the finger shifts it.
       if (Number.isNaN(this.headingOffset)) this.headingOffset = this.host.azimuth() - view.azimuth;
       view.azimuth = wrap360(view.azimuth + this.headingOffset);
+    } else {
+      // The phone's absolute heading is magnetic; the sky needs true north.
+      view.azimuth = wrap360(view.azimuth + (this.host.declination?.() ?? 0));
     }
     this.host.setView(view);
   }
