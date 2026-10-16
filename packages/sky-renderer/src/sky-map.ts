@@ -146,6 +146,15 @@ export interface SkyPlanet {
   magnitude: number;
 }
 
+/** A planet's moon (#148): drawn beside its planet once the zoom separates them. */
+export interface SkyMoon {
+  /** Shown name (already localised). */
+  label: string;
+  parent: Planet;
+  ra: number;
+  dec: number;
+}
+
 /**
  * Apparent path of a planet, sampled regularly. Points flagged `mark` (the caller puts one at the
  * start of each month) are drawn larger and, on the selected planet's path, dated.
@@ -269,7 +278,10 @@ export interface SkyMapOptions {
   figureSet?: string;
 }
 
-const FOV_MIN = 2;
+/** Narrowest field (degrees): about a pair of binoculars, enough to separate Titan (#148). */
+const FOV_MIN = 0.5;
+/** A moon is drawn once this far (CSS px) beyond its planet's disc. */
+const MOON_CLEARANCE = 6;
 /** Label fonts: data in monospace, deep-sky names in the serif italic of old atlases (#101). */
 const MONO = "'JetBrains Mono', monospace";
 const SERIF = "Cormorant, 'EB Garamond', serif";
@@ -305,6 +317,7 @@ export class SkyMap {
   private readonly planetPoints: THREE.Points;
   /** Current planets, in PLANETS order (direction and magnitude), null when unset. */
   private planets: { name: Planet; dir: Vec3; magnitude: number }[] | null = null;
+  private moons: { label: string; parent: Planet; dir: Vec3 }[] = [];
   /** All planets' paths (the "all paths" layer, undated, off by default). */
   private readonly pathPoints: THREE.Points;
   /** Reference lines; aDir in their own frame, uFrame → horizontal. */
@@ -800,6 +813,16 @@ export class SkyMap {
       mags.needsUpdate = true;
     }
     this.updateVisibility();
+  }
+
+  /** Moons of the planets (#148), on each date change; drawn with the labels. */
+  setMoons(moons: SkyMoon[] | null): void {
+    this.moons = (moons ?? []).map((m) => ({
+      label: m.label,
+      parent: m.parent,
+      dir: unitVector(m.ra, m.dec),
+    }));
+    this.dirty = true;
   }
 
   /**
@@ -1335,6 +1358,38 @@ export class SkyMap {
             { x: x - off - w, y: y - H / 2, w, h: H },
             { x: x - w / 2, y: y - off - H, w, h: H },
             { x: x - w / 2, y: y + off, w, h: H },
+          ]);
+          if (r) ctx.fillText(label, r.x, r.y + H / 2);
+        }
+      }
+
+      // 3b. Moons (#148): a dot and its name, once the zoom pulls them clear of their planet.
+      if (this.planetsShown() && this.planets) {
+        for (const moon of this.moons) {
+          const planet = this.planets[PLANETS.indexOf(moon.parent)]!;
+          if (isBelow(planet.dir) !== below || !this.planetVisible(planet.magnitude, below))
+            continue;
+          // toScreen reuses its result: read the planet's position before projecting the moon.
+          const pp = this.toScreen(applyMat3(m, planet.dir));
+          if (!pp) continue;
+          const [px, py] = pp;
+          const mp = this.toScreen(applyMat3(m, moon.dir));
+          if (!mp) continue;
+          const [x, y] = mp;
+          if (Math.hypot(x - px, y - py) < planetRadius(planet) + MOON_CLEARANCE) continue;
+          ctx.globalAlpha = labelAlpha(0.9, below);
+          ctx.beginPath();
+          ctx.arc(x, y, 1.8, 0, 2 * Math.PI);
+          ctx.fill();
+          this.setLabelFont("500 9px", "0.1em", labelAlpha(0.75, below));
+          const label = moon.label.toUpperCase();
+          const w = this.measure(label);
+          layout.occupy({ x: x - 3, y: y - 3, w: 6, h: 6 });
+          const r = layout.place([
+            { x: x + 6, y: y - H / 2, w, h: H },
+            { x: x - 6 - w, y: y - H / 2, w, h: H },
+            { x: x - w / 2, y: y - 6 - H, w, h: H },
+            { x: x - w / 2, y: y + 6, w, h: H },
           ]);
           if (r) ctx.fillText(label, r.x, r.y + H / 2);
         }

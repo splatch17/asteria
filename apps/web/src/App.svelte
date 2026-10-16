@@ -43,6 +43,7 @@
     yearsSinceHipparcos,
     decimalYear,
     magneticDeclination,
+    titanPosition,
     type Planet,
     type SeasonKind,
   } from "@asteria/astro-core";
@@ -1320,6 +1321,16 @@
     if (status !== "ready") return;
     map?.setPlanets(planets);
   });
+  // Titan (#148), Saturn's largest moon: drawn beside Saturn once the zoom separates them.
+  const moons = $derived(
+    ephemerisOk
+      ? [{ label: $_("moon.Titan"), parent: "Saturn" as const, ...titanPosition(date) }]
+      : null,
+  );
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setMoons(moons);
+  });
   $effect(() => {
     space?.setPlanets(planets);
   });
@@ -1328,11 +1339,15 @@
   });
   // Paths: ±6 months, recomputed only when the date leaves a 10-day window (the cache returns
   // the same objects otherwise, so these effects do not re-upload). Hidden on the 26 000-year
-  // scale. The selected planet's path is shown with dated monthly marks, in both views.
+  // scale. With the « Trajets » layer, the selected planet's path is shown with dated monthly
+  // marks, in both views.
   const pathCache = new PlanetPathCache();
   const pathsAllowed = $derived(showPlanets && range !== "26ky" && ephemerisOk);
+  // Only with the « Trajets » layer (#148): a tapped planet no longer draws its path by default.
   const selectedPath = $derived(
-    selectedPlanet && pathsAllowed ? pathCache.path(selectedPlanet, date, place) : null,
+    selectedPlanet && pathsAllowed && viewLayers.sky.allPaths
+      ? pathCache.path(selectedPlanet, date, place)
+      : null,
   );
   $effect(() => {
     if (status !== "ready") return;
