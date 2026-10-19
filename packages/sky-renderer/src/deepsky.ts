@@ -11,7 +11,6 @@ import * as THREE from "three";
 import { unitVector, type Mat3, type Vec3 } from "@asteria/astro-core";
 import {
   DEEP_SKY_STYLE,
-  deepSkyDayLimit,
   deepSkyLimit,
   glyphAxes,
   glyphLabelled,
@@ -69,7 +68,6 @@ export class DeepSkyLayer {
   readonly mesh: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.ShaderMaterial>;
   readonly uniforms = {
     uDeepLimit: { value: 6 },
-    uDeepLimitBelow: { value: 6 },
     uDeepAlpha: { value: DEEP_SKY_STYLE.ALPHA as number },
     uSelected: { value: -1 },
     uMessierOnly: { value: 0 },
@@ -164,18 +162,17 @@ export class DeepSkyLayer {
   }
 
   /**
-   * Limits and ink for the frame: `daylight` 0…1, `realistic` the realisticDaylight layer, `dayInk`
-   * the daylight felt by the ink (0 with that layer).
+   * Limit and ink for the frame (`daylight` 0…1). The limit is the same on both sides of the
+   * horizon: the glyphs stay drawn by day, like the stars (#162).
    */
-  setFrame(fov: number, daylight: number, realistic: boolean, dayInk: number): void {
-    this.uniforms.uDeepLimit.value = deepSkyDayLimit(fov, daylight, realistic);
-    this.uniforms.uDeepLimitBelow.value = deepSkyLimit(fov);
-    this.uniforms.uDeepAlpha.value = dayInkAlpha(DEEP_SKY_STYLE.ALPHA, dayInk);
+  setFrame(fov: number, daylight: number): void {
+    this.uniforms.uDeepLimit.value = deepSkyLimit(fov);
+    this.uniforms.uDeepAlpha.value = dayInkAlpha(DEEP_SKY_STYLE.ALPHA, daylight);
   }
 
-  /** Limits currently fed to the shader (above, below the horizon). */
-  limits(): { above: number; below: number } {
-    return { above: this.uniforms.uDeepLimit.value, below: this.uniforms.uDeepLimitBelow.value };
+  /** Limit currently fed to the shader. */
+  limit(): number {
+    return this.uniforms.uDeepLimit.value;
   }
 
   /** Drawn by the shader in this frame (same rule as deepSkyVert, horizon included). */

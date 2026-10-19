@@ -26,11 +26,21 @@ describe("restoreLayers", () => {
 
   it("keeps valid keys, ignores unknown keys and non-boolean values", () => {
     const restored = restoreLayers(
-      { planets: false, ecliptic: "yes", milkyWay: true, azimuthalGrid: true },
+      { planets: false, ecliptic: "yes", bogus: true, azimuthalGrid: true },
       DEFAULT_SKY_LAYERS,
     );
     expect(restored).toEqual({ ...DEFAULT_SKY_LAYERS, planets: false, azimuthalGrid: true });
-    expect("milkyWay" in restored).toBe(false);
+    expect("bogus" in restored).toBe(false);
+  });
+
+  it("drops the removed realistic daytime sky layer from older records (#162)", () => {
+    const restored = restoreLayers(
+      { realisticDaylight: true, starNames: false },
+      DEFAULT_SKY_LAYERS,
+    );
+    expect(restored).toEqual({ ...DEFAULT_SKY_LAYERS, starNames: false });
+    expect("realisticDaylight" in restored).toBe(false);
+    expect("realisticDaylight" in serializeLayers(restored)).toBe(false);
   });
 
   it("gives missing (newer) layers their default, per view", () => {
@@ -97,7 +107,6 @@ describe("Affichage panel (#138)", () => {
           "starNames",
           "deepSky",
           "seeThroughGround",
-          "realisticDaylight",
         ],
       ],
       ["solar", ["planets", "allPaths"]],

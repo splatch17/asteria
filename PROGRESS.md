@@ -8,6 +8,7 @@
 ## 🔄 En cours
 | Ticket | Titre | Agent/Personne | Branche | Depuis |
 |---|---|---|---|---|
+| #162 | Retirer « Ciel réaliste », Voie lactée sur la carte | Claude (sky-renderer) | `feat/162-milky-way` | 2026-10-19 |
 | #98 | Décalage de la visée capteurs (S23) | Claude (en attente de mesures porteur) | `fix/98-pointing-offset` | 2026-10-08 |
 
 ## ⛔ Blocages / décisions en attente

@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEEP_SKY_DAYLIGHT_EXTINCTION,
   DEEP_SKY_STYLE,
   GLYPH,
-  deepSkyDayLimit,
   deepSkyFieldFor,
   deepSkyLimit,
   deepSkyRank,
@@ -135,17 +133,6 @@ describe("deepSkyLimit", () => {
     expect(deepSkyLimit(20)).toBeGreaterThan(deepSkyLimit(60));
     expect(deepSkyLimit(1)).toBe(11);
     expect(deepSkyLimit(300)).toBe(4.5);
-  });
-
-  it("drowns every object by day only with the realistic layer (#106)", () => {
-    expect(deepSkyDayLimit(60, 1, false)).toBe(deepSkyLimit(60));
-    expect(deepSkyDayLimit(60, 0, true)).toBe(deepSkyLimit(60));
-    const day = deepSkyDayLimit(60, 1, true);
-    expect(day).toBeCloseTo(deepSkyLimit(60) - DEEP_SKY_DAYLIGHT_EXTINCTION, 10);
-    // The Pleiades (M45, V 1.2, Messier and named) are gone in full daylight.
-    expect(
-      glyphVisibility(deepSkyRank({ type: "open-cluster", mag: 1.2, messier: 45, name: "P" }), day),
-    ).toBe(0);
   });
 
   it("fades objects in near the limit and labels only those well inside it", () => {
