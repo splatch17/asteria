@@ -30,6 +30,7 @@ export type IconName =
   | "sun"
   | "moon"
   | "deepsky"
+  | "milkyWay"
   | "recentre"
   | "frame"
   | "menu"

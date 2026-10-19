@@ -24,7 +24,6 @@ export const deepSkyVert = /* glsl */ `
   ${DEEP_SKY_AXES_GLSL}
   uniform float uHalfHeight;
   uniform float uDeepLimit;
-  uniform float uDeepLimitBelow; // below the horizon: night limit whatever the Sun (#65)
   uniform float uDeepAlpha;
   uniform float uSelected;    // index of the selected object (always drawn), −1 for none
   uniform float uMessierOnly; // 1: only Messier objects (Découverte level)
@@ -42,8 +41,7 @@ export const deepSkyVert = /* glsl */ `
     vec3 h = uEq2Hor * aDir;
     vec3 v = uView * h;
     float fade = horizonFade(h.z);
-    float limit = h.z < 0.0 ? uDeepLimitBelow : uDeepLimit;
-    float vis = clamp((limit - aInfo.x) / ${f(S.GLYPH_FADE)}, 0.0, 1.0);
+    float vis = clamp((uDeepLimit - aInfo.x) / ${f(S.GLYPH_FADE)}, 0.0, 1.0);
     vis *= 1.0 - uMessierOnly * (1.0 - aInfo.y);
     vis = max(vis, 1.0 - step(0.5, abs(aInfo.z - uSelected)));
     if (v.z < uBackZ || fade <= 0.0 || vis <= 0.0) {

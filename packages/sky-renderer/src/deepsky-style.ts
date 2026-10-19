@@ -19,8 +19,8 @@
  *
  * Visibility: an object is drawn while its rank (deepSkyRank: magnitude, Messier and well-known
  * objects first) is below the deep-sky limit of the field (deepSkyLimit), so zooming in reveals
- * fainter objects, fading in over GLYPH_FADE magnitudes. With the realisticDaylight layer, daylight
- * lowers that limit (DEEP_SKY_DAYLIGHT_EXTINCTION); below the horizon it is always night (#65).
+ * fainter objects, fading in over GLYPH_FADE magnitudes. Like the stars, the glyphs stay drawn by
+ * day (#106, #162).
  */
 
 /** Glyph shape codes (the `aShape` attribute of the shader). */
@@ -184,22 +184,6 @@ export function deepSkyLimit(fov: number): number {
  */
 export function deepSkyFieldFor(rank: number): number {
   return Math.max(2, 90 * 10 ** ((6.2 - rank - DEEP_SKY_STYLE.LABEL_MARGIN) / 4));
-}
-
-/**
- * Magnitudes daylight takes from the deep-sky limit at full day with the realisticDaylight layer:
- * more than for the stars (DAYLIGHT_EXTINCTION = 7), as extended objects are spread over the
- * bright sky: none remains by day.
- */
-export const DEEP_SKY_DAYLIGHT_EXTINCTION = 10;
-
-/**
- * Deep-sky limit above the horizon (`daylight`: 0 night … 1 day, see daylight.ts): unchanged
- * unless the realistic daylight layer is on (#106).
- */
-export function deepSkyDayLimit(fov: number, daylight: number, realistic: boolean): number {
-  const limit = deepSkyLimit(fov);
-  return realistic ? limit - daylight * DEEP_SKY_DAYLIGHT_EXTINCTION : limit;
 }
 
 /** Opacity factor of a glyph from its rank and the limit (0: not drawn), as in the shader. */

@@ -16,7 +16,7 @@
 | Appartenance aux constellations | astropy `get_constellation` (Roman 1987, CDS `VI/42`) | — | Libre | Champ `con` — ✅ intégré (#3) ; planètes à la volée via `Astronomy.Constellation` d’astronomy-engine (même table Roman 1987, `constellationOf`, #53) |
 | Planètes, Lune, Soleil | **JPL Horizons / DE440** (validation) + lib `astronomy-engine` (MIT) | NASA JPL | Libre | Positions temps réel |
 | Ciel profond | **OpenNGC** (Mattia Verga, https://github.com/mattiaverga/OpenNGC), version **v20260501** (commit `36cb178a0f69`, 2026-04-16) : `database_files/NGC.csv` (NGC/IC) + `addendum.csv` (M40, M45 et objets hors NGC/IC), compilés depuis NED, HyperLEDA, SIMBAD, HEASARC et les notes de H. Corwin. Messier : colonne `M` d'OpenNGC | M. Verga et contributeurs | **CC BY-SA 4.0** (vérifiée : `LICENSES/CC-BY-SA-4.0.txt` et `.reuse/dep5` du dépôt, « Files: * … License: CC-BY-SA-4.0 ») ; attribution « OpenNGC, Mattia Verga » (page Crédits), le catalogue dérivé `deepsky.json` est diffusé sous CC BY-SA 4.0 | ✅ intégré (#100) : 600 objets (`build_deepsky.py`, voir ci-dessous), positions J2000, types, magnitudes V et B, axes et angle de position, noms usuels anglais. Noms français : `packages/content/fr/deepsky-names.json` |
-| Voie lactée | **Gaia DR3 sky map** / NASA SVS | ESA / NASA | Citation | Texture de fond |
+| Voie lactée | **AT-HYG v3.2** (Augmented Tycho-HYG, David Nash / astronexus, https://github.com/astronexus/ATHYG-Database), sous-ensemble `data/subsets/athyg_32_reduced_m11.csv.gz` (871 139 étoiles jusqu'à V/VT 11), **commit épinglé `e7ee3a737a17d84530e0012b77492f412e0e02c0`** (2024-08-17), taille (70 833 346 o) et SHA-256 vérifiés. Le dépôt annonce son déménagement sur Codeberg, injoignable depuis l'environnement de build : on garde la copie GitHub à ce commit | D. Nash, d'après Tycho-2 et Hipparcos (ESA 1997) et Gaia DR3 (ESA/Gaia/DPAC) | **CC BY-SA 4.0** (vérifiée : `LICENSE` et `README.md` du dépôt à ce commit, « This license applies to versions v3.0 and later ») ; attribution « Voie lactée : densité d'étoiles Tycho-2, AT-HYG v3.2 (D. Nash, astronexus), CC BY-SA 4.0 » (page Crédits) ; la texture dérivée `milkyway.webp` est diffusée sous CC BY-SA 4.0 | ✅ intégré (#162) : densité des étoiles de magnitude 9 à 11 (`build_milkyway.py`, voir ci-dessous), calque « Voie lactée » de la carte |
 | Côtes (globe) | **Natural Earth** 1:50m coastline (`build_earth.py`) | Natural Earth | Domaine public | Vue Terre — ✅ intégré (#35) |
 | Relief (globe) | **NASA Blue Marble: Next Generation**, topographie + bathymétrie, déc. 2004 | NASA Visible Earth | Domaine public (crédit NASA) | Texture du globe — ✅ intégré (#35) |
 | Lumières nocturnes | **NASA Black Marble** 2016 (0,1°) | NASA Earth Observatory | Domaine public (crédit NASA) | Côté nuit du globe — ✅ intégré (#35) |
@@ -149,6 +149,40 @@ constellation et une indication d'observation (œil nu ≤ 5,0 ; jumelles ≤ 8,
 ≤ 10,5 ; au-delà télescope ; une classe de plus pour un objet diffus de brillance de surface
 moyenne > 23,5 mag/arcsec²), règle documentée dans `apps/web/src/lib/deepsky.ts`. Aucune distance :
 le catalogue n'en donne pas.
+
+## Voie lactée (#162)
+
+`packages/sky-data/build_milkyway.py` (numpy + Pillow, lancé avec `python -I` : le catalogue
+téléchargé est une donnée non fiable) télécharge le sous-ensemble AT-HYG au commit épinglé dans
+`raw/athyg-<commit>/`, vérifie sa taille et son SHA-256, et écrit `out/milkyway.webp`.
+
+**Traitement** (détaillé dans la docstring du script) :
+1. étoiles de magnitude **9 ≤ V/VT < 11** (745 563) : la lumière diffuse de la Voie lactée vient
+   des étoiles faibles et lointaines ; les plus brillantes, proches, couvrent tout le ciel ;
+2. comptage sur une grille équirectangulaire **équatoriale J2000** de 1024 × 512 (x : AD 0 → 360°,
+   y : Déc +90° → −90°) ;
+3. lissage gaussien **sur la sphère** (σ = 1°, distance angulaire vraie) : pour deux lignes de la
+   grille, la distance ne dépend que de l'écart en AD, d'où une convolution circulaire exacte par
+   FFT (pas de couture à 0 h, pas de déformation aux pôles) ; le même lissage des angles solides
+   des cellules normalise en étoiles par stéradian ;
+4. log10 de la densité, moins un « plancher » (90e centile pour |b| > 60°) ; division par le
+   99,7e centile ; bornée à [0, 1] : le ciel loin de la bande vaut 0 ;
+5. WebP en niveaux de gris, qualité 82 : **19 206 octets** (2026-10-19).
+
+**Contrôles automatiques** (le script échoue sinon) : 500 000 à 800 000 étoiles retenues ;
+densité moyenne à |b| < 5° ≥ 3 fois celle à |b| > 60° (mesuré : 39,2 contre 7,5 étoiles/deg²) ;
+disque de 15° autour du centre galactique dans le quart le plus dense du ciel (87e centile) ;
+pôles galactiques nord et sud à 0 ; Grand Rift (l = 35–45°, b = 0°) plus sombre que la bande à
+b = −6° (0,37 contre 0,54) ; fichier < 100 000 octets. Repère galactique : matrice ICRS →
+galactique d'ESA 1997 (*The Hipparcos and Tycho Catalogues*, vol. 1, §1.5.3).
+
+**Affichage** (`sky-renderer/src/milky-way.ts`) : une passe plein écran sous tout le reste ; chaque
+pixel est ramené par la projection inverse de la carte puis la transposée de la matrice qui place
+les étoiles (J2000 → horizontal) aux coordonnées de la texture (testé : centre et pôle galactiques,
+raccord à 0 h, aller-retour par la projection). Encre de la DA : léger lavis + grain stochastique
+(un point par pixel CSS, hachage entier) ; dessinée de jour comme les étoiles, atténuée sous
+l'horizon avec « Voir à travers la Terre », estompée aux champs étroits (< 12°) où la texture n'a
+plus de détail. Texture chargée à la demande ; sans le fichier, le calque ne dessine rien.
 
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.

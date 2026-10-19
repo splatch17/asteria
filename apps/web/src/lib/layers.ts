@@ -2,7 +2,7 @@
  * Layers panel (#54): catalogue of the switchable layers, and their persistence.
  *
  * Each view (sky map, Earth view) keeps its own layers state, remembered between sessions.
- * Adding a layer (Milky Way, Messier, ISS, boundaries…) = a renderer key in SkyLayers, then one
+ * Adding a layer (ISS, boundaries…) = a renderer key in SkyLayers, then one
  * entry here (section, icon, i18n keys `layers.<key>` and optionally `layers.<key>.hint`).
  */
 import {
@@ -45,8 +45,8 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
       { key: "constellationFigures", icon: "figures", hint: true, views: SKY },
       { key: "starNames", icon: "starNames", views: SKY },
       { key: "deepSky", icon: "deepsky", hint: true, views: SKY },
+      { key: "milkyWay", icon: "milkyWay", hint: true, views: SKY },
       { key: "seeThroughGround", icon: "seeThrough", hint: true, views: SKY },
-      { key: "realisticDaylight", icon: "sun", hint: true, views: SKY },
     ],
   },
   {

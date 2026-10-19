@@ -71,6 +71,16 @@
       "sourceUrl": "https://github.com/mattiaverga/OpenNGC/tree/v20260501"
     },
     {
+      "id": "athyg",
+      "name": "AT-HYG v3.2 (Augmented Tycho-HYG)",
+      "role": "Voie lactée : densité d'étoiles Tycho-2 (magnitudes 9 à 11), lissée et mise à l'échelle logarithmique. La texture de l'application (milkyway.webp) en est dérivée et est diffusée sous la même licence.",
+      "author": "David Nash (astronexus)",
+      "notice": "Voie lactée : densité d'étoiles Tycho-2, AT-HYG v3.2 (D. Nash, astronexus), CC BY-SA 4.0. https://github.com/astronexus/ATHYG-Database. Données d'origine : catalogues Tycho-2 et Hipparcos (ESA 1997), Gaia DR3 (ESA/Gaia/DPAC).",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sourceUrl": "https://github.com/astronexus/ATHYG-Database/tree/e7ee3a737a17d84530e0012b77492f412e0e02c0"
+    },
+    {
       "id": "roman-1987",
       "name": "Frontières des constellations (Delporte 1930, table de Roman 1987)",
       "role": "Constellation à laquelle appartient chaque étoile, objet du ciel profond ou planète.",

@@ -3,7 +3,6 @@ import {
   DAYLIGHT_EXTINCTION,
   dayInkAlpha,
   daylightFactor,
-  daylightStarLimit,
   physicalStarLimit,
   starsHiddenByDaylight,
 } from "./daylight";
@@ -26,34 +25,16 @@ describe("daylightFactor", () => {
   });
 });
 
-describe("daylightStarLimit", () => {
-  it("keeps the night limit by day without the realistic layer", () => {
-    for (const sun of [-30, -12, -6, 0, 30, 60])
-      expect(daylightStarLimit(NIGHT, daylightFactor(sun), false)).toBe(NIGHT);
-  });
-
-  it("restores the physical limit with the realistic layer", () => {
-    expect(daylightStarLimit(NIGHT, 0, true)).toBe(NIGHT);
-    expect(daylightStarLimit(NIGHT, 1, true)).toBeCloseTo(NIGHT - DAYLIGHT_EXTINCTION, 12);
-    expect(daylightStarLimit(NIGHT, daylightFactor(-9), true)).toBeCloseTo(
-      physicalStarLimit(NIGHT, 0.25),
-      12,
-    );
-  });
-
-  it("keeps Polaris drawn and pickable at noon, only without the realistic layer", () => {
-    const noon = daylightFactor(40);
-    const shown = (mag: number, limit: number) => mag <= limit + STAR_SHOWN_MARGIN;
-    const pickable = (mag: number, limit: number) => mag <= starPickLimit(NIGHT, limit);
-    const free = daylightStarLimit(NIGHT, noon, false);
-    const real = daylightStarLimit(NIGHT, noon, true);
-    expect(shown(POLARIS, free) && pickable(POLARIS, free)).toBe(true);
-    expect(shown(POLARIS, real) || pickable(POLARIS, real)).toBe(false);
-    // Sirius stays drawn and pickable even in the realistic daytime sky.
-    expect(shown(SIRIUS, real) && pickable(SIRIUS, real)).toBe(true);
-    // Picking never goes beyond what the shader draws, in both modes.
-    for (const limit of [free, real])
-      expect(starPickLimit(NIGHT, limit)).toBeLessThanOrEqual(limit + STAR_SHOWN_MARGIN);
+describe("stars by day (#106, #162)", () => {
+  it("keeps Polaris drawn and pickable at noon: the stars' limit is the night one", () => {
+    // The map feeds uLimitMag with the field's limit whatever the Sun (sky-map.ts render).
+    const shown = (mag: number) => mag <= NIGHT + STAR_SHOWN_MARGIN;
+    const pickable = (mag: number) => mag <= starPickLimit(NIGHT, NIGHT);
+    expect(shown(POLARIS) && pickable(POLARIS)).toBe(true);
+    expect(shown(SIRIUS) && pickable(SIRIUS)).toBe(true);
+    // Physically, daylight would have drowned Polaris (only mag ≲ −1 remain at full day).
+    expect(POLARIS <= physicalStarLimit(NIGHT, daylightFactor(40)) + STAR_SHOWN_MARGIN).toBe(false);
+    expect(physicalStarLimit(NIGHT, 1)).toBeCloseTo(NIGHT - DAYLIGHT_EXTINCTION, 12);
   });
 
   it("leaves the planets on the physical rule (Venus only at noon)", () => {
