@@ -39,4 +39,5 @@ export type IconName =
   | "hide"
   | "eye"
   | "placeTime"
-  | "settings";
+  | "settings"
+  | "games";

@@ -198,6 +198,11 @@
     <rect x="9" y="2.4" width="2.4" height="3.2" class="fill" />
     <rect x="4" y="6.4" width="2.4" height="3.2" class="fill" />
     <rect x="10.4" y="10.4" width="2.4" height="3.2" class="fill" />
+  {:else if name === "games"}
+    <!-- A collection card: checkered corners and a star (« Jeux », #163). -->
+    <rect x="2.5" y="1.5" width="11" height="13" />
+    <path d="M2.5 1.5 H5 V4 H2.5 Z M5 4 H7.5 V6.5 H5 Z M11 11 H13.5 V14.5 H11 Z" class="fill" />
+    <path d={sparkle(9, 8.5, 3.2)} class="fill" />
   {/if}
 </svg>
 
