@@ -189,10 +189,11 @@ depuis la direction J2000, filtrage bilinéaire lissé (smoothstep sur la fracti
   (< 8°, de 8 à 40°) où la texture n'a plus de détail ;
 - **vue Terre / système solaire** : sphère à l'infini dont les sommets sont des directions J2000
   placées par la même précession que les étoiles (testé : centre galactique dans le Sagittaire,
-  lu au bon texel en 2026), dessinée avant les étoiles. Style réaliste : lueur blanc chaud, plus
-  brune là où la bande s'amincit (bandes de poussière) ; nuit rouge : lueur de l'encre. Gravure :
-  lavis d'encre parchemin et fines hachures le long des parallèles galactiques (0,3°), attachées
-  au ciel, plus épaisses dans les nuages denses.
+  lu au bon texel en 2026), dessinée avant les étoiles et ajoutée au fond. Gravure : la même
+  lueur violette que la carte (même dégradé, un peu moins intense : le champ de 40° de cette vue
+  est souvent tout entier dans la bande). Réaliste, façon photo à longue pose : ciel noir hors de
+  la bande (seuil haut), courbe de tons raide qui garde nuages brillants et bandes sombres, cœur
+  crème, bords faibles plus froids ; nuit rouge : la même courbe dans l'encre.
 
 Texture chargée à la demande dans chaque vue ; sans le fichier, le calque ne dessine rien.
 

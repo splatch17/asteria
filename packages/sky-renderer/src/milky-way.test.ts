@@ -95,7 +95,7 @@ describe("milkyWayUv", () => {
       "vec2(fract(atan(e.y, e.x) / MW_TAU), 0.5 - asin(clamp(e.z, -1.0, 1.0)) / MW_PI)",
     );
     expect(milkyWayFrag).toContain("milkyWayDensity(e)");
-    expect(spaceMilkyWayFrag).toContain("milkyWayDensity(e)");
+    expect(spaceMilkyWayFrag).toContain("milkyWayDensity(normalize(vDir))");
   });
 });
 
@@ -127,7 +127,7 @@ describe("space view orientation (#168)", () => {
     // The sphere's vertex is a J2000 direction placed by uPrec, exactly like a star.
     expect(spaceMilkyWayVert).toContain("uPrec * position");
     expect(skyStarVert).toContain("uPrec * starDirection(aDir)");
-    expect(spaceMilkyWayFrag).toContain("vec3 e = normalize(vDir);");
+    expect(spaceMilkyWayFrag).toContain("milkyWayGlow(d)");
     // A pixel showing the galactic centre in 2026 (world = precession · J2000) reads the
     // texture at the galactic centre's texel; precession has moved it by ≈ 0.36°.
     const prec = precessionMatrix(new Date("2026-08-15T20:30:00Z"));

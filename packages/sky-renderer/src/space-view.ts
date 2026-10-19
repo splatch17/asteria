@@ -1014,6 +1014,7 @@ export class SpaceView {
     this.uniforms.uBase.value.set(theme.ground);
     this.renderer.setClearColor(this.style === "realistic" ? "#000000" : theme.sky);
     this.real?.setMonochrome(this.monochrome, theme.ink);
+    this.milkyWay.setGlow(theme.glow ?? "violet", theme.ink);
     // Surface lines (coastlines, graticule, marker) use plain materials: recolour them too.
     this.scene.traverse((o) => {
       const m = (o as THREE.LineSegments).material as THREE.LineBasicMaterial | undefined;
