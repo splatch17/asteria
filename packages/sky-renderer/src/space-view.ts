@@ -117,6 +117,7 @@ import {
   type ScaleBar,
 } from "./points-of-view";
 import { GestureInput } from "./gesture-input";
+import { SpaceMilkyWay } from "./milky-way";
 import {
   CROSSFADE_MS,
   PinchExit,
@@ -134,7 +135,7 @@ export type { SpaceTextureName } from "./space-realistic";
 
 /**
  * Layers honoured by the Earth view (setLayers takes the same Partial<SkyLayers> as the map;
- * other keys are ignored): constellationLines, planets, ecliptic, equatorialGrid.
+ * other keys are ignored): constellationLines, planets, ecliptic, equatorialGrid, milkyWay.
  * Defaults differ from the map: the ecliptic is shown (it explains the seasons from space).
  */
 export const DEFAULT_SPACE_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -196,6 +197,8 @@ export interface SpaceViewOptions {
   style?: SpaceStyle;
   /** Red night vision: the realistic style is drawn in shades of the theme's ink. */
   monochrome?: boolean;
+  /** URL of the Milky Way texture (#168, milkyway.webp); without it that layer draws nothing. */
+  milkyWay?: string;
   /**
    * Loads a texture of the realistic style, on demand (first switch to that style). Until it
    * arrives, or if it fails, the realistic style uses procedural colours.
@@ -555,6 +558,8 @@ export class SpaceView {
   // --- realistic style (#55), built on first use
   private style: SpaceStyle = "engraving";
   private monochrome = false;
+  /** Milky Way at infinity (#168). */
+  private readonly milkyWay: SpaceMilkyWay;
   private real: RealisticLayer | null = null;
   private readonly globe: THREE.Mesh;
   private readonly engravedGlobe: THREE.ShaderMaterial;
@@ -823,7 +828,16 @@ export class SpaceView {
     this.globe3d.setBody(body);
     this.pov = new PovScene(engravedUniforms);
 
+    // Milky Way behind the stars, in both styles (#168), loaded with its layer.
+    this.milkyWay = new SpaceMilkyWay({
+      uniforms: { uPrec: this.uniforms.uPrec, uInk: this.uniforms.uInk },
+      url: options.milkyWay,
+      requestFrame: () => (this.dirty = true),
+    });
+    this.milkyWay.setEnabled(this.layers.milkyWay);
+
     this.scene.add(
+      this.milkyWay.mesh,
       this.pov.object,
       this.globe3d.object,
       this.fadingGlobe.object,
@@ -874,6 +888,7 @@ export class SpaceView {
     this.pov.setRealistic(realistic);
     this.globesApplied = false;
     this.renderer.setClearColor(realistic ? "#000000" : this.options.theme.sky);
+    this.milkyWay.setStyle(style, this.monochrome);
     this.update();
   }
 
@@ -885,6 +900,7 @@ export class SpaceView {
   setMonochrome(on: boolean): void {
     this.monochrome = on;
     this.real?.setMonochrome(on, this.options.theme.ink);
+    this.milkyWay.setStyle(this.style, on);
     this.dirty = true;
   }
 
@@ -963,6 +979,7 @@ export class SpaceView {
     this.uniforms.uFigures.value = this.layers.constellationLines ? 1 : 0;
     this.eclipticLine.visible = this.layers.ecliptic;
     this.equatorialGrid.visible = this.layers.equatorialGrid;
+    this.milkyWay.setEnabled(this.layers.milkyWay);
     this.update();
   }
 
@@ -997,6 +1014,7 @@ export class SpaceView {
     this.uniforms.uBase.value.set(theme.ground);
     this.renderer.setClearColor(this.style === "realistic" ? "#000000" : theme.sky);
     this.real?.setMonochrome(this.monochrome, theme.ink);
+    this.milkyWay.setGlow(theme.glow ?? "violet", theme.ink);
     // Surface lines (coastlines, graticule, marker) use plain materials: recolour them too.
     this.scene.traverse((o) => {
       const m = (o as THREE.LineSegments).material as THREE.LineBasicMaterial | undefined;
@@ -1253,6 +1271,7 @@ export class SpaceView {
     clearTimeout(this.crossfadeTimer);
     this.crossfade?.remove();
     this.pov.dispose();
+    this.milkyWay.dispose();
     this.renderer.dispose();
   }
 

@@ -76,7 +76,13 @@ describe("layer catalogue", () => {
 
   it("only offers in the Earth view the layers it renders", () => {
     const keys = sectionsFor("space").flatMap((s) => s.entries.map((e) => e.key));
-    expect(keys.sort()).toEqual(["constellationLines", "ecliptic", "equatorialGrid", "planets"]);
+    expect(keys.sort()).toEqual([
+      "constellationLines",
+      "ecliptic",
+      "equatorialGrid",
+      "milkyWay",
+      "planets",
+    ]);
   });
 
   it("has French labels for every section, entry and hint", () => {
@@ -114,7 +120,7 @@ describe("Affichage panel (#138)", () => {
       ["guides", ["equatorialGrid", "azimuthalGrid", "ecliptic", "miniGlobe"]],
     ]);
     expect(keys("space")).toEqual([
-      ["sky", ["constellationLines"]],
+      ["sky", ["constellationLines", "milkyWay"]],
       ["solar", ["planets"]],
       ["guides", ["equatorialGrid", "ecliptic"]],
     ]);

@@ -161,28 +161,41 @@ téléchargé est une donnée non fiable) télécharge le sous-ensemble AT-HYG a
    des étoiles faibles et lointaines ; les plus brillantes, proches, couvrent tout le ciel ;
 2. comptage sur une grille équirectangulaire **équatoriale J2000** de 1024 × 512 (x : AD 0 → 360°,
    y : Déc +90° → −90°) ;
-3. lissage gaussien **sur la sphère** (σ = 1°, distance angulaire vraie) : pour deux lignes de la
+3. lissage gaussien **sur la sphère** (σ = 1,5° depuis #168, 1° avant ; distance angulaire vraie) : pour deux lignes de la
    grille, la distance ne dépend que de l'écart en AD, d'où une convolution circulaire exacte par
    FFT (pas de couture à 0 h, pas de déformation aux pôles) ; le même lissage des angles solides
    des cellules normalise en étoiles par stéradian ;
 4. log10 de la densité, moins un « plancher » (90e centile pour |b| > 60°) ; division par le
    99,7e centile ; bornée à [0, 1] : le ciel loin de la bande vaut 0 ;
-5. WebP en niveaux de gris, qualité 82 : **19 206 octets** (2026-10-19).
+5. WebP en niveaux de gris, qualité 82 : **12 674 octets** (2026-10-19, #168).
 
 **Contrôles automatiques** (le script échoue sinon) : 500 000 à 800 000 étoiles retenues ;
-densité moyenne à |b| < 5° ≥ 3 fois celle à |b| > 60° (mesuré : 39,2 contre 7,5 étoiles/deg²) ;
+densité moyenne à |b| < 5° ≥ 3 fois celle à |b| > 60° (mesuré : 39,0 contre 7,5 étoiles/deg²) ;
 disque de 15° autour du centre galactique dans le quart le plus dense du ciel (87e centile) ;
 pôles galactiques nord et sud à 0 ; Grand Rift (l = 35–45°, b = 0°) plus sombre que la bande à
-b = −6° (0,37 contre 0,54) ; fichier < 100 000 octets. Repère galactique : matrice ICRS →
+b = −6° (0,40 contre 0,54) ; fichier < 100 000 octets. Repère galactique : matrice ICRS →
 galactique d'ESA 1997 (*The Hipparcos and Tycho Catalogues*, vol. 1, §1.5.3).
 
-**Affichage** (`sky-renderer/src/milky-way.ts`) : une passe plein écran sous tout le reste ; chaque
-pixel est ramené par la projection inverse de la carte puis la transposée de la matrice qui place
-les étoiles (J2000 → horizontal) aux coordonnées de la texture (testé : centre et pôle galactiques,
-raccord à 0 h, aller-retour par la projection). Encre de la DA : léger lavis + grain stochastique
-(un point par pixel CSS, hachage entier) ; dessinée de jour comme les étoiles, atténuée sous
-l'horizon avec « Voir à travers la Terre », estompée aux champs étroits (< 12°) où la texture n'a
-plus de détail. Texture chargée à la demande ; sans le fichier, le calque ne dessine rien.
+**Affichage** (`sky-renderer/src/milky-way.ts`, revu en #168 à la demande du porteur : le grain
+de points de #162 restait fixe à l'écran et masquait des étoiles). La densité est lue par pixel
+depuis la direction J2000, filtrage bilinéaire lissé (smoothstep sur la fraction du texel) :
+- **carte** : passe plein écran sous tout le reste ; chaque pixel est ramené par la projection
+  inverse de la carte puis la transposée de la matrice qui place les étoiles (J2000 → horizontal)
+  aux coordonnées de la texture (testé : centre et pôle galactiques, raccord à 0 h, aller-retour
+  par la projection). Lueur diffuse **ajoutée** au ciel (jamais par-dessus une étoile ou une
+  ligne) : indigo profond aux bords, violet-bleu, lavande pâle dans les nuages les plus denses ;
+  lueur rouge sombre de l'encre en vision nocturne. Éteinte par le jour (facteur (1 − jour)²),
+  atténuée sous l'horizon avec « Voir à travers la Terre », réduite à 20 % aux champs étroits
+  (< 8°, de 8 à 40°) où la texture n'a plus de détail ;
+- **vue Terre / système solaire** : sphère à l'infini dont les sommets sont des directions J2000
+  placées par la même précession que les étoiles (testé : centre galactique dans le Sagittaire,
+  lu au bon texel en 2026), dessinée avant les étoiles et ajoutée au fond. Gravure : la même
+  lueur violette que la carte (même dégradé, un peu moins intense : le champ de 40° de cette vue
+  est souvent tout entier dans la bande). Réaliste, façon photo à longue pose : ciel noir hors de
+  la bande (seuil haut), courbe de tons raide qui garde nuages brillants et bandes sombres, cœur
+  crème, bords faibles plus froids ; nuit rouge : la même courbe dans l'encre.
+
+Texture chargée à la demande dans chaque vue ; sans le fichier, le calque ne dessine rien.
 
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.

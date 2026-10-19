@@ -1,52 +1,98 @@
 /**
- * The Milky Way on the sky map (#162): the "milkyWay" layer.
+ * The Milky Way (#162, #168): the "milkyWay" layer of the sky map and of the space view.
  *
  * Data: out/milkyway.webp of packages/sky-data/build_milkyway.py, the density of the Tycho-2
  * stars of magnitude 9 to 11 (AT-HYG v3.2, CC BY-SA 4.0), smoothed on the sphere and log-scaled,
  * 0 away from the band. Equirectangular in J2000 equatorial coordinates: u = RA / 360° (RA
  * increasing with u), v = (90° − Dec) / 180° (north at the top, first row of the image).
  *
- * Rendering: one full-screen pass under everything else (renderOrder MILKY_WAY_ORDER). Each pixel
- * is sent back through the map's own projection (inverse stereographic → view → horizontal, the
- * ground pass's inverse) and then to J2000 with the transpose of uEq2Hor, the matrix that places
- * the stars: the band follows the projection, zoom, pan, roll, date and place exactly as the
- * stars do. Style (ART_DIRECTION §3, « Voie lactée rendue en tramage stochastique / grain »): a
- * faint wash of ink plus dots of a fixed grain in CSS pixels, both in the theme ink (red in night
- * mode), sparse enough to leave the stars and lines on top readable. Like the stars it stays drawn by
- * day (#106) and is dimmed below the horizon with the see-through ground (#65).
+ * Both views sample it per pixel from a J2000 direction (milkyWayDensity), so the band is fixed to
+ * the stars whatever the projection, zoom, pan, roll, date or place:
+ *  - sky map: one full-screen pass under everything else (renderOrder MILKY_WAY_ORDER); each pixel
+ *    goes back through the map's own projection (inverse stereographic → view → horizontal, the
+ *    ground pass's inverse), then to J2000 with the transpose of uEq2Hor, the matrix that places
+ *    the stars. Look (#168, the owner's choice over the stippled grain of #162): a diffuse,
+ *    transparent glow added to the sky, deep indigo in the faint outskirts to violet-blue and a
+ *    pale lavender in the densest clouds; a dim glow of the ink in night red. Being added, it
+ *    never covers a star or a line. It fades out by day (daylight drowns it) and with the field
+ *    narrower than FADE_FOV (its detail is ~1°);
+ *  - space view: a sphere at infinity drawn before the stars, its vertices J2000 directions
+ *    placed by the same uPrec as the stars (spaceMilkyWayVert). Engraving: the sky map's glow
+ *    (same ramp and blend, coherent with the blue background). Realistic: a long-exposure look,
+ *    black outside the band, cream core and cooler faint edges, dust lanes as dark gaps.
+ *
+ * Filtering: bilinear with a smoothstep on the texel fraction (one fetch), so the 0.35° texels do
+ * not show as diamonds when zoomed in.
  *
  * Cost: one texture fetch, an atan and an asin per pixel; an R8 texture of 1024×512 (512 KiB on
- * the GPU) loaded on demand the first time the layer is on; no allocation per frame. Without the
- * file (pipeline not run, offline before the first copy) the layer draws nothing.
+ * the GPU per view) loaded on demand the first time the layer is on; no allocation per frame.
+ * Without the file (pipeline not run, offline before the first copy) the layer draws nothing.
  */
 import * as THREE from "three";
-import type { Vec3 } from "@asteria/astro-core";
+import type { Mat3, Vec3 } from "@asteria/astro-core";
 import { loadGreyTexture } from "./grey-texture";
 import { projection } from "./shaders";
 
-/** Look of the band (see milkyWayFrag). */
+/** Look of the band on the sky map (see milkyWayFrag). */
 export const MILKY_WAY_STYLE = {
   /** Texture value under which nothing is drawn: the faint wings of the star counts. */
-  LOW: 0.28,
-  /** Opacity of the soft wash at the densest texel. */
-  GLOW: 0.16,
-  /** Share of the grain cells inked at the densest texel. */
-  GRAIN: 0.22,
-  /** Opacity of a grain dot. */
-  DOT_ALPHA: 0.32,
-  /** Fields (degrees) between which the band fades out when zooming in (its detail is ~1°). */
-  FADE_FOV: [4, 12] as const,
+  LOW: 0.2,
+  /** Exponent of the glow: > 1 keeps the outskirts faint and diffuse. */
+  GAMMA: 1.35,
+  /** Opacity of the glow added at the densest texel (night, wide field). */
+  STRENGTH: 0.36,
+  /** Fields (degrees) between which the band fades out when zooming in. */
+  FADE_FOV: [8, 40] as const,
   /** Opacity kept in the narrowest fields. */
-  MIN_OPACITY: 0.35,
+  MIN_OPACITY: 0.2,
 } as const;
 
-/** Under the see-through ground's night background (−1) and everything else. */
+/**
+ * Glow palettes (sRGB): faint outskirts, body of the band, densest clouds. `violet` on the night
+ * blue of the map; `ink` scales the theme's ink (night red).
+ */
+export const MILKY_WAY_PALETTE = {
+  violet: ["#3a2a9a", "#6656d8", "#b9b0f2"],
+  ink: [0.35, 0.6, 0.9],
+} as const;
+
+/** Look of the band in the space view (see spaceMilkyWayFrag). */
+export const SPACE_MILKY_WAY_STYLE = {
+  /**
+   * Realistic style: texture value under which the sky stays pure black (a high floor: only the
+   * band itself shows, as on a long-exposure photograph).
+   */
+  REAL_LOW: 0.55,
+  /** Realistic style: exponent of the tone curve (keeps the band's clouds and lanes apart). */
+  REAL_GAMMA: 2.4,
+  /** Realistic style: additive opacity at the densest texel (the stars stay the main feature). */
+  REAL_STRENGTH: 0.3,
+  /**
+   * Engraving: the sky map's glow, a little weaker: this view's 40° field often lies inside the
+   * band, where the full strength would tint the whole screen.
+   */
+  GLOW_STRENGTH: 0.26,
+} as const;
+
+/** Under the see-through ground's night background (−1) and everything else (sky map). */
 export const MILKY_WAY_ORDER = -0.75;
+/** Space view: after the opaque globes, before the stars and lines (renderOrder 1). */
+export const SPACE_MILKY_WAY_ORDER = 0.5;
 
 const TAU = 2 * Math.PI;
 
 /**
- * Texture coordinates of a J2000 unit vector (top-left origin): the CPU twin of milkyWayFrag.
+ * ICRS (J2000) → galactic rotation, rows = galactic x (centre), y (l = 90°), z (north pole)
+ * (ESA 1997, The Hipparcos and Tycho Catalogues, vol. 1, §1.5.3), as in build_milkyway.py.
+ */
+export const J2000_TO_GALACTIC: Mat3 = [
+  -0.0548755604, -0.8734370902, -0.4838350155,
+  0.4941094279, -0.44482963, 0.7469822445,
+  -0.867666149, -0.1980763734, 0.4559837762,
+]; // prettier-ignore
+
+/**
+ * Texture coordinates of a J2000 unit vector (top-left origin): the CPU twin of milkyWayDensity.
  * u ∈ [0, 1) wraps with the right ascension, v ∈ [0, 1] from the north pole.
  */
 export function milkyWayUv(dir: Readonly<Vec3>): [number, number] {
@@ -63,8 +109,50 @@ export function milkyWayOpacity(fov: number): number {
   return MILKY_WAY_STYLE.MIN_OPACITY + (1 - MILKY_WAY_STYLE.MIN_OPACITY) * s;
 }
 
+/** Strength of the sky map's glow: full at night, gone in full daylight (it drowns first). */
+export function milkyWayStrength(fov: number, daylight: number): number {
+  const day = Math.min(1, Math.max(0, daylight));
+  return MILKY_WAY_STYLE.STRENGTH * milkyWayOpacity(fov) * (1 - day) * (1 - day);
+}
+
 const f = (x: number) => x.toFixed(4);
+
+/** Texture sampling shared by both views (uniforms uMilkyWay, uMwSize). */
+export const MILKY_WAY_GLSL = /* glsl */ `
+  uniform sampler2D uMilkyWay;
+  uniform vec2 uMwSize; // texture size, texels
+  const float MW_TAU = 6.28318531;
+  const float MW_PI = 3.14159265;
+  // Density 0…1 at a J2000 direction: bilinear, smoothed across each texel (one fetch).
+  float milkyWayDensity(vec3 e) {
+    vec2 uv = vec2(fract(atan(e.y, e.x) / MW_TAU), 0.5 - asin(clamp(e.z, -1.0, 1.0)) / MW_PI);
+    vec2 x = uv * uMwSize - 0.5;
+    vec2 i = floor(x);
+    vec2 t = x - i;
+    t = t * t * (3.0 - 2.0 * t);
+    return texture2D(uMilkyWay, (i + t + 0.5) / uMwSize).r;
+  }
+`;
+
 const S = MILKY_WAY_STYLE;
+
+/**
+ * The glow of the sky map, shared by the space view's engraving style (#168): colour ramp
+ * (uMwFaint → uMwBody → uMwCore) and opacity before uMwStrength, from the texture value.
+ */
+export const MILKY_WAY_GLOW_GLSL = /* glsl */ `
+  uniform vec3 uMwFaint;
+  uniform vec3 uMwBody;
+  uniform vec3 uMwCore;
+  uniform float uMwStrength;
+  vec4 milkyWayGlow(float density) {
+    float t = smoothstep(${f(S.LOW)}, 1.0, density);
+    float s = pow(t, ${f(S.GAMMA)});
+    vec3 col = mix(uMwFaint, uMwBody, smoothstep(0.0, 0.55, s));
+    col = mix(col, uMwCore, smoothstep(0.5, 1.0, s));
+    return vec4(col, s * uMwStrength);
+  }
+`;
 
 export const milkyWayVert = /* glsl */ `
   varying vec2 vNdc;
@@ -75,35 +163,17 @@ export const milkyWayVert = /* glsl */ `
 `;
 
 /**
- * Inverse projection as groundFrag, then horizontal → J2000 with uEq2Hor's transpose
- * (h * M = Mᵀ h in GLSL), then milkyWayUv. Above MILKY_WAY_STYLE.LOW the texture value sets a
- * faint wash (GLOW) and the share of grain cells inked (GRAIN, a fixed hash of the CSS pixel), so
- * the dots densify towards the core of the band like the stipple of an engraving.
+ * Sky map: inverse projection as groundFrag, then horizontal → J2000 with uEq2Hor's transpose
+ * (h * M = Mᵀ h in GLSL), then the density, turned into a glow added to the sky (additive
+ * blending: the colour is multiplied by the alpha and added).
  */
 export const milkyWayFrag = /* glsl */ `
   precision highp float;
-  precision highp int;
   ${projection}
+  ${MILKY_WAY_GLSL}
+  ${MILKY_WAY_GLOW_GLSL}
   uniform mat3 uViewInv;
-  uniform float uDpr;
-  uniform vec3 uInk;
-  uniform sampler2D uMilkyWay;
-  uniform float uMwOpacity;
   varying vec2 vNdc;
-
-  const float TAU = 6.28318531;
-  const float PI = 3.14159265;
-
-  // Integer hash of a CSS pixel (lowbias32, C. Wellons): white noise without the streaks of
-  // float hashes on integer inputs, exact on every GPU (32-bit integers in GLSL ES 3.00).
-  float grain(vec2 cell) {
-    uvec2 q = uvec2(ivec2(cell) + 32768);
-    uint h = q.x * 0x9E3779B9u ^ q.y * 0x85EBCA6Bu;
-    h ^= h >> 16; h *= 0x7FEB352Du;
-    h ^= h >> 15; h *= 0x846CA68Bu;
-    h ^= h >> 16;
-    return float(h >> 8) / 16777216.0;
-  }
 
   void main() {
     vec2 p = vec2(vNdc.x * uAspect, vNdc.y) / uScale;
@@ -114,14 +184,107 @@ export const milkyWayFrag = /* glsl */ `
     float fade = horizonFade(h.z);
     if (fade <= 0.0) discard;
     vec3 e = h * uEq2Hor;
-    vec2 uv = vec2(fract(atan(e.y, e.x) / TAU), 0.5 - asin(clamp(e.z, -1.0, 1.0)) / PI);
-    float t = smoothstep(${f(S.LOW)}, 1.0, texture2D(uMilkyWay, uv).r);
-    float dot = step(grain(floor(gl_FragCoord.xy / uDpr)) + 0.002, t * ${f(S.GRAIN)});
-    float a = (t * ${f(S.GLOW)} + dot * ${f(S.DOT_ALPHA)}) * uMwOpacity * fade;
-    if (a < 0.004) discard;
-    gl_FragColor = vec4(uInk, a);
+    vec4 glow = milkyWayGlow(milkyWayDensity(e));
+    if (glow.a <= 0.0) discard;
+    gl_FragColor = vec4(glow.rgb, glow.a * fade);
   }
 `;
+
+/** Space view: a sphere of J2000 directions at infinity, placed by uPrec like the stars. */
+export const spaceMilkyWayVert = /* glsl */ `
+  uniform mat3 uPrec;
+  varying vec3 vDir;
+  void main() {
+    vDir = position;
+    vec4 p = projectionMatrix * vec4(mat3(viewMatrix) * (uPrec * position), 1.0);
+    gl_Position = p.xyww;
+  }
+`;
+
+const SV = SPACE_MILKY_WAY_STYLE;
+
+/**
+ * Space view, added to the background (additive blending). uMwMode 0: engraving, the sky map's
+ * glow (same ramp, same strength); 1: realistic, a long-exposure look: black outside the band
+ * (high floor), steep tone curve so bright clouds and dark lanes stay apart, cooler faint edges
+ * and a cream core; 2: realistic in night red (the same curve in the ink).
+ */
+export const spaceMilkyWayFrag = /* glsl */ `
+  precision highp float;
+  ${MILKY_WAY_GLSL}
+  ${MILKY_WAY_GLOW_GLSL}
+  uniform vec3 uInk;
+  uniform float uMwMode;
+  varying vec3 vDir;
+
+  void main() {
+    float d = milkyWayDensity(normalize(vDir));
+    if (uMwMode < 0.5) {
+      vec4 glow = milkyWayGlow(d);
+      if (glow.a <= 0.0) discard;
+      gl_FragColor = glow;
+      return;
+    }
+    float r = smoothstep(${f(SV.REAL_LOW)}, 1.0, d);
+    if (r <= 0.0) discard;
+    float s = pow(r, ${f(SV.REAL_GAMMA)});
+    vec3 edge = vec3(0.7, 0.77, 0.94);
+    vec3 core = vec3(1.0, 0.96, 0.9);
+    vec3 col = uMwMode > 1.5 ? uInk : mix(edge, core, smoothstep(0.3, 0.9, s));
+    gl_FragColor = vec4(col, s * ${f(SV.REAL_STRENGTH)});
+  }
+`;
+
+/** Loads the texture into `uniforms` (uMilkyWay, uMwSize) once; null if unavailable. */
+export class MilkyWayTexture {
+  private state: "idle" | "loading" | "ready" | "failed" = "idle";
+  private disposed = false;
+  readonly uniforms = {
+    uMilkyWay: { value: null as THREE.Texture | null },
+    uMwSize: { value: new THREE.Vector2(1, 1) },
+  };
+
+  constructor(
+    private readonly url: string | undefined,
+    private readonly onReady: () => void,
+  ) {}
+
+  get ready(): boolean {
+    return this.state === "ready";
+  }
+
+  /** Starts loading the first time it is called (failure: the layer stays empty). */
+  request(): void {
+    if (this.state === "idle") void this.load();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+
+  private async load(): Promise<void> {
+    this.state = "loading";
+    try {
+      if (!this.url) throw new Error("no Milky Way texture configured");
+      const texture = await loadGreyTexture(this.url, {
+        mipmaps: false,
+        wrapS: THREE.RepeatWrapping,
+      });
+      if (this.disposed) {
+        texture.dispose();
+        return;
+      }
+      this.uniforms.uMilkyWay.value = texture;
+      const img = texture.image as { width: number; height: number };
+      this.uniforms.uMwSize.value.set(img.width, img.height);
+      this.state = "ready";
+      this.onReady();
+    } catch (e) {
+      this.state = "failed";
+      console.warn("Milky Way unavailable:", e);
+    }
+  }
+}
 
 export interface MilkyWayLayerOptions {
   /** Shared uniforms of the map (projection, ink, horizon, pixel ratio). */
@@ -132,66 +295,151 @@ export interface MilkyWayLayerOptions {
   requestFrame: () => void;
 }
 
+/** Glow colours of a theme (sRGB hex), see MILKY_WAY_PALETTE. */
+export function milkyWayColors(
+  glow: "violet" | "ink",
+  ink: string,
+): [THREE.Color, THREE.Color, THREE.Color] {
+  if (glow === "violet")
+    return MILKY_WAY_PALETTE.violet.map((c) => new THREE.Color().setStyle(c)) as [
+      THREE.Color,
+      THREE.Color,
+      THREE.Color,
+    ];
+  const base = new THREE.Color().setStyle(ink);
+  return MILKY_WAY_PALETTE.ink.map((k) => base.clone().multiplyScalar(k)) as [
+    THREE.Color,
+    THREE.Color,
+    THREE.Color,
+  ];
+}
+
 /** The Milky Way layer of the sky map: add `mesh` to the scene, drive it with the setters. */
 export class MilkyWayLayer {
   readonly mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   private enabled = false;
-  private state: "idle" | "loading" | "ready" | "failed" = "idle";
-  private disposed = false;
-  private readonly opacity = { value: 1 };
+  private readonly texture: MilkyWayTexture;
+  private readonly strength = { value: 1 };
+  private readonly colors = {
+    uMwFaint: { value: new THREE.Color() },
+    uMwBody: { value: new THREE.Color() },
+    uMwCore: { value: new THREE.Color() },
+  };
 
-  constructor(private readonly options: MilkyWayLayerOptions) {
+  constructor(options: MilkyWayLayerOptions) {
+    this.texture = new MilkyWayTexture(options.url, () => {
+      this.mesh.visible = this.enabled;
+      options.requestFrame();
+    });
     const material = new THREE.ShaderMaterial({
-      uniforms: { ...options.uniforms, uMilkyWay: { value: null }, uMwOpacity: this.opacity },
+      uniforms: {
+        ...options.uniforms,
+        ...this.texture.uniforms,
+        ...this.colors,
+        uMwStrength: this.strength,
+      },
       vertexShader: milkyWayVert,
       fragmentShader: milkyWayFrag,
       transparent: true,
       depthTest: false,
       depthWrite: false,
+      blending: THREE.AdditiveBlending,
     });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = MILKY_WAY_ORDER;
     this.mesh.visible = false;
+    this.setGlow("violet", "#f0e6d2");
   }
 
   /** Switches the layer; the first time, loads the texture (failure: nothing is drawn). */
   setEnabled(on: boolean): void {
     this.enabled = on;
-    this.mesh.visible = on && this.state === "ready";
-    if (on && this.state === "idle") void this.load();
+    this.mesh.visible = on && this.texture.ready;
+    if (on) this.texture.request();
+  }
+
+  /** Palette of the glow: violet on the night blue, or the ink (night red). */
+  setGlow(glow: "violet" | "ink", ink: string): void {
+    const [a, b, c] = milkyWayColors(glow, ink);
+    this.colors.uMwFaint.value.copy(a);
+    this.colors.uMwBody.value.copy(b);
+    this.colors.uMwCore.value.copy(c);
   }
 
   /** Per-frame update (one uniform, allocation-free). */
-  update(fov: number): void {
-    this.opacity.value = milkyWayOpacity(fov);
+  update(fov: number, daylight: number): void {
+    this.strength.value = milkyWayStrength(fov, daylight);
   }
 
   /** Stops a pending load; GPU resources are freed with the scene (disposeObjects). */
   dispose(): void {
-    this.disposed = true;
+    this.texture.dispose();
+  }
+}
+
+/** Space view's Milky Way: a sphere at infinity; `mesh` goes into the scene. */
+export class SpaceMilkyWay {
+  readonly mesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
+  private enabled = false;
+  private readonly texture: MilkyWayTexture;
+  private readonly mode = { value: 0 };
+  private readonly colors = {
+    uMwFaint: { value: new THREE.Color() },
+    uMwBody: { value: new THREE.Color() },
+    uMwCore: { value: new THREE.Color() },
+    uMwStrength: { value: SPACE_MILKY_WAY_STYLE.GLOW_STRENGTH as number },
+  };
+
+  constructor(options: MilkyWayLayerOptions) {
+    this.texture = new MilkyWayTexture(options.url, () => {
+      this.mesh.visible = this.enabled;
+      options.requestFrame();
+    });
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        ...options.uniforms,
+        ...this.texture.uniforms,
+        ...this.colors,
+        uMwMode: this.mode,
+      },
+      vertexShader: spaceMilkyWayVert,
+      fragmentShader: spaceMilkyWayFrag,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+    });
+    // 3.75° per segment; directions are exact per pixel (normalised in the fragment shader).
+    this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 48), material);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = SPACE_MILKY_WAY_ORDER;
+    this.mesh.visible = false;
+    this.setGlow("violet", "#f0e6d2");
   }
 
-  private async load(): Promise<void> {
-    this.state = "loading";
-    try {
-      const { url } = this.options;
-      if (!url) throw new Error("no Milky Way texture configured");
-      const texture = await loadGreyTexture(url, {
-        mipmaps: false,
-        wrapS: THREE.RepeatWrapping,
-      });
-      if (this.disposed) {
-        texture.dispose();
-        return;
-      }
-      this.mesh.material.uniforms.uMilkyWay!.value = texture;
-      this.state = "ready";
-      this.mesh.visible = this.enabled;
-      this.options.requestFrame();
-    } catch (e) {
-      this.state = "failed";
-      console.warn("Milky Way unavailable:", e);
-    }
+  /** Palette of the engraving style's glow, as on the sky map (violet, or the night ink). */
+  setGlow(glow: "violet" | "ink", ink: string): void {
+    const [a, b, c] = milkyWayColors(glow, ink);
+    this.colors.uMwFaint.value.copy(a);
+    this.colors.uMwBody.value.copy(b);
+    this.colors.uMwCore.value.copy(c);
+  }
+
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+    this.mesh.visible = on && this.texture.ready;
+    if (on) this.texture.request();
+  }
+
+  /** Engraving (the sky map's glow), realistic long exposure, or realistic in night red. */
+  setStyle(style: "engraving" | "realistic", monochrome: boolean): void {
+    const realistic = style === "realistic";
+    this.mode.value = realistic ? (monochrome ? 2 : 1) : 0;
+  }
+
+  dispose(): void {
+    this.texture.dispose();
   }
 }

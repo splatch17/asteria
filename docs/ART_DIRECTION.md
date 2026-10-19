@@ -45,7 +45,7 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 ### Le ciel
 - Fond **bleu nuit #101B52** uni (pas de dégradé cartoon). Étoiles nettes, couleur physique très **désaturée** (B-V) pour rester presque monochrome ; en mode « Pur », 100 % parchemin.
 - **Lignes de constellation = fils de lumière fins**, nets, comme gravés. (Les rayons façon hero Hermes ont été testés puis écartés.)
-- Voie lactée rendue en **tramage stochastique / grain** (pas de photo lissée).
+- Voie lactée : **lueur diffuse et transparente** violet / bleu profond sur la carte, ajoutée au ciel sans jamais masquer une étoile (choix du porteur, #168, après un essai en grain de points en #162) ; même lueur dans la vue Terre en style gravure ; en style réaliste, bande de photo à longue pose sur ciel noir.
 
 ### Les figures mythologiques (le cœur de la DA)
 - Style : **gravure ancienne** (référence : atlas de Bayer *Uranometria* 1603, Hevelius 1690, *Urania's Mirror* 1824 — tous **domaine public**) retravaillée par artiste + IA, puis rendue en temps réel par shader :
