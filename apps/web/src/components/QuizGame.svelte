@@ -4,7 +4,8 @@
   // map), with 4 names to choose from. The figure is put at the zenith of a made-up observer
   // (zenithObserver), north up, framed to fill the stage; the map takes no input there.
   //  - Découverte: lines and the illustrated figure; Amateur: lines; Expert: its stars only.
-  //  - After the answer: lines, figure and name revealed, right answer inked, then « Suivante ».
+  //  - After the answer: lines, figure and its name (no other name) revealed, right answer
+  //    inked, then « Suivante ».
   // Then the end screen: score, record, and what each answer changed.
   import { onDestroy, onMount, tick } from "svelte";
   import { _ } from "@asteria/ui";
@@ -79,7 +80,8 @@
     return {
       constellationLines: revealed || level !== "expert",
       constellationFigures: revealed || level === "discovery",
-      constellationNames: revealed,
+      // Only the answer's name is written (setSelectedNameShown), not its neighbours'.
+      constellationNames: false,
     };
   }
 
@@ -96,6 +98,7 @@
   function showQuestion() {
     if (!map || !question) return;
     map.setLayers(layersFor(false));
+    map.setSelectedNameShown(false);
     map.setSelectedConstellation(question.answer);
     frame();
   }
@@ -162,6 +165,7 @@
     current = onanswer(question, abbr);
     answers = [...answers, current];
     map?.setLayers(layersFor(true));
+    map?.setSelectedNameShown(true);
     await tick();
     nextButton?.focus();
   }

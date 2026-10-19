@@ -369,6 +369,8 @@ export class SkyMap {
     cap: Cap;
   }[] = [];
   private selectedConstellation: string | null = null;
+  /** The selected constellation's name is drawn even with the names layer off (games, #163). */
+  private selectedNameShown = false;
   /** Catalogue index of each HIP number (selection marker, #103). */
   private readonly hipIndex: Map<number, number>;
   /** Selected star, Sun, Moon or planet, marked by an engraved reticle (#103). */
@@ -873,6 +875,15 @@ export class SkyMap {
     this.uniforms.uLineOpacity.value = abbr ? 0.3 : 0.45;
     this.figureLayer.setSelected(abbr);
     this.dim = selectionDim(abbr ? "constellation" : null);
+    this.dirty = true;
+  }
+
+  /**
+   * Draws the selected constellation's name even while the constellationNames layer is off, and
+   * no other name: the games reveal only the answer (#163).
+   */
+  setSelectedNameShown(on: boolean): void {
+    this.selectedNameShown = on;
     this.dirty = true;
   }
 
@@ -1513,7 +1524,7 @@ export class SkyMap {
    */
   private placeSelectedName(layout: LabelLayout, m: Mat3, isBelow: (d: Vec3) => boolean): void {
     const abbr = this.selectedConstellation;
-    if (!abbr || !this.layers.constellationNames) return;
+    if (!abbr || !(this.layers.constellationNames || this.selectedNameShown)) return;
     const label = this.labels.find((l) => l.abbr === abbr);
     if (!label) return;
     const below = isBelow(label.dir);
