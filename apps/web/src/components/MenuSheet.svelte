@@ -61,6 +61,7 @@
     online,
     offline,
     onofflineretry,
+    iosInstall = false,
     onhide,
     onclose,
   }: {
@@ -105,6 +106,8 @@
     /** The phone has a network (#146): a green or red light in the settings. */
     online: boolean;
     offline: OfflineState;
+    /** iOS in the browser (#160): how to add the app to the home screen. */
+    iosInstall?: boolean;
     onofflineretry: () => void;
     /** Hides the interface (immersive mode), closing the menu. */
     onhide: () => void;
@@ -439,6 +442,14 @@
           </span>
         </span>
       </div>
+      {#if iosInstall}
+        <div class="line install">
+          <span class="data">
+            <span class="main">{$_("install.title")}</span>
+            <span class="sub">{$_("install.ios")}</span>
+          </span>
+        </div>
+      {/if}
       {#if offline.state !== "unsupported"}
         <div class="line offline">
           <span class="data">

@@ -413,6 +413,8 @@
   "network.title": "Réseau",
   "network.online": "Connecté",
   "network.offline": "Hors ligne",
+  "install.title": "Installer sur l'iPhone",
+  "install.ios": "Safari : Partager, puis « Sur l'écran d'accueil »",
   "offline.title": "Copie hors ligne",
   "offline.idle": "En attente",
   "offline.downloading": "{percent} %",

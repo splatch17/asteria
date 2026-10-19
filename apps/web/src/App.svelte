@@ -93,7 +93,8 @@
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
-  import { watchCompass } from "./lib/device-compass";
+  import { allowCompass, watchCompass } from "./lib/device-compass";
+  import { needsIosInstallHint } from "./lib/install";
   import { network, offline, retryOffline } from "./lib/offline-client.svelte";
   import {
     apparentSize,
@@ -704,6 +705,7 @@
   }
 
   function faceNorth() {
+    allowCompass();
     if (pointer.state === "on") return;
     map?.animateTo({ azimuth: 0 }, viewTurnMs());
   }
@@ -2045,6 +2047,7 @@
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
     online={network.online}
+    iosInstall={needsIosInstallHint()}
     offline={offline.current}
     onofflineretry={retryOffline}
     onhide={fromMenu(() => (immersive = true))}

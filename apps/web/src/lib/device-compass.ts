@@ -31,7 +31,8 @@ export function smoothHeading(prev: number | null, next: number, k: number): num
  * Listens to the absolute orientation events (Chromium `deviceorientationabsolute`, or a
  * `deviceorientation` that is absolute / carries iOS `webkitCompassHeading`) and reports the
  * phone's true heading: magnetic heading + declination (east positive). Returns a stop function.
- * No permission prompt on Android; nothing is reported where no compass exists.
+ * No permission prompt on Android; on iOS, see `allowCompass`. Nothing is reported where no
+ * compass exists.
  */
 export function watchCompass(
   declination: () => number,
@@ -50,4 +51,14 @@ export function watchCompass(
   const type = absolute ? "deviceorientationabsolute" : "deviceorientation";
   window.addEventListener(type, handler);
   return () => window.removeEventListener(type, handler);
+}
+
+/**
+ * iOS sends no orientation event until the user allows it (#160), and only asks during a gesture:
+ * called on a tap of the compass. Once allowed, the listeners of `watchCompass` start receiving.
+ */
+export function allowCompass(): void {
+  const event = globalThis.DeviceOrientationEvent as unknown as
+    { requestPermission?: () => Promise<string> } | undefined;
+  event?.requestPermission?.().catch(() => {});
 }
