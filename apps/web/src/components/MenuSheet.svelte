@@ -58,6 +58,7 @@
     fullscreen,
     onfullscreen,
     oncredits,
+    ongames,
     online,
     offline,
     onofflineretry,
@@ -102,6 +103,8 @@
     fullscreen: boolean | null;
     onfullscreen: () => void;
     oncredits: () => void;
+    /** Opens the Jeux screen (#163). */
+    ongames: () => void;
     /** Offline copy of the app (#142); « unsupported »: line hidden (development, old browser). */
     /** The phone has a network (#146): a green or red light in the settings. */
     online: boolean;
@@ -310,6 +313,19 @@
           {/each}
         </div>
       {/if}
+      <!-- Apprendre (#163): the games open over the whole app. -->
+      <h3 id="menu-learn">{$_("menu.section.learn")}</h3>
+      <div class="grid" role="group" aria-labelledby="menu-learn">
+        <MenuTile
+          id="games"
+          icon="games"
+          label={$_("menu.games.short")}
+          detail={$_("menu.games")}
+          haspopup
+          onclick={ongames}
+          {oninfo}
+        />
+      </div>
     </div>
 
     <!-- Affichage: every layer of the view, by section (Ciel, Système solaire, Repères). -->

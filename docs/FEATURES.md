@@ -38,7 +38,7 @@ Modèle : **gratuit** (phase bêta). Langue : **français**, architecture i18n p
 | 🟡 **Diagramme HR** | Placer des étoiles sur le diagramme HR (type spectral, luminosité) | Expert |
 | 🟡 **Défi du soir** | Défi quotidien adapté au ciel visible ce soir chez toi | Tous |
 | 🔵 **Navigateur antique** | Retrouver le nord / sa latitude avec les étoiles | Amateur |
-- Moteur commun : répétition espacée (FSRS), maîtrise par constellation, carte « ton ciel appris » qui s'allume au fur et à mesure.
+- Moteur commun : répétition espacée (SM-2 allégé : FSRS demande des paramètres ajustés sur des réponses graduées, un QCM ne dit que juste ou faux ; cf. `apps/web/src/lib/games/srs.ts`), maîtrise par constellation (et par étoile), carte « ton ciel appris » qui s'allume au fur et à mesure.
 
 ## 4. Guide
 - 🟢 88 constellations : mythologie, étoiles principales, objets remarquables, meilleure période, visibilité selon latitude

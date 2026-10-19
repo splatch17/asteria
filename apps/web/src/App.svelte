@@ -205,6 +205,26 @@
   const setLayer = (key: LayerKey, value: boolean) => (viewLayers[mode][key] = value);
   const showPlanets = $derived(viewLayers[mode].planets);
   let creditsOpen = $state(false);
+  /**
+   * Jeux screen (#163), over the whole app: the view under it stops drawing and starts again,
+   * as it was, on closing (the level may have changed there, as in the 3D view).
+   */
+  let games = $state.raw<{ stars: CatalogStar[]; lines: Record<string, number[][]> } | null>(null);
+  const gamesOpen = $derived(games !== null);
+  function openGames() {
+    if (!catalog) return;
+    stopPlaying();
+    if (mode === "sky") map?.stop();
+    else space?.stop();
+    games = catalog;
+  }
+  function closeGames() {
+    games = null;
+    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
+    if (mode === "sky") map?.start();
+    else space?.start();
+    menuButton?.focus();
+  }
   /** Constellation 3D view (#8): the figure, the catalogue and the map's view it starts from. */
   let view3d = $state.raw<{
     abbr: string;
@@ -471,7 +491,8 @@
   /** Keyboard: Escape folds the time controls or leaves immersive mode; Tab shows the interface. */
   function onHudKey(e: KeyboardEvent) {
     if (e.key === "Tab") immersive = false;
-    if (e.key !== "Escape" || menuOpen || frameOpen || searchOpen || creditsOpen) return;
+    if (e.key !== "Escape" || menuOpen || frameOpen || searchOpen || creditsOpen || gamesOpen)
+      return;
     if (timeOpen) {
       timeOpen = false;
       lineElement?.querySelector<HTMLElement>("[aria-controls='time-controls']")?.focus();
@@ -835,6 +856,7 @@
     if (params.get("panel") === "menu" || params.get("panel") === "layers") menuOpen = true; // captures
     if (params.get("panel") === "time") timeOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
+    if (params.get("panel") === "games") openGames(); // captures
     const hip = Number(params.get("star")); // captures: ?star=<HIP> opens the star's sheet
     const star = hip ? catalog?.stars.find((s) => s.hip === hip) : undefined;
     if (star) selection = { kind: "star", star };
@@ -1949,6 +1971,24 @@
   {/await}
 {/if}
 
+{#if games}
+  {@const sky = games}
+  <!-- Loaded on demand with the games' logic (#163). -->
+  {#await import("./components/GamesScreen.svelte") then { default: GamesScreen }}
+    <GamesScreen
+      stars={sky.stars}
+      lines={sky.lines}
+      {names}
+      latin={CONSTELLATION_LATIN}
+      {date}
+      observer={place}
+      theme={night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day}
+      figureSet={`${import.meta.env.BASE_URL}data/figures/stellarium-western.json`}
+      onclose={closeGames}
+    />
+  {/await}
+{/if}
+
 <p class="sr-only" role="status">{immersive ? $_("hud.hidden") : ""}</p>
 
 <!-- Bottom of the interface (#130): one time line; the slider unfolds above it on a tap. -->
@@ -2046,6 +2086,7 @@
     fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
+    ongames={fromMenu(openGames)}
     online={network.online}
     iosInstall={needsIosInstallHint()}
     offline={offline.current}
