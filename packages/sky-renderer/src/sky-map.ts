@@ -15,11 +15,11 @@
  *   seeThroughGround, // #65: what is below the horizon stays drawn, dimmed (see see-through.ts)
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
  *   constellationFigures, // #96: illustrated figures under the stars (figures.ts)
- *   realisticDaylight, // #106: daylight hides the stars (off: drawn as at night; daylight.ts)
  *   deepSky,         // #101: Messier and bright NGC/IC objects (data from setDeepSky; deepsky.ts)
+ *   milkyWay,        // #162: band of the Milky Way under everything (options.milkyWay; milky-way.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
- * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
+ * New layers (ISS, boundaries…) are added as new keys: callers that pass
  * partial objects keep working. setLinesVisible / setPlanetsVisible / setPathsVisible remain as
  * aliases. Graduation labels can be localised with the `formatGraduation` option.
  * No label (cardinal points, bodies, stars, constellations, path dates, graduations) is written
@@ -63,7 +63,7 @@ import { LabelLayout, type Rect } from "./labels";
 import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
-import { dayInkAlpha, daylightFactor, daylightStarLimit, physicalStarLimit } from "./daylight";
+import { dayInkAlpha, daylightFactor, physicalStarLimit } from "./daylight";
 import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from "./see-through";
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import {
@@ -93,6 +93,7 @@ import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
 import { DeepSkyLayer, type DeepSkyFrame, type DeepSkyMapObject } from "./deepsky";
 import { FigureLayer } from "./figures";
+import { MilkyWayLayer } from "./milky-way";
 import {
   MARKER_GAP,
   STAR_MARKER_RADIUS,
@@ -198,15 +199,15 @@ export interface SkyLayers {
   /** Illustrated constellation figures (#96), loaded on demand (options.figureSet). */
   constellationFigures: boolean;
   /**
-   * Realistic daytime sky (#106): daylight hides the stars and their names (#34). Off (default):
-   * by day they stay drawn as at night, with a stronger ink (see daylight.ts).
-   */
-  realisticDaylight: boolean;
-  /**
    * Deep-sky objects (#101): engraved glyphs and names of the objects given to setDeepSky, more of
    * them as the field narrows (deepsky-style.ts).
    */
   deepSky: boolean;
+  /**
+   * Milky Way (#162): density of the Tycho-2 stars, stippled under everything else (milky-way.ts),
+   * loaded on demand (options.milkyWay).
+   */
+  milkyWay: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -221,8 +222,8 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   seeThroughGround: true,
   miniGlobe: true,
   constellationFigures: false,
-  realisticDaylight: false,
   deepSky: true,
+  milkyWay: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -277,6 +278,8 @@ export interface SkyMapOptions {
   layers?: Partial<SkyLayers>;
   /** URL of the figure set manifest (#96); without it the figures layer stays empty. */
   figureSet?: string;
+  /** URL of the Milky Way texture (#162, milkyway.webp); without it that layer draws nothing. */
+  milkyWay?: string;
 }
 
 /** Narrowest field (degrees): about a pair of binoculars, enough to separate Titan (#148). */
@@ -435,6 +438,8 @@ export class SkyMap {
   private readonly backZCache = { fov: NaN, aspect: NaN, z: -0.6 };
   /** Illustrated figures (#96): level and selection are driven through it. */
   readonly figureLayer: FigureLayer;
+  /** Milky Way band (#162). */
+  private readonly milkyWay: MilkyWayLayer;
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -630,7 +635,13 @@ export class SkyMap {
       starDirection: (hip) => byHip.get(hip),
       requestFrame: () => (this.dirty = true),
     });
+    this.milkyWay = new MilkyWayLayer({
+      uniforms: this.uniforms,
+      url: options.milkyWay,
+      requestFrame: () => (this.dirty = true),
+    });
     this.scene.add(
+      this.milkyWay.mesh,
       this.figureLayer.object,
       this.azimuthalGrid,
       this.equatorialGrid,
@@ -967,6 +978,7 @@ export class SkyMap {
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
     this.figureLayer.setEnabled(l.constellationFigures);
+    this.milkyWay.setEnabled(l.milkyWay);
     this.dirty = true;
   }
 
@@ -1015,6 +1027,7 @@ export class SkyMap {
   dispose(): void {
     this.stop();
     this.figureLayer.dispose();
+    this.milkyWay.dispose();
     this.listeners.abort();
     this.resizeObserver.disconnect();
     disposeObjects(this.scene);
@@ -1196,11 +1209,10 @@ export class SkyMap {
     this.uniforms.uViewInv.value = toThreeMat3(transpose(view));
     this.uniforms.uScale.value = stereoScale(this.view.fov);
     this.uniforms.uBackZ.value = this.backZ();
-    // Daylight drowns the stars (at noon only magnitude ≲ −1 objects would remain): drawn
-    // anyway unless the realistic layer is on (#106). Planets always follow the physical limit.
+    // Daylight drowns the stars (at noon only magnitude ≲ −1 objects would remain): the map
+    // draws them anyway (#106, #162). Planets follow the physical limit.
     const fovLimit = limitingMagnitude(this.view.fov);
-    const realistic = this.layers.realisticDaylight;
-    this.uniforms.uLimitMag.value = daylightStarLimit(fovLimit, this.daylight, realistic);
+    this.uniforms.uLimitMag.value = fovLimit;
     this.uniforms.uPlanetLimit.value = planetLimitingMagnitude(
       physicalStarLimit(fovLimit, this.daylight),
       this.sunAltitude,
@@ -1208,12 +1220,13 @@ export class SkyMap {
     // Stronger ink over the day blue (same base opacities as setSelectedConstellation).
     this.uniforms.uLineOpacity.value = dayInkAlpha(
       this.selectedConstellation ? 0.3 : 0.45,
-      this.dayInk(),
+      this.daylight,
     );
     const below = belowHorizonLimits(this.view.fov);
     this.uniforms.uLimitMagBelow.value = below.stars;
     this.uniforms.uPlanetLimitBelow.value = below.planets;
-    this.deepSky.setFrame(this.view.fov, this.daylight, realistic, this.dayInk());
+    this.deepSky.setFrame(this.view.fov, this.daylight);
+    this.milkyWay.update(this.view.fov);
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
@@ -1402,7 +1415,7 @@ export class SkyMap {
       }
 
       // 4. Star names, brightest first (the catalogue is sorted by magnitude)
-      // Never name a star the shader hides (by day, only with realisticDaylight: #106).
+      // Never name a star the shader hides.
       const visibleLimit =
         (below ? this.uniforms.uLimitMagBelow.value : this.uniforms.uLimitMag.value) - 1;
       const maxMag = Math.min(
@@ -1607,9 +1620,9 @@ export class SkyMap {
     f.up[2] = e[8];
     f.scale = stereoScale(this.view.fov);
     f.halfHeight = this.size.h / 2;
-    const limits = this.deepSky.limits();
-    f.limitAbove = limits.above;
-    f.limitBelow = this.layers.seeThroughGround ? limits.below : null;
+    const limit = this.deepSky.limit();
+    f.limitAbove = limit;
+    f.limitBelow = this.layers.seeThroughGround ? limit : null;
     return f;
   }
 
@@ -1826,14 +1839,9 @@ export class SkyMap {
     });
   }
 
-  /** Daylight felt by the ink (labels, lines): 0 with the realistic layer (#106). */
-  private dayInk(): number {
-    return this.layers.realisticDaylight ? 0 : this.daylight;
-  }
-
   /** Opacity of a star or constellation name over the day sky (below the horizon it is night). */
   private inkAlpha(base: number, below: boolean): number {
-    return below ? base : dayInkAlpha(base, this.dayInk());
+    return below ? base : dayInkAlpha(base, this.daylight);
   }
 
   /** Same rule as planetVert (see planetLimitingMagnitude; night limit below the horizon). */

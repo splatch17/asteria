@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import type { Vec3 } from "@asteria/astro-core";
 import { figureFrag, figureVert } from "./figure-shaders";
+import { loadGreyTexture } from "./grey-texture";
 
 export const FIGURE_SET_FORMAT = "asteria-figure-set";
 
@@ -436,7 +437,8 @@ export class FigureLayer {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
       const manifest = parseFigureSet(await res.json());
-      const atlas = await loadAtlas(new URL(manifest.atlas.file, new URL(url, location.href)).href);
+      const atlasUrl = new URL(manifest.atlas.file, new URL(url, location.href)).href;
+      const atlas = await loadGreyTexture(atlasUrl, { mipmaps: true });
       if (this.disposed) return;
       const { buffers, missing } = buildFigureBuffers(
         manifest,
@@ -484,42 +486,4 @@ export class FigureLayer {
     mesh.renderOrder = -0.5;
     return mesh;
   }
-}
-
-/** Decodes the atlas into a single-channel (R8) texture: 1 byte per texel on the GPU. */
-async function loadAtlas(url: string): Promise<THREE.DataTexture> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-  const bitmap = await createImageBitmap(await res.blob(), {
-    premultiplyAlpha: "none",
-    colorSpaceConversion: "none",
-  });
-  const { width, height } = bitmap;
-  const canvas =
-    typeof OffscreenCanvas === "function"
-      ? new OffscreenCanvas(width, height)
-      : Object.assign(document.createElement("canvas"), { width, height });
-  const ctx = canvas.getContext("2d", { willReadFrequently: true }) as
-    CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-  if (!ctx) throw new Error("no 2D context to decode the figure atlas");
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  const rgba = ctx.getImageData(0, 0, width, height).data;
-  const red = new Uint8Array(width * height);
-  for (let i = 0; i < red.length; i++) red[i] = rgba[4 * i]!;
-  const texture = new THREE.DataTexture(
-    red,
-    width,
-    height,
-    THREE.RedFormat,
-    THREE.UnsignedByteType,
-  );
-  texture.flipY = false;
-  texture.unpackAlignment = 1;
-  texture.colorSpace = THREE.NoColorSpace;
-  texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true;
-  return texture;
 }

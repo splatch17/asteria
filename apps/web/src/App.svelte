@@ -775,6 +775,8 @@
         theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
         // Illustrated figures (#95): loaded the first time the layer is switched on.
         figureSet: `${base}data/figures/stellarium-western.json`,
+        // Milky Way (#162): loaded the first time its layer is on (it is by default).
+        milkyWay: `${base}data/milkyway.webp`,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
@@ -1602,16 +1604,11 @@
     "26ky": "time.hint.precession",
   };
   /**
-   * By day the map still draws the stars daylight hides (#106): say so, unless the realistic
-   * daytime sky layer is on (hidden while the layers panel needs the room). Playback hints take
-   * precedence.
+   * By day the map still draws the stars daylight hides (#106): say so (hidden while the menu
+   * needs the room). Playback hints take precedence.
    */
   const daylightHint = $derived(
-    mode === "sky" &&
-      status === "ready" &&
-      !viewLayers.sky.realisticDaylight &&
-      !menuOpen &&
-      starsHiddenByDaylight(bodies.sun.altitude),
+    mode === "sky" && status === "ready" && !menuOpen && starsHiddenByDaylight(bodies.sun.altitude),
   );
   // A demonstration of the Earth view (#128) has its own caption: no playback hint over it.
   const hint = $derived(

@@ -1,11 +1,11 @@
 /**
  * Stars in daylight (#106). The sky map is for learning the sky at any hour: by default the stars,
  * figures and names stay drawn over the day sky, as at night, and the app says they are not
- * visible to the naked eye. The `realisticDaylight` layer restores the physical rendering (#34):
- * daylight lowers the limiting magnitude above the horizon by up to DAYLIGHT_EXTINCTION.
+ * visible to the naked eye (#162: the optional "realistic" daytime sky that hid them was removed).
  *
- * Planets, the Sun and the Moon always follow the physical rule (planetLimitingMagnitude is fed
- * the physical star limit), and below the horizon it is always night (see see-through.ts).
+ * Planets, the Sun and the Moon follow the physical rule: planetLimitingMagnitude is fed the
+ * physical star limit, which daylight lowers by up to DAYLIGHT_EXTINCTION above the horizon;
+ * below the horizon it is always night (see see-through.ts).
  */
 
 /** Magnitudes daylight takes from the stars' limit at full day: only mag ≲ −1 would remain. */
@@ -26,14 +26,6 @@ export function physicalStarLimit(fovLimit: number, daylight: number): number {
 }
 
 /**
- * Limiting magnitude of the stars drawn above the horizon (the shader's uLimitMag; picking and
- * star names follow it): the night limit, unless the realistic daylight layer is on.
- */
-export function daylightStarLimit(fovLimit: number, daylight: number, realistic: boolean): number {
-  return realistic ? physicalStarLimit(fovLimit, daylight) : fovLimit;
-}
-
-/**
  * Daylight at which the app says the stars drawn are not visible to the naked eye: when daylight
  * has taken at least one magnitude from them (Sun above ≈ −11°, nautical twilight).
  */
@@ -46,8 +38,7 @@ export const DAY_INK_GAIN = 0.6;
 
 /**
  * Opacity of the ink (names, constellation lines) over the day sky: the night opacity `base`,
- * raised as the sky brightens so that parchment keeps its contrast on the day blue. `daylight`
- * is 0 with the realistic layer (unchanged rendering).
+ * raised as the sky brightens so that parchment keeps its contrast on the day blue.
  */
 export function dayInkAlpha(base: number, daylight: number): number {
   return base + (1 - base) * DAY_INK_GAIN * Math.min(1, Math.max(0, daylight));

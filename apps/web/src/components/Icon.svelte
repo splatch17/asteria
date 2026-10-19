@@ -59,6 +59,17 @@
       class="thin"
     />
     <circle cx="8" cy="8" r="1.2" class="fill" />
+  {:else if name === "milkyWay"}
+    <!-- A stippled band across the sky with a dark lane: the Milky Way (#162). -->
+    <path d="M1.5 12.5 C5 9.5 9.5 7.5 14.5 3" />
+    <path d="M1.5 7.5 C4.5 5 8 3.2 10.5 1.5" class="thin" />
+    <circle cx="4.2" cy="8.6" r="0.7" class="fill" />
+    <circle cx="6.6" cy="6.4" r="0.7" class="fill" />
+    <circle cx="9.4" cy="5.6" r="0.7" class="fill" />
+    <circle cx="12" cy="7.4" r="0.7" class="fill" />
+    <circle cx="8.2" cy="9.6" r="0.6" class="fill" />
+    <circle cx="5.6" cy="11.4" r="0.6" class="fill" />
+    <path d={sparkle(12.8, 11.6, 1.8)} class="fill" />
   {:else if name === "planets"}
     <circle cx="8" cy="8" r="3" />
     <ellipse cx="8" cy="8" rx="6.5" ry="2" transform="rotate(-20 8 8)" />

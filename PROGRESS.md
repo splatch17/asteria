@@ -27,6 +27,7 @@
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-10-19 — #162 (PR à suivre) Calque « Ciel réaliste » retiré : étoiles, noms et ciel profond restent dessinés de jour (un ancien réglage mémorisé est ignoré). Nouveau calque « Voie lactée » (actif par défaut) : densité des étoiles Tycho-2 de magnitude 9 à 11 tirée d'AT-HYG v3.2 (CC BY-SA 4.0, commit épinglé), lissée sur la sphère (`build_milkyway.py`, texture 1024×512 WebP 19 Ko), tracée en lavis + grain d'encre sous tout le reste, dans la projection de la carte ; Grand Rift et nuages d'Ophiuchus visibles ; copie hors ligne. Captures `docs/design/milky-way/`. À mesurer sur S23 (ms/image).
 - 2026-10-19 — #160 iPhone : l'appli s'installe depuis Safari (Partager → « Sur l'écran d'accueil »), marche à suivre affichée dans Réglages sur iOS ; plein écran et titre via les balises Apple ; la boussole demande l'autorisation d'orientation d'iOS quand on la touche. Capture `docs/design/ios-install/`.
 - 2026-10-16 — #158 Depuis la carte, la vue s'arrête sur la Terre vue de haut (thème choisi) au lieu de partir seule vers le système solaire ; on dézoome en continu jusqu'au système solaire. Plus de démonstration à l'arrivée. Capture `docs/design/earth-zoom-out/`.
 - 2026-10-16 — #156 Carte : tourner deux doigts fait tourner le ciel autour du centre (avec le pincement pour zoomer). Capture `docs/design/free-pan/two-finger-twist.png`.
