@@ -16,9 +16,10 @@
  *   miniGlobe,       // #38: small Earth in a corner of the sky view (drawn by the app)
  *   constellationFigures, // #96: illustrated figures under the stars (figures.ts)
  *   deepSky,         // #101: Messier and bright NGC/IC objects (data from setDeepSky; deepsky.ts)
+ *   milkyWay,        // #162: band of the Milky Way under everything (options.milkyWay; milky-way.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
- * New layers (Milky Way, Messier, ISS, boundaries…) are added as new keys: callers that pass
+ * New layers (ISS, boundaries…) are added as new keys: callers that pass
  * partial objects keep working. setLinesVisible / setPlanetsVisible / setPathsVisible remain as
  * aliases. Graduation labels can be localised with the `formatGraduation` option.
  * No label (cardinal points, bodies, stars, constellations, path dates, graduations) is written
@@ -92,6 +93,7 @@ import { ephemerisReliable } from "./ephemeris-range";
 import { disposeObjects, watchContext } from "./lifecycle";
 import { DeepSkyLayer, type DeepSkyFrame, type DeepSkyMapObject } from "./deepsky";
 import { FigureLayer } from "./figures";
+import { MilkyWayLayer } from "./milky-way";
 import {
   MARKER_GAP,
   STAR_MARKER_RADIUS,
@@ -201,6 +203,11 @@ export interface SkyLayers {
    * them as the field narrows (deepsky-style.ts).
    */
   deepSky: boolean;
+  /**
+   * Milky Way (#162): density of the Tycho-2 stars, stippled under everything else (milky-way.ts),
+   * loaded on demand (options.milkyWay).
+   */
+  milkyWay: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -216,6 +223,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   miniGlobe: true,
   constellationFigures: false,
   deepSky: true,
+  milkyWay: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -270,6 +278,8 @@ export interface SkyMapOptions {
   layers?: Partial<SkyLayers>;
   /** URL of the figure set manifest (#96); without it the figures layer stays empty. */
   figureSet?: string;
+  /** URL of the Milky Way texture (#162, milkyway.webp); without it that layer draws nothing. */
+  milkyWay?: string;
 }
 
 /** Narrowest field (degrees): about a pair of binoculars, enough to separate Titan (#148). */
@@ -428,6 +438,8 @@ export class SkyMap {
   private readonly backZCache = { fov: NaN, aspect: NaN, z: -0.6 };
   /** Illustrated figures (#96): level and selection are driven through it. */
   readonly figureLayer: FigureLayer;
+  /** Milky Way band (#162). */
+  private readonly milkyWay: MilkyWayLayer;
 
   constructor(private readonly options: SkyMapOptions) {
     const { canvas, overlay, stars, lines } = options;
@@ -623,7 +635,13 @@ export class SkyMap {
       starDirection: (hip) => byHip.get(hip),
       requestFrame: () => (this.dirty = true),
     });
+    this.milkyWay = new MilkyWayLayer({
+      uniforms: this.uniforms,
+      url: options.milkyWay,
+      requestFrame: () => (this.dirty = true),
+    });
     this.scene.add(
+      this.milkyWay.mesh,
       this.figureLayer.object,
       this.azimuthalGrid,
       this.equatorialGrid,
@@ -960,6 +978,7 @@ export class SkyMap {
     this.uniforms.uBelowAlpha.value = belowHorizonAlpha(l.seeThroughGround);
     this.ground.renderOrder = l.seeThroughGround ? -1 : 1;
     this.figureLayer.setEnabled(l.constellationFigures);
+    this.milkyWay.setEnabled(l.milkyWay);
     this.dirty = true;
   }
 
@@ -1008,6 +1027,7 @@ export class SkyMap {
   dispose(): void {
     this.stop();
     this.figureLayer.dispose();
+    this.milkyWay.dispose();
     this.listeners.abort();
     this.resizeObserver.disconnect();
     disposeObjects(this.scene);
@@ -1206,6 +1226,7 @@ export class SkyMap {
     this.uniforms.uLimitMagBelow.value = below.stars;
     this.uniforms.uPlanetLimitBelow.value = below.planets;
     this.deepSky.setFrame(this.view.fov, this.daylight);
+    this.milkyWay.update(this.view.fov);
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;

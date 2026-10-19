@@ -10,6 +10,7 @@ describe("isPrecached", () => {
       "assets/jetbrains-mono-latin-400-normal-x.woff2",
       "data/stars.bin",
       "data/space/mars.webp",
+      "data/milkyway.webp",
       "data/figures/stellarium-western.json",
       "icons/icon-192.png",
     ])

@@ -106,6 +106,7 @@ describe("Affichage panel (#138)", () => {
           "constellationFigures",
           "starNames",
           "deepSky",
+          "milkyWay",
           "seeThroughGround",
         ],
       ],

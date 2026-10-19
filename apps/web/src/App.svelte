@@ -775,6 +775,8 @@
         theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
         // Illustrated figures (#95): loaded the first time the layer is switched on.
         figureSet: `${base}data/figures/stellarium-western.json`,
+        // Milky Way (#162): loaded the first time its layer is on (it is by default).
+        milkyWay: `${base}data/milkyway.webp`,
         bodyNames: { Sun: $_("body.Sun"), Moon: $_("body.Moon") },
         planetNames: planetNames(),
         formatPathMark: (d) => pathMarkFormat.format(d),
