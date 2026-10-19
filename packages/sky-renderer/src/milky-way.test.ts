@@ -1,13 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   applyMat3,
+  constellationOf,
   j2000ToHorizontalMatrix,
+  precessionMatrix,
   multiplyMat3,
   unitVector,
   type Mat3,
   type Vec3,
 } from "@asteria/astro-core";
-import { MILKY_WAY_STYLE, milkyWayFrag, milkyWayOpacity, milkyWayUv } from "./milky-way";
+import {
+  J2000_TO_GALACTIC,
+  MILKY_WAY_GLSL,
+  MILKY_WAY_STYLE,
+  milkyWayFrag,
+  milkyWayOpacity,
+  milkyWayStrength,
+  milkyWayUv,
+  spaceMilkyWayFrag,
+  spaceMilkyWayVert,
+} from "./milky-way";
+import { skyStarVert } from "./space-shaders";
 import { projectStereo, stereoScale, unprojectStereo, viewMatrix } from "./view";
 
 const transpose = (m: Mat3): Mat3 => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
@@ -76,10 +89,67 @@ describe("milkyWayUv", () => {
     }
   });
 
-  it("is the formula of the fragment shader (atan2 / τ wrapped, 0.5 − asin / π)", () => {
+  it("is the formula of the shaders (atan2 / τ wrapped, 0.5 − asin / π)", () => {
     expect(milkyWayFrag).toContain("vec3 e = h * uEq2Hor;"); // Mᵀ h: horizontal → J2000
-    expect(milkyWayFrag).toContain(
-      "vec2(fract(atan(e.y, e.x) / TAU), 0.5 - asin(clamp(e.z, -1.0, 1.0)) / PI)",
+    expect(MILKY_WAY_GLSL).toContain(
+      "vec2(fract(atan(e.y, e.x) / MW_TAU), 0.5 - asin(clamp(e.z, -1.0, 1.0)) / MW_PI)",
+    );
+    expect(milkyWayFrag).toContain("milkyWayDensity(e)");
+    expect(spaceMilkyWayFrag).toContain("milkyWayDensity(e)");
+  });
+});
+
+describe("space view orientation (#168)", () => {
+  const galactic = (l: number, b: number): Vec3 => {
+    const g = unitVector(l, b);
+    return applyMat3(transpose(J2000_TO_GALACTIC), g);
+  };
+  const toRaDec = ([x, y, z]: Vec3) => ({
+    ra: (toDeg(Math.atan2(y, x)) + 360) % 360,
+    dec: toDeg(Math.asin(z)),
+  });
+
+  it("uses a rotation whose galactic centre and pole are the IAU ones, in Sagittarius", () => {
+    const gc = toRaDec(galactic(0, 0));
+    expect(gc.ra).toBeCloseTo(GC.ra, 3);
+    expect(gc.dec).toBeCloseTo(GC.dec, 3);
+    const ngp = toRaDec(galactic(0, 90));
+    expect(ngp.ra).toBeCloseTo(NGP.ra, 3);
+    expect(ngp.dec).toBeCloseTo(NGP.dec, 3);
+    expect(constellationOf(gc.ra, gc.dec)).toBe("Sgr");
+    expect(constellationOf(toRaDec(galactic(80, 0)).ra, toRaDec(galactic(80, 0)).dec)).toBe("Cyg");
+    // Orthonormal: Mᵀ M = I.
+    const m = multiplyMat3(transpose(J2000_TO_GALACTIC), J2000_TO_GALACTIC);
+    [1, 0, 0, 0, 1, 0, 0, 0, 1].forEach((v, i) => expect(m[i]).toBeCloseTo(v, 9));
+  });
+
+  it("places the band with the stars' precession and samples it at their J2000 direction", () => {
+    // The sphere's vertex is a J2000 direction placed by uPrec, exactly like a star.
+    expect(spaceMilkyWayVert).toContain("uPrec * position");
+    expect(skyStarVert).toContain("uPrec * starDirection(aDir)");
+    expect(spaceMilkyWayFrag).toContain("vec3 e = normalize(vDir);");
+    // A pixel showing the galactic centre in 2026 (world = precession · J2000) reads the
+    // texture at the galactic centre's texel; precession has moved it by ≈ 0.36°.
+    const prec = precessionMatrix(new Date("2026-08-15T20:30:00Z"));
+    const world = applyMat3(prec, unitVector(GC.ra, GC.dec));
+    const [u, v] = milkyWayUv(applyMat3(transpose(prec), world));
+    expect(u).toBeCloseTo(GC.ra / 360, TOL);
+    expect(v).toBeCloseTo((90 - GC.dec) / 180, TOL);
+    const g0 = unitVector(GC.ra, GC.dec);
+    const shift = toDeg(Math.acos(world[0] * g0[0] + world[1] * g0[1] + world[2] * g0[2]));
+    expect(shift).toBeGreaterThan(0.3);
+    expect(shift).toBeLessThan(0.45);
+  });
+});
+
+describe("milkyWayStrength", () => {
+  it("is full at night in wide fields and gone in full daylight", () => {
+    expect(milkyWayStrength(100, 0)).toBe(MILKY_WAY_STYLE.STRENGTH);
+    expect(milkyWayStrength(100, 1)).toBe(0);
+    expect(milkyWayStrength(100, 0.5)).toBeLessThan(MILKY_WAY_STYLE.STRENGTH / 2);
+    expect(milkyWayStrength(2, 0)).toBeCloseTo(
+      MILKY_WAY_STYLE.STRENGTH * MILKY_WAY_STYLE.MIN_OPACITY,
+      12,
     );
   });
 });

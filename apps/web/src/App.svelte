@@ -132,7 +132,13 @@
 
   const THEMES = {
     day: { ink: "#f0e6d2", sky: "#101b52", daySky: "#2b4597", ground: "#0a1136" },
-    red: { ink: "#ff2a1a", sky: "#000000", daySky: "#1f0303", ground: "#000000" },
+    red: {
+      ink: "#ff2a1a",
+      sky: "#000000",
+      daySky: "#1f0303",
+      ground: "#000000",
+      glow: "ink" as const,
+    },
   };
 
   let canvas: HTMLCanvasElement;
@@ -567,6 +573,8 @@
       lines: catalog.lines,
       earth: { relief, lights, coastlines: decodeCoastlines(coast) },
       theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+      // Milky Way behind the stars (#168): loaded with its layer.
+      milkyWay: `${import.meta.env.BASE_URL}data/milkyway.webp`,
       labels: {
         here: $_("space.here"),
         sun: $_("body.Sun"),
