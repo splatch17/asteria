@@ -12,7 +12,6 @@
   const COMMIT = import.meta.env.APP_COMMIT;
   const LICENSES_URL = `${import.meta.env.BASE_URL}THIRD-PARTY-LICENSES.txt`;
   const sections = credits("fr");
-  const pad = (i: number) => String(i).padStart(2, "0");
   const host = (url: string) => new URL(url).hostname.replace(/^www\./, "");
 
   let dialog: HTMLElement;
@@ -57,7 +56,7 @@
 >
   <header class="head">
     <div>
-      <p class="meta">#00 // {$_("app.name")}</p>
+      <p class="meta">{$_("app.name")}</p>
       <h1 id="credits-title">{$_("credits.title")}</h1>
     </div>
     <button class="close" bind:this={closeButton} onclick={onclose} aria-label={$_("credits.close")}
@@ -68,9 +67,9 @@
   <div class="scroll">
     <p class="intro">{$_("credits.intro")}</p>
 
-    {#each CREDIT_SECTIONS as section, i (section)}
-      <section aria-labelledby={`credits-${section}`}>
-        <h2 id={`credits-${section}`}>#{pad(i + 1)} // {$_(`credits.section.${section}`)}</h2>
+    {#each CREDIT_SECTIONS as section (section)}
+      <section class="panel-block" aria-labelledby={`credits-${section}`}>
+        <h2 class="panel-title" id={`credits-${section}`}>{$_(`credits.section.${section}`)}</h2>
         <ul>
           {#each sections[section] as entry (entry.id)}
             <li class="entry">
@@ -99,10 +98,8 @@
       </section>
     {/each}
 
-    <section aria-labelledby="credits-app">
-      <h2 id="credits-app">
-        #{pad(CREDIT_SECTIONS.length + 1)} // {$_("credits.section.app")}
-      </h2>
+    <section class="panel-block" aria-labelledby="credits-app">
+      <h2 class="panel-title" id="credits-app">{$_("credits.section.app")}</h2>
       <div class="entry app">
         <h3>{$_("app.name")}</h3>
         <p class="role">{$_("app.tagline")}</p>
@@ -164,7 +161,6 @@
     border-bottom: 1px solid var(--ast-hairline);
   }
   .meta,
-  h2,
   dt {
     font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
@@ -215,11 +211,13 @@
     color: var(--ast-fg-muted);
   }
   section {
-    margin-top: 22px;
+    margin-top: var(--ast-panel-gap);
   }
-  h2 {
-    margin: 0 0 6px;
-    color: var(--ast-fg);
+  .intro + section {
+    margin-top: 16px;
+  }
+  section:last-child {
+    margin-bottom: 8px;
   }
   ul {
     margin: 0;
@@ -228,6 +226,14 @@
   }
   .entry {
     padding: 12px 0;
+  }
+  .entry:first-child {
+    padding-top: 0;
+  }
+  .entry:last-child {
+    padding-bottom: 0;
+  }
+  .entry + .entry {
     border-top: 1px solid var(--ast-hairline);
   }
   h3 {

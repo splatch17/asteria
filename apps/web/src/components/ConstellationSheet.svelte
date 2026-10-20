@@ -46,7 +46,6 @@
   let failed = $state(false);
   let expanded = $state(false);
   const titleId = $derived(`con-title-${abbr}`);
-  const pad = (i: number) => String(i).padStart(2, "0");
 
   $effect(() => {
     const id = abbr;
@@ -76,7 +75,7 @@
   style:--sheet-bottom={bottom}
 >
   <header class="head">
-    <p class="meta">#{abbr.toUpperCase()} // {$_("constellation.kind")}</p>
+    <p class="meta">{$_("constellation.kind")}</p>
     <h2 class="name" id={titleId}>{name}</h2>
     <p class="latin"><i lang="la">{latin}</i></p>
     <dl class="data">
@@ -137,8 +136,8 @@
     </button>
   {:else}
     <div class="body">
-      <section>
-        <h3><span class="num">#01</span> {$_("constellation.story")}</h3>
+      <section class="panel-block">
+        <h3 class="panel-title">{$_("constellation.story")}</h3>
         {#each story.story as paragraph, i (i)}
           <p>
             {#each inlineSegments(paragraph) as seg, j (j)}{#if seg.italic}<i>{seg.text}</i
@@ -146,12 +145,11 @@
           </p>
         {/each}
       </section>
-      <section>
-        <h3><span class="num">#02</span> {$_("constellation.anecdotes")}</h3>
+      <section class="panel-block">
+        <h3 class="panel-title">{$_("constellation.anecdotes")}</h3>
         <ol>
           {#each story.anecdotes as anecdote, i (i)}
             <li>
-              <span class="num" aria-hidden="true">{pad(i + 1)}</span>
               <p>
                 {#each inlineSegments(anecdote) as seg, j (j)}{#if seg.italic}<i>{seg.text}</i
                     >{:else}{seg.text}{/if}{/each}
@@ -324,22 +322,18 @@
     overscroll-behavior: contain;
     margin: 10px -14px 0;
     padding: 0 14px 4px;
-    border-top: 1px solid var(--ast-hairline);
     font-size: 13px;
     line-height: 1.6;
   }
-  h3 {
-    margin: 14px 0 6px;
-    font: 500 11px/1 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .num {
-    color: var(--ast-fg);
+  .body .panel-block {
+    margin-top: 12px;
+    --ast-panel-pad: 12px;
   }
   .body p {
     margin: 0 0 10px;
+  }
+  .body p:last-child {
+    margin-bottom: 0;
   }
   ol {
     list-style: none;
@@ -347,23 +341,22 @@
     padding: 0;
   }
   ol li {
-    display: grid;
-    grid-template-columns: 24px 1fr;
-    gap: 6px;
     padding: 8px 0;
-    border-top: 1px solid var(--ast-hairline);
   }
-  ol li .num {
-    font-size: 11px;
-    line-height: 1.9;
-    letter-spacing: var(--ast-tracking-meta);
+  ol li:first-child {
+    padding-top: 0;
+  }
+  ol li:last-child {
+    padding-bottom: 0;
+  }
+  ol li + li {
+    border-top: 1px solid var(--ast-hairline);
   }
   ol li p {
     margin: 0;
   }
   .sources {
     margin-top: 6px;
-    border-top: 1px solid var(--ast-hairline);
     font-size: 11px;
     line-height: 1.5;
   }

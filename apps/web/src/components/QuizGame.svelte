@@ -209,7 +209,7 @@
 <div class="quiz">
   <header class="head">
     <div class="titles">
-      <p class="meta">#01 // {$_("games.whichConstellation.title")}</p>
+      <p class="meta">{$_("games.whichConstellation.title")}</p>
       <!-- One square per question: inked when right, struck when wrong. -->
       <ol
         class="steps"

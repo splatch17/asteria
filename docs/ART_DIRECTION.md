@@ -57,9 +57,10 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 
 ### L'interface
 - Titres : grotesque compressée en capitales (candidates libres : *Anton*, *Bebas Neue*, *Big Shoulders Display*, *Oswald* ; à tester).
-- Données : **monospace en capitales**, espacées (`RA 05H 55M 10.3S  //  DEC +07° 24′ 25″`), apparition caractère par caractère. Candidates : *JetBrains Mono*, *IBM Plex Mono*, *Space Mono*.
+- Données : **monospace en capitales**, espacées (`RA 05H 55M 10.3S · DEC +07° 24′ 25″`), apparition caractère par caractère. Candidates : *JetBrains Mono*, *IBM Plex Mono*, *Space Mono*.
 - Solennel : serif display pour les noms mythologiques (candidates : *Cormorant*, *Cinzel*, *EB Garamond*).
-- Angles vifs, filets fins, sections numérotées (`#01 ORION`), panneaux flottants façon fenêtres (comme le buste Hermès).
+- Angles vifs, filets fins, panneaux flottants façon fenêtres (comme le buste Hermès).
+- **Séparer les parties : des panneaux, pas des numéros** (#171, demande du porteur). Les intitulés numérotés façon Hermes (`#01 // TITRE`, `//` en préfixe) sont abandonnés partout. Une partie d'écran ou de fiche est un **panneau minimaliste** : filet fin (`--ast-panel-border`, parchemin 20 %), lavis d'encre très léger (`--ast-panel-bg`, parchemin 4 %), marge intérieure généreuse (`--ast-panel-pad`, 14 px), 12 px entre deux panneaux (`--ast-panel-gap`) ; titre court en capitales espacées (mono 10 px, interlettrage 0,12 em, parchemin 65 %), sans numéro ni barres obliques. Classes globales `.panel-block` / `.panel-title` (`apps/web/src/app.css`). Les éléments d'une même partie se séparent par un simple filet. L'en-tête de la carte n'affiche que le titre et le lieu (« CARTE DU CIEL · PARIS ») ; dans les lignes de données, le séparateur est le point médian « · ». En nuit rouge, le lavis devient un rouge très sombre sur noir (mêmes jetons).
 - Palette **bichrome** nuit #101B52 / parchemin #F0E6D2 (voir §2) ; pas d'autre couleur d'interface.
 - **Mode nuit rouge** : conversion intégrale en rouge sur noir. Le style 1-bit s'y prête parfaitement : c'est un atout majeur de cette DA.
 
