@@ -76,8 +76,8 @@ export function placeFigure(
   };
 }
 
-/** Screen position of a horizontal direction: [x, y] as fractions of the width/height. */
-function screenFraction(
+/** Screen position of a horizontal direction: [x, y] as fractions of the width/height (null behind). */
+export function screenFraction(
   h: Vec3,
   view: Readonly<ViewState>,
   aspect: number,

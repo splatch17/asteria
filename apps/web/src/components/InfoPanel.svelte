@@ -21,6 +21,7 @@
     constellation,
     rows,
     bottom,
+    oncatalogue,
     onclose,
     children,
   }: {
@@ -32,6 +33,8 @@
     rows: InfoRow[];
     /** CSS length from the bottom of the screen. */
     bottom: string;
+    /** Opens the constellation's page in the catalogue on this star (#170). */
+    oncatalogue?: (() => void) | undefined;
     onclose: () => void;
     children?: Snippet;
   } = $props();
@@ -58,6 +61,11 @@
     {/each}
   </dl>
   {@render children?.()}
+  {#if oncatalogue}
+    <button class="go" onclick={oncatalogue}>
+      {$_("catalogue.openStar")}<span aria-hidden="true">›</span>
+    </button>
+  {/if}
   <button class="close" onclick={onclose} aria-label={$_("star.close")} title={$_("star.close")}
     >×</button
   >
@@ -131,6 +139,21 @@
   .data dd {
     margin: 0;
     font-variant-numeric: tabular-nums;
+  }
+  .go {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 40px;
+    margin-top: 10px;
+    padding: 0 12px;
+    border: 1px solid var(--ast-hairline);
+    color: var(--ast-fg);
+  }
+  .go:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: 2px;
   }
   .close {
     position: absolute;

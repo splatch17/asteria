@@ -217,11 +217,16 @@
    */
   let games = $state.raw<{ stars: CatalogStar[]; lines: Record<string, number[][]> } | null>(null);
   const gamesOpen = $derived(games !== null);
-  function openGames() {
+  /** Where the Apprendre screen opens (#170): its home, the catalogue, or a constellation's page. */
+  type LearnStart =
+    { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
+  let learnStart = $state.raw<LearnStart>(null);
+  function openGames(start: LearnStart = null) {
     if (!catalog) return;
     stopPlaying();
     if (mode === "sky") map?.stop();
     else space?.stop();
+    learnStart = start;
     games = catalog;
   }
   function closeGames() {
@@ -867,6 +872,11 @@
     if (params.get("panel") === "time") timeOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
     if (params.get("panel") === "games") openGames(); // captures
+    // Captures (#170): ?learn=catalogue, or ?learn=<abbr>[&learnStar=<HIP>] for a page.
+    const learn = params.get("learn");
+    if (learn === "catalogue") openGames({ view: "catalogue" });
+    else if (learn && catalog?.lines[learn])
+      openGames({ view: "page", abbr: learn, star: Number(params.get("learnStar")) || null });
     const hip = Number(params.get("star")); // captures: ?star=<HIP> opens the star's sheet
     const star = hip ? catalog?.stars.find((s) => s.hip === hip) : undefined;
     if (star) selection = { kind: "star", star };
@@ -1859,6 +1869,7 @@
     }}
     rows={starRows}
     bottom={aboveControls}
+    oncatalogue={() => openGames({ view: "page", abbr: selected.con, star: selected.hip })}
     onclose={() => (selection = null)}
   >
     {#snippet meta()}
@@ -1943,6 +1954,7 @@
         ? () => info.star && (selection = { kind: "star", star: info.star })
         : undefined}
       on3d={() => open3d(info.abbr)}
+      oncatalogue={() => openGames({ view: "page", abbr: info.abbr })}
     />
   {/key}
 {/if}
@@ -1988,6 +2000,8 @@
       observer={place}
       theme={night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day}
       figureSet={`${import.meta.env.BASE_URL}data/figures/stellarium-western.json`}
+      {placeName}
+      start={learnStart}
       onclose={closeGames}
     />
   {/await}
@@ -2090,7 +2104,8 @@
     fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
-    ongames={fromMenu(openGames)}
+    ongames={fromMenu(() => openGames())}
+    oncatalogue={fromMenu(() => openGames({ view: "catalogue" }))}
     online={network.online}
     iosInstall={needsIosInstallHint()}
     offline={offline.current}

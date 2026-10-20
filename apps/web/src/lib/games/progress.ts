@@ -9,7 +9,8 @@
 import { isMemory, masteryOf, review, type Grade, type Mastery, type Memory } from "./srs";
 
 export const PROGRESS_KEY = "asteria.games.progress";
-export const PROGRESS_VERSION = 1;
+/** 2 (#170): adds `seen`, the constellations opened in the catalogue. */
+export const PROGRESS_VERSION = 2;
 
 export type ItemKind = "con" | "star";
 export const itemKey = (kind: ItemKind, id: string | number): string => `${kind}:${id}`;
@@ -24,9 +25,19 @@ export interface Progress {
   version: typeof PROGRESS_VERSION;
   items: Record<string, Memory>;
   games: Record<string, GameStats>;
+  /**
+   * Items whose catalogue page was opened (#170), with the first time (ms): « vue ». Kept apart
+   * from `items`: reading a page never changes the review schedule of the games.
+   */
+  seen: Record<string, number>;
 }
 
-export const emptyProgress = (): Progress => ({ version: PROGRESS_VERSION, items: {}, games: {} });
+export const emptyProgress = (): Progress => ({
+  version: PROGRESS_VERSION,
+  items: {},
+  games: {},
+  seen: {},
+});
 
 /** Minimal storage interface (localStorage, or a stand-in in tests). */
 export interface KeyValueStore {
@@ -44,14 +55,14 @@ function defaultStore(): KeyValueStore | null {
 
 /**
  * Progress read back from storage: unknown keys and malformed records are dropped, an unknown
- * (future) version or unreadable JSON starts afresh. Version 1 is the first; later versions add
- * their migration here.
+ * (future) version or unreadable JSON starts afresh. Version 1 (#163) is read as version 2 with
+ * nothing seen yet.
  */
 export function parseProgress(raw: unknown): Progress {
   const p = emptyProgress();
   if (typeof raw !== "object" || raw === null) return p;
   const r = raw as Record<string, unknown>;
-  if (r.version !== PROGRESS_VERSION) return p;
+  if (r.version !== 1 && r.version !== PROGRESS_VERSION) return p;
   if (typeof r.items === "object" && r.items !== null)
     for (const [key, value] of Object.entries(r.items))
       if (/^(con|star):/.test(key) && isMemory(value)) p.items[key] = value;
@@ -61,6 +72,9 @@ export function parseProgress(raw: unknown): Progress {
       if (g && Number.isFinite(g.played) && Number.isFinite(g.best))
         p.games[id] = { played: g.played as number, best: g.best as number };
     }
+  if (typeof r.seen === "object" && r.seen !== null)
+    for (const [key, value] of Object.entries(r.seen))
+      if (/^(con|star):/.test(key) && Number.isFinite(value)) p.seen[key] = value as number;
   return p;
 }
 
@@ -102,6 +116,14 @@ export function recordGame(p: Progress, game: string, score: number): Progress {
     games: { ...p.games, [game]: { played: g.played + 1, best: Math.max(g.best, score) } },
   };
 }
+
+/** Progress with an item marked as seen (first time kept); the same object when already seen. */
+export function markSeen(p: Progress, key: string, now: number): Progress {
+  if (p.seen[key] !== undefined) return p;
+  return { ...p, seen: { ...p.seen, [key]: now } };
+}
+
+export const isSeen = (p: Progress, key: string): boolean => p.seen[key] !== undefined;
 
 export const masteryOfItem = (p: Progress, key: string): Mastery => masteryOf(p.items[key]);
 

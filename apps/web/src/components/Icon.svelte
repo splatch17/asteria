@@ -203,6 +203,15 @@
     <rect x="2.5" y="1.5" width="11" height="13" />
     <path d="M2.5 1.5 H5 V4 H2.5 Z M5 4 H7.5 V6.5 H5 Z M11 11 H13.5 V14.5 H11 Z" class="fill" />
     <path d={sparkle(9, 8.5, 3.2)} class="fill" />
+  {:else if name === "catalogue"}
+    <!-- An open atlas, a small figure on its right page (« Catalogue », #170). -->
+    <path
+      d="M8 3.5 C6.5 2.5 4 2.3 1.5 2.8 V13.3 C4 12.8 6.5 13 8 14 C9.5 13 12 12.8 14.5 13.3 V2.8 C12 2.3 9.5 2.5 8 3.5 Z M8 3.5 V14"
+    />
+    <path d="M10 10.5 L11.2 6.5 L13 8" class="thin" />
+    <circle cx="10" cy="10.5" r="0.9" class="fill" />
+    <circle cx="11.2" cy="6.5" r="0.9" class="fill" />
+    <circle cx="13" cy="8" r="0.9" class="fill" />
   {/if}
 </svg>
 
