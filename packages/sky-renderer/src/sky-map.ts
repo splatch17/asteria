@@ -130,6 +130,8 @@ export interface SkyTheme {
   /** Sky colour in full daylight (twilight blends from `sky`). */
   daySky: string;
   ground: string;
+  /** Milky Way glow (#168): violet palette (default) or a dim glow of the ink (night red). */
+  glow?: "violet" | "ink";
 }
 
 export type BodyName = "Sun" | "Moon";
@@ -785,6 +787,7 @@ export class SkyMap {
   setTheme(theme: SkyTheme): void {
     this.uniforms.uInk.value.set(theme.ink);
     this.uniforms.uGround.value.set(theme.ground);
+    this.milkyWay.setGlow(theme.glow ?? "violet", theme.ink);
     this.options.theme = theme;
     this.updateDaylight();
     this.dirty = true;
@@ -1248,7 +1251,7 @@ export class SkyMap {
     this.uniforms.uLimitMagBelow.value = below.stars;
     this.uniforms.uPlanetLimitBelow.value = below.planets;
     this.deepSky.setFrame(this.view.fov, this.daylight);
-    this.milkyWay.update(this.view.fov);
+    this.milkyWay.update(this.view.fov, this.daylight);
     if (this.bodies) {
       // Apparent size: real diameter (~0.53°) when zoomed in, a readable symbol otherwise.
       const pxPerDeg = this.options.canvas.clientHeight / this.view.fov;
