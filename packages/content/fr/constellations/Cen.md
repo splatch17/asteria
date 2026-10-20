@@ -34,6 +34,6 @@ Apollodore donne une autre version : Héraclès, en tirant sur d'autres centaure
 
 ## Anecdotes
 
-- L'étoile la plus brillante du Centaure, α, est en fait un couple que le catalogue Hipparcos mesure séparément : Rigil Kentaurus (magnitude −0,01) et Toliman (1,35), deux noms officiels de l'Union astronomique internationale.
+- L'étoile la plus brillante du Centaure est en fait un couple que le catalogue Hipparcos mesure séparément : Rigil Kentaurus (magnitude −0,01) et Toliman (1,35), deux noms officiels de l'Union astronomique internationale.
 - Ovide entoure Chiron de « deux fois sept », soit 14 étoiles ; Ptolémée, lui, en comptait 37 dans le Centaure.
 - Omega du Centaure (NGC 5139) est un amas globulaire, une boule de très nombreuses étoiles serrées les unes contre les autres. De magnitude 5,3 et large de 27′, il se voit à l'œil nu depuis l'hémisphère Sud.

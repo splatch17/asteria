@@ -11,7 +11,7 @@ import {
 import { CONSTELLATION_LATIN } from "./index";
 
 // Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia (sources: Wikipédia + checks).
-// Issue #172: the games' Découverte list, then the other Ptolemaic constellations (sources: ancient
+// Issue #172: the games' Découverte list, then Ptolemy's other constellations (sources: ancient
 // texts from the Perseus / First1KGreek repositories, Stellarium, catalogue data; see README).
 const IDS = [
   "Ari",
@@ -29,7 +29,7 @@ const IDS = [
   "Ori",
   "UMa",
   "Cas",
-  // #172
+  // #172, the games' Découverte list
   "CMa",
   "Car",
   "Boo",
@@ -44,6 +44,27 @@ const IDS = [
   "Cyg",
   "UMi",
   "Peg",
+  // #172, Ptolemy's other constellations
+  "And",
+  "Per",
+  "Cep",
+  "Dra",
+  "Her",
+  "CrB",
+  "Oph",
+  "Ser",
+  "Sge",
+  "Del",
+  "Equ",
+  "Tri",
+  "Cet",
+  "Lep",
+  "Hya",
+  "Crv",
+  "Crt",
+  "Ara",
+  "Lup",
+  "CrA",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
@@ -65,9 +86,23 @@ describe.each(IDS)("constellation story %s", (id) => {
     }
   });
 
+  it("lists each source once (the story panels key them by url)", () => {
+    const urls = story.sources.map((s) => s.url);
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
   it("has a non-empty story, in paragraphs without line breaks", () => {
     expect(story.story.length).toBeGreaterThan(0);
     for (const p of story.story) expect(p).not.toMatch(/\n|^- /);
+  });
+
+  it("tells the story in 120 to 200 words (Découverte level, see README)", () => {
+    const words = story.story
+      .join(" ")
+      .split(/\s+/)
+      .filter((w) => /[\p{L}\p{N}]/u.test(w));
+    expect(words.length).toBeGreaterThanOrEqual(120);
+    expect(words.length).toBeLessThanOrEqual(200);
   });
 
   it("has exactly 3 anecdotes", () => {
