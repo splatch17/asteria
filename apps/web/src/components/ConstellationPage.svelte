@@ -238,7 +238,8 @@
       title={$_("catalogue.back")}>←</button
     >
     <div class="titles">
-      <h1 id={titleId}>{name}</h1>
+      <!-- Names the Apprendre dialog (aria-labelledby). -->
+      <h1 id="games-title">{name}</h1>
       <p class="latin"><i lang="la">{latin}</i></p>
     </div>
     <button

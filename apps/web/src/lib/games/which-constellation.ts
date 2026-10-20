@@ -109,12 +109,4 @@ export function answerQuestion(
   };
 }
 
-/** What the end screen says about an answered item. */
-export type Outcome = "mastered" | "learnt" | "review" | "kept";
-
-export function outcomeOf(a: Answer): Outcome {
-  if (!a.correct) return "review";
-  if (a.after === "mastered" && a.before !== "mastered") return "mastered";
-  if (a.before === "new" || a.before === "learning") return "learnt";
-  return "kept";
-}
+export { outcomeOf, type Outcome } from "./results";

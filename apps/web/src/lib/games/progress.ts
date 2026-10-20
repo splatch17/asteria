@@ -6,7 +6,7 @@
  * Items are keyed by kind: `con:Ori` (IAU abbreviation), `star:32349` (HIP number, #165), so
  * that every game shares the same memory of an item.
  */
-import { isMemory, masteryOf, review, type Mastery, type Memory } from "./srs";
+import { isMemory, masteryOf, review, type Grade, type Mastery, type Memory } from "./srs";
 
 export const PROGRESS_KEY = "asteria.games.progress";
 /** 2 (#170): adds `seen`, the constellations opened in the catalogue. */
@@ -99,8 +99,13 @@ export function saveProgress(p: Progress, store: KeyValueStore | null = defaultS
 }
 
 /** Progress after an answer about an item (the input is left untouched). */
-export function recordAnswer(p: Progress, key: string, correct: boolean, now: number): Progress {
-  return { ...p, items: { ...p.items, [key]: review(p.items[key], correct, now) } };
+export function recordAnswer(
+  p: Progress,
+  key: string,
+  grade: Grade | boolean,
+  now: number,
+): Progress {
+  return { ...p, items: { ...p.items, [key]: review(p.items[key], grade, now) } };
 }
 
 /** Progress after a finished series of a game. */
