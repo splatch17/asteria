@@ -10,6 +10,7 @@
   } from "@asteria/content";
   import type { Visibility } from "../lib/constellation";
   import Icon from "./Icon.svelte";
+  import StoryPanels from "./StoryPanels.svelte";
 
   let {
     abbr,
@@ -23,6 +24,7 @@
     onclose,
     onstar,
     on3d,
+    oncatalogue,
   }: {
     abbr: string;
     name: string;
@@ -39,6 +41,8 @@
     onstar?: (() => void) | undefined;
     /** Opens the 3D view of the figure (#8). */
     on3d?: (() => void) | undefined;
+    /** Opens the constellation's page in the catalogue (#170). */
+    oncatalogue?: (() => void) | undefined;
   } = $props();
 
   const hasStory = $derived(hasConstellationStory("fr", abbr));
@@ -100,10 +104,19 @@
     {#if daylight && visibility && visibility !== "down"}
       <p class="note daylight">{$_("constellation.daylight")}</p>
     {/if}
-    {#if on3d}
-      <button class="more three-d" onclick={on3d}>
-        {$_("c3d.open")}<span class="muted">{$_("c3d.openHint")}</span>
-      </button>
+    {#if on3d || oncatalogue}
+      <div class="go">
+        {#if oncatalogue}
+          <button class="more" onclick={oncatalogue}>
+            {$_("catalogue.open")}<span aria-hidden="true">›</span>
+          </button>
+        {/if}
+        {#if on3d}
+          <button class="more" onclick={on3d} title={$_("c3d.openHint")}>
+            {$_("c3d.open")}<span aria-hidden="true">›</span>
+          </button>
+        {/if}
+      </div>
     {/if}
     <div class="actions">
       {#if hasStory}
@@ -136,47 +149,7 @@
     </button>
   {:else}
     <div class="body">
-      <section class="panel-block">
-        <h3 class="panel-title">{$_("constellation.story")}</h3>
-        {#each story.story as paragraph, i (i)}
-          <p>
-            {#each inlineSegments(paragraph) as seg, j (j)}{#if seg.italic}<i>{seg.text}</i
-                >{:else}{seg.text}{/if}{/each}
-          </p>
-        {/each}
-      </section>
-      <section class="panel-block">
-        <h3 class="panel-title">{$_("constellation.anecdotes")}</h3>
-        <ol>
-          {#each story.anecdotes as anecdote, i (i)}
-            <li>
-              <p>
-                {#each inlineSegments(anecdote) as seg, j (j)}{#if seg.italic}<i>{seg.text}</i
-                    >{:else}{seg.text}{/if}{/each}
-              </p>
-            </li>
-          {/each}
-        </ol>
-      </section>
-      <details class="sources">
-        <summary>{$_("constellation.sources")}</summary>
-        <p>
-          {$_("constellation.attribution")}
-          <a
-            href="https://creativecommons.org/licenses/by-sa/4.0/deed.fr"
-            target="_blank"
-            rel="noopener">{$_("constellation.licenseLink")}</a
-          >
-        </p>
-        <ul>
-          {#each story.sources as source (source.url)}
-            <li>
-              <a href={source.url} target="_blank" rel="noopener">{source.title}</a>
-              <span class="muted">{source.license}</span>
-            </li>
-          {/each}
-        </ul>
-      </details>
+      <StoryPanels {story} />
     </div>
   {/if}
 </aside>
@@ -309,10 +282,16 @@
     border: 1px solid var(--ast-hairline);
     color: var(--ast-fg);
   }
-  .three-d {
+  .go {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
     margin-top: 10px;
   }
-  .expanded .three-d {
+  .go .more {
+    margin-top: 0;
+  }
+  .expanded .go {
     display: none;
   }
   .body {
@@ -324,64 +303,6 @@
     padding: 0 14px 4px;
     font-size: 13px;
     line-height: 1.6;
-  }
-  .body .panel-block {
-    margin-top: 12px;
-    --ast-panel-pad: 12px;
-  }
-  .body p {
-    margin: 0 0 10px;
-  }
-  .body p:last-child {
-    margin-bottom: 0;
-  }
-  ol {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  ol li {
-    padding: 8px 0;
-  }
-  ol li:first-child {
-    padding-top: 0;
-  }
-  ol li:last-child {
-    padding-bottom: 0;
-  }
-  ol li + li {
-    border-top: 1px solid var(--ast-hairline);
-  }
-  ol li p {
-    margin: 0;
-  }
-  .sources {
-    margin-top: 6px;
-    font-size: 11px;
-    line-height: 1.5;
-  }
-  .sources summary {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .sources p {
-    color: var(--ast-fg-muted);
-  }
-  .sources ul {
-    margin: 0;
-    padding: 0 0 0 14px;
-  }
-  .sources li {
-    margin-bottom: 6px;
-  }
-  a {
-    color: var(--ast-fg);
-    text-underline-offset: 3px;
   }
   i {
     font-family: var(--ast-font-serif);

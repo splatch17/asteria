@@ -1,12 +1,15 @@
 <script lang="ts">
-  // Jeux screen (#163): the games, the player's level and « Ton ciel », the constellations learnt
-  // so far as a grid of cards inked by mastery (1-bit dither: none, light, half, full). Opens over
-  // the whole app (the map stops under it) and closes back to it as it was. A game is played in
-  // the same dialog (QuizGame), so that Escape and focus stay in one place.
+  // Apprendre screen (#163, #170): the catalogue of the constellations, the games, the player's
+  // level and « Ton ciel », the constellations learnt so far as a grid of cards inked by mastery
+  // (1-bit dither: none, light, half, full). Opens over the whole app (the map stops under it) and
+  // closes back to it as it was. A game, the catalogue and a constellation's page are shown in
+  // the same dialog (QuizGame, Catalogue, ConstellationPage), so that Escape and focus stay in one
+  // place. Opened from the map on a constellation's page, « back » returns to the map.
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type { Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
+  import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
   import { GAMES } from "../lib/games/catalog";
   import { constellationShapes } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
@@ -14,6 +17,7 @@
     countMastery,
     itemKey,
     loadProgress,
+    markSeen,
     masteryOfItem,
     recordGame,
     saveProgress,
@@ -31,6 +35,8 @@
   } from "../lib/games/which-constellation";
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
+  import Catalogue from "./Catalogue.svelte";
+  import ConstellationPage from "./ConstellationPage.svelte";
   import Icon from "./Icon.svelte";
   import QuizGame from "./QuizGame.svelte";
 
@@ -43,6 +49,8 @@
     observer,
     theme,
     figureSet,
+    placeName,
+    start = null,
     onclose,
   }: {
     stars: CatalogStar[];
@@ -55,6 +63,9 @@
     observer: Observer;
     theme: SkyTheme;
     figureSet: string;
+    placeName: string;
+    /** Where the screen opens: the catalogue (menu), or a constellation's page (map, #170). */
+    start?: { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
     onclose: () => void;
   } = $props();
 
@@ -81,6 +92,42 @@
     ),
   );
   const best = $derived(progress.games[GAME_ID]?.best ?? 0);
+
+  // --- Catalogue (#170): the list (filter and search kept while a page is open) and a page.
+  const entries: CatalogueEntry[] = untrack(() =>
+    Object.keys(shapes)
+      .map((abbr) => ({ abbr, name: names[abbr] ?? abbr, latin: latin[abbr] ?? abbr }))
+      .sort((a, b) => a.name.localeCompare(b.name, "fr")),
+  );
+  let catalogueOpen = $state(false);
+  let filter = $state<CatalogueFilter>(untrack(() => defaultFilter(level)));
+  let query = $state("");
+  /** The page shown; `outside`: opened from the map, « back » closes the screen. */
+  let page = $state.raw<{ abbr: string; star: number | null; outside: boolean } | null>(null);
+  const seenCount = $derived(Object.keys(progress.seen).filter((k) => k.startsWith("con:")).length);
+
+  function openPage(abbr: string, star: number | null = null, outside = false) {
+    page = { abbr, star, outside };
+    // A page read is « seen » (#170): kept apart from the games' review schedule.
+    const next = markSeen(progress, itemKey("con", abbr), Date.now());
+    if (next !== progress) {
+      progress = next;
+      saveProgress(progress);
+    }
+  }
+  async function closePage() {
+    const from = page;
+    page = null;
+    if (from?.outside) return onclose();
+    catalogueOpen = true;
+    await tick();
+    dialog.querySelector<HTMLElement>(`[data-abbr='${from?.abbr}']`)?.focus();
+  }
+  async function closeCatalogue() {
+    catalogueOpen = false;
+    await tick();
+    dialog.querySelector<HTMLElement>("[data-learn='catalogue']")?.focus();
+  }
 
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
   let series = $state.raw<Question[] | null>(null);
@@ -114,6 +161,9 @@
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
     if (params.get("game") === "1") play(); // captures
+    if (start?.view === "catalogue") catalogueOpen = true;
+    else if (start?.view === "page" && shapes[start.abbr])
+      openPage(start.abbr, start.star ?? null, true);
     return () => previous?.focus?.();
   });
 
@@ -123,11 +173,15 @@
       e.preventDefault();
       e.stopPropagation();
       if (series) void leave();
+      else if (page) void closePage();
+      else if (catalogueOpen) void closeCatalogue();
       else onclose();
       return;
     }
     if (e.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not(:disabled)")];
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input, summary, a[href]"),
+    ];
     const first = focusable[0];
     const last = focusable.at(-1);
     if (e.shiftKey && document.activeElement === first) {
@@ -166,18 +220,51 @@
       onreplay={play}
       onquit={leave}
     />
+  {:else if page}
+    {@const p = page}
+    {#key p.abbr}
+      <ConstellationPage
+        abbr={p.abbr}
+        name={names[p.abbr] ?? p.abbr}
+        latin={latin[p.abbr] ?? p.abbr}
+        {names}
+        {stars}
+        {lines}
+        shape={shapes[p.abbr]!}
+        {level}
+        {theme}
+        {figureSet}
+        {date}
+        latitude={observer.latitude}
+        {placeName}
+        tonight={visible.has(p.abbr)}
+        initialStar={p.star}
+        onback={closePage}
+        {onclose}
+      />
+    {/key}
+  {:else if catalogueOpen}
+    <Catalogue
+      {entries}
+      bind:filter
+      bind:query
+      tonight={visible}
+      {progress}
+      onopen={(abbr) => openPage(abbr)}
+      onback={closeCatalogue}
+      {onclose}
+    />
   {:else}
     <header class="head">
       <div>
-        <p class="meta">{$_("games.meta")}</p>
-        <h1 id="games-title">{$_("games.title")}</h1>
+        <h1 id="games-title">{$_("learn.title")}</h1>
       </div>
       <button
         class="close"
         bind:this={closeButton}
         onclick={onclose}
-        aria-label={$_("games.close")}
-        title={$_("games.close")}>×</button
+        aria-label={$_("learn.close")}
+        title={$_("learn.close")}>×</button
       >
     </header>
 
@@ -189,6 +276,22 @@
           >
         {/each}
       </div>
+
+      <section class="panel-block" aria-labelledby="learn-catalogue">
+        <h2 class="panel-title" id="learn-catalogue">{$_("catalogue.title")}</h2>
+        <div class="entry">
+          <div class="card-text">
+            <h3>{$_("learn.catalogue.title")}</h3>
+            <p>{$_("learn.catalogue.hint")}</p>
+            <p class="best">
+              {$_("learn.catalogue.seen", { values: { seen: seenCount, total: entries.length } })}
+            </p>
+          </div>
+          <button class="play" data-learn="catalogue" onclick={() => (catalogueOpen = true)}>
+            <Icon name="catalogue" size={12} />{$_("learn.catalogue.open")}
+          </button>
+        </div>
+      </section>
 
       <section class="panel-block" aria-labelledby="games-list">
         <h2 class="panel-title" id="games-list">{$_("games.section.games")}</h2>
@@ -383,6 +486,11 @@
   }
   .card.soon {
     background: repeating-conic-gradient(var(--ast-hairline) 0 25%, transparent 0 50%) 0 0 / 8px 8px;
+  }
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
   .card-inner {
     display: flex;
