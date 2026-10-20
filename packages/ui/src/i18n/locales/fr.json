@@ -167,7 +167,7 @@
   "constellation.loading": "Chargement de l'histoire…",
   "constellation.loadError": "Histoire indisponible.",
   "constellation.sources": "Sources et licences",
-  "constellation.attribution": "Texte reformulé en partie à partir de Wikipédia (CC BY-SA 4.0), faits vérifiés dans les sources ci-dessous. Ce texte est diffusé sous la même licence.",
+  "constellation.attribution": "Texte reformulé à partir des sources ci-dessous (Wikipédia ou éditions numériques de textes antiques, sous licence CC BY-SA 4.0), faits vérifiés dans ces sources. Ce texte est diffusé sous la même licence.",
   "constellation.licenseLink": "Licence CC BY-SA 4.0",
   "constellation.open": "Voir la constellation {name}",
   "credits.open": "Crédits et sources",

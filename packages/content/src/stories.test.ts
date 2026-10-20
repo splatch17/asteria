@@ -10,7 +10,9 @@ import {
 } from "./stories";
 import { CONSTELLATION_LATIN } from "./index";
 
-// Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia.
+// Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia (sources: Wikipédia + checks).
+// Issue #172: the games' Découverte list, then Ptolemy's other constellations (sources: ancient
+// texts from the Perseus / First1KGreek repositories, Stellarium, catalogue data; see README).
 const IDS = [
   "Ari",
   "Tau",
@@ -27,6 +29,42 @@ const IDS = [
   "Ori",
   "UMa",
   "Cas",
+  // #172, the games' Découverte list
+  "CMa",
+  "Car",
+  "Boo",
+  "Cen",
+  "Lyr",
+  "Aur",
+  "CMi",
+  "Eri",
+  "Aql",
+  "Cru",
+  "PsA",
+  "Cyg",
+  "UMi",
+  "Peg",
+  // #172, Ptolemy's other constellations
+  "And",
+  "Per",
+  "Cep",
+  "Dra",
+  "Her",
+  "CrB",
+  "Oph",
+  "Ser",
+  "Sge",
+  "Del",
+  "Equ",
+  "Tri",
+  "Cet",
+  "Lep",
+  "Hya",
+  "Crv",
+  "Crt",
+  "Ara",
+  "Lup",
+  "CrA",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
@@ -46,12 +84,25 @@ describe.each(IDS)("constellation story %s", (id) => {
       expect(source.url).toMatch(/^https?:\/\//);
       expect(source.license).toBeTruthy();
     }
-    expect(story.sources.some((s) => s.url.startsWith("https://fr.wikipedia.org/"))).toBe(true);
+  });
+
+  it("lists each source once (the story panels key them by url)", () => {
+    const urls = story.sources.map((s) => s.url);
+    expect(new Set(urls).size).toBe(urls.length);
   });
 
   it("has a non-empty story, in paragraphs without line breaks", () => {
     expect(story.story.length).toBeGreaterThan(0);
     for (const p of story.story) expect(p).not.toMatch(/\n|^- /);
+  });
+
+  it("tells the story in 120 to 200 words (Découverte level, see README)", () => {
+    const words = story.story
+      .join(" ")
+      .split(/\s+/)
+      .filter((w) => /[\p{L}\p{N}]/u.test(w));
+    expect(words.length).toBeGreaterThanOrEqual(120);
+    expect(words.length).toBeLessThanOrEqual(200);
   });
 
   it("has exactly 3 anecdotes", () => {
@@ -119,11 +170,11 @@ describe("inlineSegments", () => {
 });
 
 describe("story loading", () => {
-  it("knows the 15 stories without loading them, all valid IAU abbreviations", () => {
+  it("knows the stories without loading them, all valid IAU abbreviations", () => {
     expect(storyIds("fr")).toEqual([...IDS].sort());
     for (const id of storyIds("fr")) expect(CONSTELLATION_LATIN[id]).toBeTruthy();
     expect(hasConstellationStory("fr", "Ori")).toBe(true);
-    expect(hasConstellationStory("fr", "And")).toBe(false);
+    expect(hasConstellationStory("fr", "Ant")).toBe(false);
   });
 
   it('excludes the README with a pattern relative to stories.ts (not "**/", see #67)', () => {
@@ -141,6 +192,6 @@ describe("story loading", () => {
     const ori = await loadConstellationStory("fr", "Ori");
     expect(ori?.id).toBe("Ori");
     expect(ori?.anecdotes).toHaveLength(3);
-    expect(await loadConstellationStory("fr", "And")).toBeNull();
+    expect(await loadConstellationStory("fr", "Ant")).toBeNull();
   });
 });
