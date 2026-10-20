@@ -235,20 +235,65 @@ export function buildStarSeries(o: StarSeriesOptions): StarQuestion[] {
   });
 }
 
-/** Rank by brightness (1 = brightest) of every catalogue star, in the sky and in its constellation. */
-export function brightnessRanks(stars: readonly { hip: number; v: number; con: string }[]): {
+/** Stars closer than this (arc minutes) are one point of light to the eye (α Centauri A + B). */
+export const MERGE_ARCMIN = 1;
+
+/** Combined magnitude of stars seen as one: their fluxes add up. */
+export const combinedMagnitude = (vs: readonly number[]): number =>
+  -2.5 * Math.log10(vs.reduce((sum, v) => sum + 10 ** (-0.4 * v), 0));
+
+/**
+ * Rank by brightness (1 = brightest) of every catalogue star, in the sky and in its constellation,
+ * as the eye sees them: stars closer than MERGE_ARCMIN are first merged into one point of light,
+ * of their combined magnitude (Hipparcos lists α Centauri A and B apart: −0.01 and 1.35, together
+ * −0.28, 3rd of the sky before Arcturus, as in every reference list). Every member of a merged
+ * system gets the system's rank; the game names its brightest member.
+ */
+export function brightnessRanks(
+  stars: readonly { hip: number; v: number; con: string; ra: number; dec: number }[],
+): {
   sky: ReadonlyMap<number, number>;
   constellation: ReadonlyMap<number, number>;
 } {
-  const sorted = [...stars].sort((a, b) => a.v - b.v || a.hip - b.hip);
+  // Group: sweep by declination, test the true angle only within MERGE_ARCMIN of declination.
+  const limit = MERGE_ARCMIN / 60;
+  const byDec = stars
+    .map((s) => ({ s, dir: unitVector(s.ra, s.dec) }))
+    .sort((a, b) => a.s.dec - b.s.dec);
+  const group = new Map<number, number>(); // index in byDec → group root
+  const root = (i: number): number => {
+    let r = i;
+    while (group.has(r) && group.get(r) !== r) r = group.get(r)!;
+    return r;
+  };
+  for (let i = 0; i < byDec.length; i++) {
+    group.set(i, i);
+    for (let j = i - 1; j >= 0 && byDec[i]!.s.dec - byDec[j]!.s.dec <= limit; j--)
+      if (angleBetween(byDec[i]!.dir, byDec[j]!.dir) < limit) group.set(root(i), root(j));
+  }
+  const systems = new Map<number, { members: (typeof stars)[number][]; v: number }>();
+  byDec.forEach(({ s }, i) => {
+    const r = root(i);
+    const sys = systems.get(r) ?? { members: [], v: 0 };
+    sys.members.push(s);
+    systems.set(r, sys);
+  });
+  const lights = [...systems.values()].map((sys) => {
+    const brightest = sys.members.reduce((a, b) => (b.v < a.v ? b : a));
+    return { members: sys.members, v: combinedMagnitude(sys.members.map((m) => m.v)), brightest };
+  });
+  lights.sort((a, b) => a.v - b.v || a.brightest.hip - b.brightest.hip);
   const sky = new Map<number, number>();
   const constellation = new Map<number, number>();
   const counts = new Map<string, number>();
-  sorted.forEach((s, i) => {
-    sky.set(s.hip, i + 1);
-    const n = (counts.get(s.con) ?? 0) + 1;
-    counts.set(s.con, n);
-    constellation.set(s.hip, n);
+  lights.forEach((light, i) => {
+    const con = light.brightest.con;
+    const n = (counts.get(con) ?? 0) + 1;
+    counts.set(con, n);
+    for (const m of light.members) {
+      sky.set(m.hip, i + 1);
+      constellation.set(m.hip, n);
+    }
   });
   return { sky, constellation };
 }

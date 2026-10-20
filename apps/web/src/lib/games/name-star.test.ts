@@ -13,6 +13,7 @@ import {
   MIN_SEPARATION_PX,
   brightnessRanks,
   buildStarSeries,
+  combinedMagnitude,
   gradeOf,
   matchStarName,
   namedStars,
@@ -252,12 +253,31 @@ describe("facts", () => {
     expect(rankFact(32349, ranks)).toEqual({ kind: "sky", rank: 1 });
     expect(rankFact(24436, ranks)).toEqual({ kind: "sky", rank: 3 });
     const faint = brightnessRanks([
-      ...Array.from({ length: 30 }, (_, i) => ({ hip: 1000 + i, v: i * 0.01, con: "Car" })),
-      { hip: 7, v: 4, con: "Lyr" },
-      { hip: 8, v: 4.5, con: "Lyr" },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        hip: 1000 + i,
+        v: i * 0.01,
+        con: "Car",
+        ra: i * 10,
+        dec: -50,
+      })),
+      { hip: 7, v: 4, con: "Lyr", ra: 280, dec: 38 },
+      { hip: 8, v: 4.5, con: "Lyr", ra: 282, dec: 36 },
     ]);
     expect(rankFact(8, faint)).toEqual({ kind: "constellation", rank: 2 });
     expect(rankFact(1029, faint)).toBeNull(); // 30th of the sky, 30th of its constellation
+  });
+
+  it("count stars closer than 1′ as one point of light, of their combined magnitude", () => {
+    expect(combinedMagnitude([-0.01, 1.35])).toBeCloseTo(-0.28, 2); // α Centauri A + B
+    expect(combinedMagnitude([1, 1])).toBeCloseTo(1 - 2.5 * Math.log10(2), 10);
+    const r = brightnessRanks([
+      { hip: 1, v: 0, con: "Cen", ra: 100, dec: -60 },
+      { hip: 2, v: 0.5, con: "Cen", ra: 100.005, dec: -60.005 }, // 0.4′ away: one light, −0.53
+      { hip: 3, v: -0.3, con: "Boo", ra: 200, dec: 20 },
+      { hip: 4, v: 0.1, con: "Boo", ra: 200, dec: 20.05 }, // 3′ away: two lights
+    ]);
+    expect([1, 2, 3, 4].map((h) => r.sky.get(h))).toEqual([1, 1, 2, 3]);
+    expect(r.constellation.get(4)).toBe(2);
   });
 });
 
@@ -303,5 +323,14 @@ describe.skipIf(!available)("real catalogue (public/data)", () => {
       expect(names(expert)).not.toContain(n);
     expect(names(expert)).toContain("Mizar");
     expect(names(expert)).toContain("Alcyone");
+    // Brightness as the eye sees it: α Centauri A + B (−0.28) before Arcturus (−0.05).
+    const ranks = brightnessRanks(stars);
+    const hip = (n: string) => named.find((s) => s.name === n)!.hip;
+    expect(
+      ["Sirius", "Canopus", "Rigil Kentaurus", "Arcturus", "Véga"].map((n) =>
+        ranks.sky.get(hip(n)),
+      ),
+    ).toEqual([1, 2, 3, 4, 5]);
+    expect(rankFact(hip("Arcturus"), ranks)).toEqual({ kind: "sky", rank: 4 });
   });
 });
