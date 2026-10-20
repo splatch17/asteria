@@ -289,7 +289,7 @@
   />
   <header class="head" bind:this={header}>
     <div class="titles">
-      <p class="meta">#{abbr.toUpperCase()} // {$_("c3d.meta")}</p>
+      <p class="meta">{$_("c3d.meta")}</p>
       <h2 class="name" id="c3d-title">{name}</h2>
     </div>
     <div class="levels" role="group" aria-label={$_("c3d.level")}>

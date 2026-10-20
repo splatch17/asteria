@@ -1,29 +1,42 @@
 <script lang="ts">
-  // Jeux screen (#163): the games, the player's level and « Ton ciel », the constellations learnt
-  // so far as a grid of cards inked by mastery (1-bit dither: none, light, half, full). Opens over
-  // the whole app (the map stops under it) and closes back to it as it was. A game is played in
-  // the same dialog (QuizGame), so that Escape and focus stay in one place.
+  // Apprendre screen (#163, #164, #170): the catalogue of the constellations, the games, the
+  // player's level and « Ton ciel », the constellations learnt so far as a grid of cards inked by
+  // mastery (1-bit dither: none, light, half, full). Opens over the whole app (the map stops under
+  // it) and closes back to it as it was. A game (QuizGame, ConnectGame), the catalogue and a
+  // constellation's page are shown in the same dialog, so that Escape and focus stay in one place.
+  // Both games feed the same memory of each constellation (`con:XXX`). Opened from the map on a
+  // constellation's page, « back » returns to the map.
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type { Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
+  import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
   import { GAMES } from "../lib/games/catalog";
+  import {
+    GAME_ID as CONNECT_ID,
+    buildConnectSeries,
+    figureSegments,
+    gradeOf,
+    type Segment,
+    type Trace,
+  } from "../lib/games/connect-stars";
   import { constellationShapes } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
   import {
     countMastery,
     itemKey,
     loadProgress,
+    markSeen,
     masteryOfItem,
     recordGame,
     saveProgress,
     type Progress,
   } from "../lib/games/progress";
+  import { recordItem, type ItemResult } from "../lib/games/results";
   import { mulberry32 } from "../lib/games/rng";
   import { visibleTonight } from "../lib/games/visibility";
   import {
-    GAME_ID,
-    SERIES_LENGTH,
+    GAME_ID as QUIZ_ID,
     answerQuestion,
     buildSeries,
     type Answer,
@@ -31,6 +44,9 @@
   } from "../lib/games/which-constellation";
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
+  import Catalogue from "./Catalogue.svelte";
+  import ConnectGame from "./ConnectGame.svelte";
+  import ConstellationPage from "./ConstellationPage.svelte";
   import Icon from "./Icon.svelte";
   import QuizGame from "./QuizGame.svelte";
 
@@ -43,6 +59,8 @@
     observer,
     theme,
     figureSet,
+    placeName,
+    start = null,
     onclose,
   }: {
     stars: CatalogStar[];
@@ -55,6 +73,9 @@
     observer: Observer;
     theme: SkyTheme;
     figureSet: string;
+    placeName: string;
+    /** Where the screen opens: the catalogue (menu), or a constellation's page (map, #170). */
+    start?: { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
     onclose: () => void;
   } = $props();
 
@@ -73,6 +94,16 @@
   // Computed once per opening: the catalogue, place and date do not change under the screen.
   const shapes = untrack(() => constellationShapes(stars, lines));
   const visible = untrack(() => visibleTonight(shapes, date, observer));
+  const magnitudes = untrack(() => new Map(stars.map((s) => [s.hip, s.v])));
+  /** Segments of every figure, for « Relie les étoiles ». */
+  const figures: Record<string, Segment[]> = untrack(() =>
+    Object.fromEntries(
+      Object.entries(lines).map(([abbr, polys]) => [
+        abbr,
+        figureSegments(polys, (hip) => magnitudes.has(hip)),
+      ]),
+    ),
+  );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
   const counts = $derived(
     countMastery(
@@ -80,15 +111,80 @@
       pool.map((a) => itemKey("con", a)),
     ),
   );
-  const best = $derived(progress.games[GAME_ID]?.best ?? 0);
+  const bestOf = (game: string) => progress.games[game]?.best ?? 0;
+
+  // --- Catalogue (#170): the list (filter and search kept while a page is open) and a page.
+  const entries: CatalogueEntry[] = untrack(() =>
+    Object.keys(shapes)
+      .map((abbr) => ({ abbr, name: names[abbr] ?? abbr, latin: latin[abbr] ?? abbr }))
+      .sort((a, b) => a.name.localeCompare(b.name, "fr")),
+  );
+  let catalogueOpen = $state(false);
+  let filter = $state<CatalogueFilter>(untrack(() => defaultFilter(level)));
+  let query = $state("");
+  /** The page shown; `outside`: opened from the map, « back » closes the screen. */
+  let page = $state.raw<{ abbr: string; star: number | null; outside: boolean } | null>(null);
+  const seenCount = $derived(Object.keys(progress.seen).filter((k) => k.startsWith("con:")).length);
+
+  function openPage(abbr: string, star: number | null = null, outside = false) {
+    page = { abbr, star, outside };
+    // A page read is « seen » (#170): kept apart from the games' review schedule.
+    const next = markSeen(progress, itemKey("con", abbr), Date.now());
+    if (next !== progress) {
+      progress = next;
+      saveProgress(progress);
+    }
+  }
+  async function closePage() {
+    const from = page;
+    page = null;
+    if (from?.outside) return onclose();
+    catalogueOpen = true;
+    await tick();
+    dialog.querySelector<HTMLElement>(`[data-abbr='${from?.abbr}']`)?.focus();
+  }
+  async function closeCatalogue() {
+    catalogueOpen = false;
+    await tick();
+    dialog.querySelector<HTMLElement>("[data-learn='catalogue']")?.focus();
+  }
 
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
-  let series = $state.raw<Question[] | null>(null);
+  let playing = $state.raw<
+    | { game: typeof QUIZ_ID; series: Question[] }
+    | { game: typeof CONNECT_ID; series: string[] }
+    | null
+  >(null);
   const seed = Number(params.get("seed"));
   const rng = mulberry32(Number.isFinite(seed) && seed > 0 ? seed : Date.now());
 
-  function play() {
-    series = buildSeries({ level, shapes, progress, now: Date.now(), rng, visible });
+  function play(game: string) {
+    const now = Date.now();
+    if (game === QUIZ_ID)
+      playing = {
+        game,
+        series: buildSeries({ level, shapes, progress, now, rng, visible }),
+      };
+    else if (game === CONNECT_ID)
+      playing = {
+        game,
+        series: buildConnectSeries({
+          level,
+          figures,
+          shapes,
+          magnitudes: (hip) => magnitudes.get(hip) ?? 99,
+          progress,
+          now,
+          rng,
+          visible,
+        }),
+      };
+  }
+  function traced(abbr: string, trace: Trace): ItemResult {
+    const r = recordItem(progress, "con", abbr, gradeOf(trace), Date.now());
+    progress = r.progress;
+    saveProgress(progress);
+    return r.result;
   }
   function answer(question: Question, chosen: string): Answer {
     const r = answerQuestion(progress, question, chosen, Date.now());
@@ -96,16 +192,17 @@
     saveProgress(progress);
     return r.answer;
   }
-  function finish(score: number): number {
-    const previous = best;
-    progress = recordGame(progress, GAME_ID, score);
+  function finish(game: string, score: number): number {
+    const previous = bestOf(game);
+    progress = recordGame(progress, game, score);
     saveProgress(progress);
     return previous;
   }
   async function leave() {
-    series = null;
+    const game = playing?.game;
+    playing = null;
     await tick();
-    dialog.querySelector<HTMLElement>("[data-game='whichConstellation']")?.focus();
+    dialog.querySelector<HTMLElement>(`[data-game='${game}']`)?.focus();
   }
 
   let dialog: HTMLElement;
@@ -113,7 +210,12 @@
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
-    if (params.get("game") === "1") play(); // captures
+    // Captures: ?game=1 (« Quelle constellation ? ») or ?game=2 (« Relie les étoiles »).
+    const game = GAMES[Number(params.get("game")) - 1];
+    if (game?.available) play(game.id);
+    if (start?.view === "catalogue") catalogueOpen = true;
+    else if (start?.view === "page" && shapes[start.abbr])
+      openPage(start.abbr, start.star ?? null, true);
     return () => previous?.focus?.();
   });
 
@@ -122,12 +224,16 @@
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (series) void leave();
+      if (playing) void leave();
+      else if (page) void closePage();
+      else if (catalogueOpen) void closeCatalogue();
       else onclose();
       return;
     }
     if (e.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not(:disabled)")];
+    const focusable = [
+      ...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input, summary, a[href]"),
+    ];
     const first = focusable[0];
     const last = focusable.at(-1);
     if (e.shiftKey && document.activeElement === first) {
@@ -149,9 +255,26 @@
   bind:this={dialog}
   {onkeydown}
 >
-  {#if series}
+  {#if playing?.game === CONNECT_ID}
+    <ConnectGame
+      series={playing.series}
+      {stars}
+      {lines}
+      {names}
+      {figures}
+      {shapes}
+      {level}
+      {theme}
+      {figureSet}
+      {date}
+      onresult={traced}
+      onfinish={(score) => finish(CONNECT_ID, score)}
+      onreplay={() => play(CONNECT_ID)}
+      onquit={leave}
+    />
+  {:else if playing?.game === QUIZ_ID}
     <QuizGame
-      {series}
+      series={playing.series}
       {stars}
       {lines}
       {names}
@@ -162,22 +285,55 @@
       {date}
       {shapes}
       onanswer={answer}
-      onfinish={finish}
-      onreplay={play}
+      onfinish={(score) => finish(QUIZ_ID, score)}
+      onreplay={() => play(QUIZ_ID)}
       onquit={leave}
+    />
+  {:else if page}
+    {@const p = page}
+    {#key p.abbr}
+      <ConstellationPage
+        abbr={p.abbr}
+        name={names[p.abbr] ?? p.abbr}
+        latin={latin[p.abbr] ?? p.abbr}
+        {names}
+        {stars}
+        {lines}
+        shape={shapes[p.abbr]!}
+        {level}
+        {theme}
+        {figureSet}
+        {date}
+        latitude={observer.latitude}
+        {placeName}
+        tonight={visible.has(p.abbr)}
+        initialStar={p.star}
+        onback={closePage}
+        {onclose}
+      />
+    {/key}
+  {:else if catalogueOpen}
+    <Catalogue
+      {entries}
+      bind:filter
+      bind:query
+      tonight={visible}
+      {progress}
+      onopen={(abbr) => openPage(abbr)}
+      onback={closeCatalogue}
+      {onclose}
     />
   {:else}
     <header class="head">
       <div>
-        <p class="meta">#05 // {$_("games.meta")}</p>
-        <h1 id="games-title">{$_("games.title")}</h1>
+        <h1 id="games-title">{$_("learn.title")}</h1>
       </div>
       <button
         class="close"
         bind:this={closeButton}
         onclick={onclose}
-        aria-label={$_("games.close")}
-        title={$_("games.close")}>×</button
+        aria-label={$_("learn.close")}
+        title={$_("learn.close")}>×</button
       >
     </header>
 
@@ -190,24 +346,41 @@
         {/each}
       </div>
 
-      <section aria-labelledby="games-list">
-        <h2 id="games-list">#01 // {$_("games.section.games")}</h2>
+      <section class="panel-block" aria-labelledby="learn-catalogue">
+        <h2 class="panel-title" id="learn-catalogue">{$_("catalogue.title")}</h2>
+        <div class="entry">
+          <div class="card-text">
+            <h3>{$_("learn.catalogue.title")}</h3>
+            <p>{$_("learn.catalogue.hint")}</p>
+            <p class="best">
+              {$_("learn.catalogue.seen", { values: { seen: seenCount, total: entries.length } })}
+            </p>
+          </div>
+          <button class="play" data-learn="catalogue" onclick={() => (catalogueOpen = true)}>
+            <Icon name="catalogue" size={12} />{$_("learn.catalogue.open")}
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-block" aria-labelledby="games-list">
+        <h2 class="panel-title" id="games-list">{$_("games.section.games")}</h2>
         <ul class="cards">
-          {#each GAMES as game, i (game.id)}
+          {#each GAMES as game (game.id)}
             <li class="card" class:soon={!game.available}>
               <div class="card-inner">
-                <span class="num" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                 <div class="card-text">
                   <h3>{$_(`games.${game.id}.title`)}</h3>
                   <p>{$_(`games.${game.id}.hint`)}</p>
-                  {#if game.available && best > 0}
+                  {#if game.available && bestOf(game.id) > 0}
                     <p class="best">
-                      {$_("games.best", { values: { score: best, total: SERIES_LENGTH } })}
+                      {$_("games.best", {
+                        values: { score: bestOf(game.id), total: game.length },
+                      })}
                     </p>
                   {/if}
                 </div>
                 {#if game.available}
-                  <button class="play" data-game={game.id} onclick={play}>
+                  <button class="play" data-game={game.id} onclick={() => play(game.id)}>
                     <Icon name="play" size={12} />{$_("games.play")}
                   </button>
                 {:else}
@@ -220,8 +393,8 @@
         {#if visible.size > 0}<p class="note">{$_("games.tonight")}</p>{/if}
       </section>
 
-      <section aria-labelledby="games-sky">
-        <h2 id="games-sky">#02 // {$_("games.section.sky")}</h2>
+      <section class="panel-block" aria-labelledby="games-sky">
+        <h2 class="panel-title" id="games-sky">{$_("games.section.sky")}</h2>
         <p class="summary">
           {$_("games.sky.summary", {
             values: {
@@ -296,8 +469,7 @@
     padding-bottom: 12px;
     border-bottom: 1px solid var(--ast-hairline);
   }
-  .meta,
-  h2 {
+  .meta {
     font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
@@ -363,11 +535,10 @@
     background: var(--ast-fg);
   }
   section {
-    margin-top: 22px;
+    margin-top: var(--ast-panel-gap);
   }
-  h2 {
-    margin: 0 0 8px;
-    color: var(--ast-fg);
+  .levels + section {
+    margin-top: 16px;
   }
   ul {
     margin: 0;
@@ -387,6 +558,11 @@
   .card.soon {
     background: repeating-conic-gradient(var(--ast-hairline) 0 25%, transparent 0 50%) 0 0 / 8px 8px;
   }
+  .entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
   .card-inner {
     display: flex;
     align-items: center;
@@ -394,11 +570,6 @@
     min-height: 64px;
     padding: 10px 12px;
     background: var(--ast-bg);
-  }
-  .num {
-    align-self: flex-start;
-    font: 700 22px/1 var(--ast-font-display);
-    color: var(--ast-fg-muted);
   }
   .card-text {
     flex: 1;
@@ -422,8 +593,7 @@
     text-transform: uppercase;
     color: var(--ast-fg);
   }
-  .soon h3,
-  .soon .num {
+  .soon h3 {
     color: var(--ast-fg-muted);
   }
   .play {

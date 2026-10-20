@@ -59,6 +59,7 @@
     onfullscreen,
     oncredits,
     ongames,
+    oncatalogue,
     online,
     offline,
     onofflineretry,
@@ -103,8 +104,9 @@
     fullscreen: boolean | null;
     onfullscreen: () => void;
     oncredits: () => void;
-    /** Opens the Jeux screen (#163). */
+    /** Opens the Apprendre screen (#163), on its home or on the catalogue (#170). */
     ongames: () => void;
+    oncatalogue: () => void;
     /** Offline copy of the app (#142); « unsupported »: line hidden (development, old browser). */
     /** The phone has a network (#146): a green or red light in the settings. */
     online: boolean;
@@ -313,9 +315,18 @@
           {/each}
         </div>
       {/if}
-      <!-- Apprendre (#163): the games open over the whole app. -->
+      <!-- Apprendre (#163, #170): the catalogue and the games open over the whole app. -->
       <h3 id="menu-learn">{$_("menu.section.learn")}</h3>
       <div class="grid" role="group" aria-labelledby="menu-learn">
+        <MenuTile
+          id="catalogue"
+          icon="catalogue"
+          label={$_("menu.catalogue.short")}
+          detail={$_("menu.catalogue")}
+          haspopup
+          onclick={oncatalogue}
+          {oninfo}
+        />
         <MenuTile
           id="games"
           icon="games"
@@ -682,8 +693,8 @@
   }
   h3 {
     margin: 12px 2px 6px;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
+    font: 500 10px/1.4 var(--ast-font-mono);
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
@@ -804,11 +815,6 @@
     color: var(--ast-fg);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-  }
-  .r-label::before,
-  .r-idle::before {
-    content: "// ";
-    color: var(--ast-fg-muted);
   }
   .r-idle {
     opacity: 0.8;

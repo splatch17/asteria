@@ -1,12 +1,12 @@
 <script lang="ts">
-  // Header of the map and Earth views (#130): one discreet line, « #02 // CARTE DU CIEL · PARIS ».
+  // Header of the map and Earth views (#130): one discreet line, « CARTE DU CIEL · PARIS »
+  // (no section number since #171).
   // The date and time are on the time line at the bottom, the coordinates in the menu. A short
   // scrim of the theme's background keeps it readable over bright stars (#74). Fades out in
   // immersive mode.
   import { _ } from "@asteria/ui";
 
   let {
-    index,
     title,
     place,
     loading = false,
@@ -15,8 +15,6 @@
     element = $bindable(),
     height = $bindable(20),
   }: {
-    /** Section number, e.g. "#02". */
-    index: string;
     /** View or point of view, e.g. "Carte du ciel", "La Terre tourne". */
     title: string;
     place: string;
@@ -38,7 +36,6 @@
 ></div>
 <header class="top" class:hidden bind:this={element} bind:clientHeight={height}>
   <p class="line">
-    <span class="index">{index} //</span>
     <span class="title">{title}</span>
     <span class="place">· {place}</span>
     {#if loading}<span class="place">· {$_("space.loading")}</span>{/if}

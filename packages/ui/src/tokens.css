@@ -9,6 +9,11 @@
   --ast-fg-muted: color-mix(in srgb, var(--ast-parchment) 65%, transparent);
   --ast-hairline: color-mix(in srgb, var(--ast-parchment) 20%, transparent);
   --ast-surface: color-mix(in srgb, var(--ast-parchment) 6%, var(--ast-night));
+  /* Panels (#171): a faint ink wash and a hairline mark the parts of a screen. */
+  --ast-panel-bg: color-mix(in srgb, var(--ast-parchment) 4%, transparent);
+  --ast-panel-border: var(--ast-hairline);
+  --ast-panel-pad: 14px;
+  --ast-panel-gap: 12px;
 
   --ast-font-display: "Big Shoulders Display", "Oswald", sans-serif;
   --ast-font-mono: "JetBrains Mono", ui-monospace, monospace;

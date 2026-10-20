@@ -40,4 +40,5 @@ export type IconName =
   | "eye"
   | "placeTime"
   | "settings"
-  | "games";
+  | "games"
+  | "catalogue";

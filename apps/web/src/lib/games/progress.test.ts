@@ -3,8 +3,10 @@ import {
   PROGRESS_KEY,
   countMastery,
   emptyProgress,
+  isSeen,
   itemKey,
   loadProgress,
+  markSeen,
   parseProgress,
   recordAnswer,
   recordGame,
@@ -43,7 +45,7 @@ describe("progress", () => {
     const store = memoryStore();
     const p = recordAnswer(emptyProgress(), "con:Lyr", false, T0);
     expect(saveProgress(p, store)).toBe(true);
-    expect(JSON.parse(store.data.get(PROGRESS_KEY)!).version).toBe(1);
+    expect(JSON.parse(store.data.get(PROGRESS_KEY)!).version).toBe(2);
     expect(loadProgress(store)).toEqual(p);
   });
 
@@ -66,6 +68,30 @@ describe("progress", () => {
     });
     expect(Object.keys(p.items)).toEqual(["con:Ori"]);
     expect(p.games).toEqual({ g: { played: 2, best: 9 } });
+  });
+
+  it("reads version 1 (#163) as version 2 with nothing seen", () => {
+    const good = recordAnswer(emptyProgress(), "con:Ori", true, T0).items["con:Ori"]!;
+    const p = parseProgress({ version: 1, items: { "con:Ori": good }, games: {} });
+    expect(p.version).toBe(2);
+    expect(p.items["con:Ori"]).toEqual(good);
+    expect(p.seen).toEqual({});
+  });
+
+  it("marks pages seen without touching the review schedule (#170)", () => {
+    const p0 = recordAnswer(emptyProgress(), "con:Ori", false, T0);
+    const p1 = markSeen(p0, "con:Ori", T0 + 1000);
+    expect(isSeen(p0, "con:Ori")).toBe(false);
+    expect(isSeen(p1, "con:Ori")).toBe(true);
+    expect(p1.items).toBe(p0.items);
+    // The first time is kept, and nothing changes the second time.
+    expect(markSeen(p1, "con:Ori", T0 + 5000)).toBe(p1);
+    const store = memoryStore();
+    saveProgress(p1, store);
+    expect(loadProgress(store)).toEqual(p1);
+    expect(
+      parseProgress({ version: 2, items: {}, games: {}, seen: { "con:Lyr": "x", x: 1 } }).seen,
+    ).toEqual({});
   });
 
   it("never throws when storage is unavailable", () => {
