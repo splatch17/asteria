@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { DAY_MS, MIN_EASE, START_EASE, isDue, isMemory, masteryOf, review } from "./srs";
+import {
+  DAY_MS,
+  HARD_EASE_PENALTY,
+  MIN_EASE,
+  START_EASE,
+  isDue,
+  isMemory,
+  masteryOf,
+  review,
+} from "./srs";
 
 const T0 = Date.UTC(2026, 9, 19, 20);
 
@@ -46,6 +55,19 @@ describe("SM-2 review", () => {
     expect(half.interval).toBeCloseTo(2, 10);
     const late = review(m1, true, T0 + 5 * DAY_MS); // overdue: full growth, no more
     expect(late.interval).toBe(3);
+  });
+
+  it("grades a laboured right answer « hard »: same interval, ease − 0.14 (SM-2 q = 3)", () => {
+    const good = review(undefined, "good", T0);
+    const hard = review(undefined, "hard", T0);
+    expect(hard.interval).toBe(good.interval);
+    expect(hard.correct).toBe(1);
+    expect(hard.ease).toBeCloseTo(START_EASE - HARD_EASE_PENALTY, 10);
+    expect(review(undefined, true, T0)).toEqual(good);
+    expect(review(undefined, "again", T0)).toEqual(review(undefined, false, T0));
+    let m = hard;
+    for (let i = 0; i < 20; i++) m = review(m, "hard", m.due);
+    expect(m.ease).toBe(MIN_EASE);
   });
 
   it("classifies mastery and due dates", () => {

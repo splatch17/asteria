@@ -70,15 +70,15 @@ export function zenithObserver(centre: Vec3, date: Date): Observer {
 /**
  * Vertical field of view (degrees, stereographic as the map) that fits a figure of angular
  * radius `radius` in a canvas of the given aspect (width / height), the figure spanning `fill`
- * of the narrow side. Bounded to [20°, 150°]: small figures keep some sky around them.
+ * of the narrow side. Bounded to [min, 150°]: small figures keep some sky around them.
  */
-export function framingFov(radius: number, aspect: number, fill = 0.78): number {
+export function framingFov(radius: number, aspect: number, fill = 0.78, min = 20): number {
   const RAD = Math.PI / 180;
   const narrow = Math.min(1, aspect); // half-height is 1 in NDC; half-width is the aspect
   // On screen, r = 2·tan(θ/2) · scale with scale = 1 / (2·tan(fov/4)) ⇒ fov from r = fill·narrow.
   const t = Math.tan((radius * RAD) / 2) / (fill * narrow);
   const fov = (4 * Math.atan(t)) / RAD;
-  return Math.min(150, Math.max(20, fov));
+  return Math.min(150, Math.max(min, fov));
 }
 
 /** The other figures, nearest centre first. */

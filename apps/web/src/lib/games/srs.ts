@@ -10,6 +10,9 @@
  *   easy to test and good enough to bring weak and due items back.
  * - Right answer (SM-2 quality 4, ease unchanged): intervals 1 day, then 3 days (SM-2 says 6; a
  *   game played every few days should see its items sooner), then interval × ease.
+ * - Right but laboured (SM-2 quality 3, « hard », #164: a figure traced with hints or many
+ *   wrong segments): the same intervals, ease − 0.14 as SM-2's formula gives for q = 3
+ *   (EF' = EF + 0.1 − (5 − q)(0.08 + (5 − q)·0.02)), floor 1.3: the item comes back sooner later.
  * - Wrong answer (quality ≤ 2): back to the start, ease − 0.2 (floor 1.3), due again in 10 min.
  * - Early review: the games may ask an item that is not due yet (a short pool in Découverte,
  *   several games a day). Its interval then grows only by the fraction of it that has elapsed
@@ -23,6 +26,8 @@ const MINUTE_MS = 60_000;
 export const START_EASE = 2.5;
 export const MIN_EASE = 1.3;
 const EASE_PENALTY = 0.2;
+/** SM-2 ease change for a correct answer of quality 3 (hard). */
+export const HARD_EASE_PENALTY = 0.14;
 /** First intervals (days) after one, then two right answers in a row. */
 const FIRST_INTERVALS = [1, 3] as const;
 /** A missed item comes back this soon (relearning). */
@@ -50,8 +55,16 @@ export interface Memory {
 /** How well an item is known, from never seen to mastered. */
 export type Mastery = "new" | "learning" | "known" | "mastered";
 
+/**
+ * How an answer went: wrong (« again »), right but laboured (« hard », SM-2 q = 3), right
+ * (« good », q = 4). A boolean stands for again / good.
+ */
+export type Grade = "again" | "hard" | "good";
+
 /** Memory after an answer (a new record for an item never asked). */
-export function review(memory: Memory | undefined, correct: boolean, now: number): Memory {
+export function review(memory: Memory | undefined, grade: Grade | boolean, now: number): Memory {
+  const g: Grade = grade === true ? "good" : grade === false ? "again" : grade;
+  const correct = g !== "again";
   const m = memory ?? {
     reps: 0,
     lapses: 0,
@@ -86,6 +99,7 @@ export function review(memory: Memory | undefined, correct: boolean, now: number
   return {
     ...m,
     reps,
+    ease: g === "hard" ? Math.max(MIN_EASE, m.ease - HARD_EASE_PENALTY) : m.ease,
     interval,
     due: now + interval * DAY_MS,
     last: now,
