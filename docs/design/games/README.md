@@ -14,4 +14,20 @@ Captures Chromium (SwiftShader), téléphone 360×780 @3x, build de production.
 | `mobile-reponse-nuit.jpg` | Vision nocturne, Découverte |
 | `mobile-fin.jpg` | Fin de série : score, record, ce que chaque réponse a changé |
 
+## « Relie les étoiles » (#164)
+
+| Capture | Ce qu'elle montre |
+|---|---|
+| `mobile-relie-debut.jpg` | Début en Découverte : champ d'étoiles réel, sans lignes ni noms, étoiles de la figure légèrement cerclées |
+| `mobile-relie-trace.jpg` | Un trait juste (encre) et un trait faux (pointillé barré, qui s'efface) ; l'étoile choisie a un réticule |
+| `mobile-relie-glisser.jpg` | Glisser d'une étoile vers une autre : trait pointillé jusqu'au doigt |
+| `mobile-relie-indice.jpg` | Indice : l'étoile de départ choisie, l'étoile suivante clignote |
+| `mobile-relie-complete.jpg` | Figure complète : lignes, nom et figure illustrée de la carte |
+| `mobile-relie-solution.jpg` | « Solution » : la figure montrée |
+| `mobile-relie-amateur.jpg` | Amateur : aucune étoile mise en avant |
+| `mobile-relie-nuit.jpg` | Vision nocturne |
+| `mobile-relie-fin.jpg` | Fin de série : score sur 5, erreurs et indices de chaque figure |
+
+Captures prises avec `--disable-accelerated-2d-canvas` : dans le conteneur, Chromium avec SwiftShader représente parfois l'image précédente d'un canvas 2D vidé (problème du rendu logiciel, absent sans accélération 2D).
+
 La figure est placée au zénith d'un observateur fictif : nord en haut, est à gauche, comme sur une carte du ciel. Fermer les jeux rend la carte exactement comme elle était (vérifié par différence d'images avant/après).

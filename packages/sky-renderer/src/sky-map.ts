@@ -888,6 +888,17 @@ export class SkyMap {
   }
 
   /**
+   * Where a catalogue star is drawn (CSS px, canvas coordinates) at the current date, view and
+   * size, null when unknown or off screen: the games draw and pick over the map (#164).
+   */
+  projectStar(hip: number): [number, number] | null {
+    const i = this.hipIndex.get(hip);
+    if (i === undefined) return null;
+    const p = this.toScreen(applyMat3(this.eqToView(), this.starDirs[i]!));
+    return p ? [p[0], p[1]] : null;
+  }
+
+  /**
    * Highlights the selected object (#103): an engraved reticle around a star, planet, Sun or
    * Moon; for a constellation, setSelectedConstellation (figure, stars and name stronger, the
    * rest of the sky dimmed). null clears it (and stops an arrival animation).
