@@ -4,20 +4,24 @@
   // map), with 4 names to choose from. The figure is put at the zenith of a made-up observer
   // (zenithObserver), north up, framed to fill the stage; the map takes no input there.
   //  - Découverte: lines and the illustrated figure; Amateur: lines; Expert: its stars only.
-  //  - After the answer: lines, figure and name revealed, right answer inked, then « Suivante ».
+  //  - After the answer: lines, figure and its name (no other name) revealed, right answer
+  //    inked, then « Suivante ».
   // Then the end screen: score, record, and what each answer changed.
   import { onDestroy, onMount, tick } from "svelte";
   import { _ } from "@asteria/ui";
-  import {
+  import type {
+    CatalogStar,
+    FigureLevel,
+    SkyLayers,
     SkyMap,
-    type CatalogStar,
-    type FigureLevel,
-    type SkyLayers,
-    type SkyTheme,
+    SkyTheme,
   } from "@asteria/sky-renderer";
-  import { framingFov, zenithObserver, type ConstellationShape } from "../lib/games/geometry";
-  import { outcomeOf, type Answer, type Question } from "../lib/games/which-constellation";
+  import { createGameSky, gameTheme, showFigure } from "../lib/games/game-sky";
+  import { framingFov, type ConstellationShape } from "../lib/games/geometry";
+  import type { Answer, Question } from "../lib/games/which-constellation";
+  import GameHeader from "./GameHeader.svelte";
   import Icon from "./Icon.svelte";
+  import SeriesEnd from "./SeriesEnd.svelte";
 
   let {
     series,
@@ -71,7 +75,6 @@
   let map: SkyMap | undefined;
   let hidden = $state(false);
   let nextButton = $state<HTMLButtonElement>();
-  let endTitle = $state<HTMLElement>();
   let choiceList = $state<HTMLElement>();
 
   /** Layers of the question (by level) and of the answer (everything revealed). */
@@ -79,7 +82,8 @@
     return {
       constellationLines: revealed || level !== "expert",
       constellationFigures: revealed || level === "discovery",
-      constellationNames: revealed,
+      // Only the answer's name is written (setSelectedNameShown), not its neighbours'.
+      constellationNames: false,
     };
   }
 
@@ -89,46 +93,32 @@
     const shape = q && shapes[q.answer];
     if (!map || !shape) return;
     const aspect = stage.clientWidth / Math.max(1, stage.clientHeight);
-    map.setObserver(zenithObserver(shape.centre, date));
-    map.setView({ azimuth: 180, altitude: 90, roll: 0, fov: framingFov(shape.radius, aspect) });
+    showFigure(map, shape, date, framingFov(shape.radius, aspect));
   }
 
   function showQuestion() {
     if (!map || !question) return;
     map.setLayers(layersFor(false));
+    map.setSelectedNameShown(false);
     map.setSelectedConstellation(question.answer);
     frame();
   }
 
   onMount(() => {
-    try {
-      map = new SkyMap({
-        canvas,
-        overlay,
-        stars,
-        lines,
-        constellationNames: names as Record<string, string>,
-        theme: { ...theme, daySky: theme.sky, ground: theme.sky },
-        figureSet,
-        layers: {
-          starNames: false,
-          planets: false,
-          allPaths: false,
-          equatorialGrid: false,
-          azimuthalGrid: false,
-          ecliptic: false,
-          seeThroughGround: true,
-          deepSky: false,
-          ...layersFor(false),
-        },
-      });
-    } catch (e) {
-      console.error(e); // no WebGL: the names stay playable, without the sky
-      map = undefined;
-      return;
-    }
-    map.setDate(date);
-    map.figureLayer.setLevel(level);
+    // No WebGL: map stays undefined and the names stay playable, without the sky.
+    map = createGameSky({
+      canvas,
+      overlay,
+      stars,
+      lines,
+      names,
+      theme,
+      figureSet,
+      date,
+      level,
+      layers: layersFor(false),
+    });
+    if (!map) return;
     showQuestion();
     const resize = new ResizeObserver(() => frame());
     resize.observe(stage);
@@ -137,7 +127,7 @@
   onDestroy(() => map?.dispose());
 
   $effect(() => {
-    map?.setTheme({ ...theme, daySky: theme.sky, ground: theme.sky });
+    map?.setTheme(gameTheme(theme));
   });
 
   // A new series (Rejouer): back to its first question.
@@ -162,6 +152,7 @@
     current = onanswer(question, abbr);
     answers = [...answers, current];
     map?.setLayers(layersFor(true));
+    map?.setSelectedNameShown(true);
     await tick();
     nextButton?.focus();
   }
@@ -171,8 +162,6 @@
     if (index + 1 >= series.length) {
       previousBest = onfinish(score);
       done = true;
-      await tick();
-      endTitle?.focus();
       return;
     }
     if (!reduceMotion) {
@@ -207,29 +196,17 @@
 <svelte:window {onkeydown} />
 
 <div class="quiz">
-  <header class="head">
-    <div class="titles">
-      <p class="meta">{$_("games.whichConstellation.title")}</p>
-      <!-- One square per question: inked when right, struck when wrong. -->
-      <ol
-        class="steps"
-        aria-label={$_("quiz.progress", {
-          values: { n: Math.min(index + 1, series.length), total: series.length },
-        })}
-      >
-        {#each series as q, i (q.answer)}
-          <li
-            class:right={answers[i]?.correct === true}
-            class:wrong={answers[i]?.correct === false}
-            class:now={i === index && !done}
-          ></li>
-        {/each}
-      </ol>
-    </div>
-    <button class="close" onclick={onquit} aria-label={$_("quiz.quit")} title={$_("quiz.quit")}
-      >×</button
-    >
-  </header>
+  <GameHeader
+    meta={$_("games.whichConstellation.title")}
+    results={answers.map((a) => a.correct)}
+    total={series.length}
+    {index}
+    {done}
+    progressLabel={$_("quiz.progress", {
+      values: { n: Math.min(index + 1, series.length), total: series.length },
+    })}
+    {onquit}
+  />
 
   <div
     class="stage"
@@ -244,35 +221,15 @@
   </div>
 
   {#if done}
-    <section class="end" aria-labelledby="quiz-end-title">
-      <h2 id="quiz-end-title" tabindex="-1" bind:this={endTitle}>{$_("quiz.end.title")}</h2>
-      <p class="score">
-        <span class="big">{score}</span><span class="of">/{series.length}</span>
-        <span class="sr-only"
-          >{$_("quiz.end.score", { values: { score, total: series.length } })}</span
-        >
-      </p>
-      <p class="record">
-        {score > previousBest
-          ? $_("quiz.end.newBest")
-          : $_("quiz.end.best", { values: { best: previousBest, total: series.length } })}
-      </p>
-      <h3>{$_("quiz.end.list")}</h3>
-      <ul class="results">
-        {#each answers as a (a.answer)}
-          {@const outcome = outcomeOf(a)}
-          <li>
-            <span class="mark" aria-hidden="true">{a.correct ? "✓" : "✗"}</span>
-            <span class="r-name">{nameOf(a.answer)}</span>
-            <span class={`tag ${outcome}`}>{$_(`quiz.outcome.${outcome}`)}</span>
-          </li>
-        {/each}
-      </ul>
-      <div class="end-actions">
-        <button class="primary" onclick={onreplay}>{$_("quiz.replay")}</button>
-        <button class="secondary" onclick={onquit}>{$_("quiz.back")}</button>
-      </div>
-    </section>
+    <SeriesEnd
+      {score}
+      total={series.length}
+      {previousBest}
+      results={answers.map((a) => ({ ...a, item: a.answer }))}
+      {nameOf}
+      {onreplay}
+      {onquit}
+    />
   {:else if question}
     <section class="panel" aria-labelledby="quiz-question">
       <p id="quiz-question" class="prompt" role="status" class:right={current?.correct}>
@@ -325,46 +282,6 @@
     max-width: 640px;
     margin: 0 auto;
   }
-  .head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px
-      max(16px, env(safe-area-inset-left));
-    border-bottom: 1px solid var(--ast-hairline);
-  }
-  .meta {
-    margin: 0 0 8px;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg);
-  }
-  .steps {
-    display: flex;
-    gap: 4px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .steps li {
-    width: 14px;
-    height: 14px;
-    box-sizing: border-box;
-    border: 1px solid var(--ast-hairline);
-  }
-  .steps li.now {
-    border-color: var(--ast-fg);
-  }
-  .steps li.right {
-    border-color: var(--ast-fg);
-    background: var(--ast-fg);
-  }
-  .steps li.wrong {
-    border-color: var(--ast-fg-muted);
-    background: repeating-conic-gradient(var(--ast-fg-muted) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
-  }
   button {
     font: 500 11px/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
@@ -380,27 +297,27 @@
     outline: 1px solid var(--ast-fg);
     outline-offset: 2px;
   }
-  .close {
-    flex: none;
-    width: 44px;
-    height: 44px;
-    margin: -6px -10px 0 0;
-    font: 400 24px/1 var(--ast-font-mono);
-  }
-  .close:focus-visible {
-    outline-offset: -6px;
-  }
   .stage {
     position: relative;
     flex: 1;
     min-height: 160px;
+  }
+  /* Between two rounds a veil of the background covers the sky: the canvases themselves are
+     never made transparent (Chromium may then keep presenting their previous frame). */
+  .stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--ast-bg);
+    opacity: 0;
+    pointer-events: none;
     transition: opacity 140ms var(--ast-ease-out);
   }
-  .stage.hidden {
-    opacity: 0;
+  .stage.hidden::after {
+    opacity: 1;
   }
   @media (prefers-reduced-motion: reduce) {
-    .stage {
+    .stage::after {
       transition: none;
     }
   }
@@ -500,106 +417,6 @@
   /* End screen */
   .stage.gone {
     display: none;
-  }
-  .end {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 18px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom))
-      max(16px, env(safe-area-inset-left));
-    box-sizing: border-box;
-  }
-  .end h2,
-  .end h3 {
-    margin: 0;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-    outline: none;
-  }
-  .score {
-    margin: 6px 0 0;
-    font-family: var(--ast-font-display);
-    font-weight: 700;
-    line-height: 0.9;
-  }
-  .big {
-    font-size: 88px;
-  }
-  .of {
-    font-size: 36px;
-    color: var(--ast-fg-muted);
-  }
-  .record {
-    margin: 6px 0 20px;
-    font: 500 11px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-  }
-  .results {
-    margin: 8px 0 0;
-    padding: 0;
-    list-style: none;
-  }
-  .results li {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 34px;
-    border-top: 1px solid var(--ast-hairline);
-    font: 400 13px/1.2 var(--ast-font-mono);
-  }
-  .mark {
-    width: 14px;
-    color: var(--ast-fg-muted);
-  }
-  .r-name {
-    flex: 1;
-    min-width: 0;
-  }
-  .tag {
-    flex: none;
-    padding: 3px 6px;
-    border: 1px solid var(--ast-hairline);
-    font: 500 9px/1 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .tag.learnt {
-    color: var(--ast-fg);
-    border-color: var(--ast-fg);
-  }
-  .tag.mastered {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
-    border-color: var(--ast-fg);
-  }
-  .tag.review {
-    border-style: dashed;
-  }
-  .end-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-top: auto;
-    padding-top: 18px;
-  }
-  .end-actions button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 48px;
-    border: 1px solid var(--ast-fg);
-  }
-  .primary {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
   }
   .sr-only {
     position: absolute;

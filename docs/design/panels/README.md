@@ -11,5 +11,6 @@ Captures Chromium (SwiftShader), téléphone 360×780 @3x, build de production. 
 | `avant-credits.jpg` / `apres-credits.jpg` | Crédits : une section = un panneau, entrées séparées par un filet |
 | `avant-jeux.jpg` / `apres-jeux.jpg` | Jeux : « Les jeux » et « Ton ciel » en panneaux, cartes sans numéro |
 | `apres-jeux-nuit.jpg` | Les mêmes panneaux en vision nocturne |
+| `apres-quiz.jpg` / `apres-relie.jpg` | En-tête des jeux (#163, #164) : le titre du jeu seul, sans « #01 // » ni « #02 // » |
 
 Règle consignée dans `docs/ART_DIRECTION.md` §3 (L'interface).

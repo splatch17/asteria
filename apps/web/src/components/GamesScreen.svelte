@@ -2,12 +2,21 @@
   // Jeux screen (#163): the games, the player's level and « Ton ciel », the constellations learnt
   // so far as a grid of cards inked by mastery (1-bit dither: none, light, half, full). Opens over
   // the whole app (the map stops under it) and closes back to it as it was. A game is played in
-  // the same dialog (QuizGame), so that Escape and focus stay in one place.
+  // the same dialog (QuizGame, ConnectGame #164), so that Escape and focus stay in one place.
+  // Both games feed the same memory of each constellation (`con:XXX`).
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type { Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
   import { GAMES } from "../lib/games/catalog";
+  import {
+    GAME_ID as CONNECT_ID,
+    buildConnectSeries,
+    figureSegments,
+    gradeOf,
+    type Segment,
+    type Trace,
+  } from "../lib/games/connect-stars";
   import { constellationShapes } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
   import {
@@ -19,11 +28,11 @@
     saveProgress,
     type Progress,
   } from "../lib/games/progress";
+  import { recordItem, type ItemResult } from "../lib/games/results";
   import { mulberry32 } from "../lib/games/rng";
   import { visibleTonight } from "../lib/games/visibility";
   import {
-    GAME_ID,
-    SERIES_LENGTH,
+    GAME_ID as QUIZ_ID,
     answerQuestion,
     buildSeries,
     type Answer,
@@ -31,6 +40,7 @@
   } from "../lib/games/which-constellation";
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
+  import ConnectGame from "./ConnectGame.svelte";
   import Icon from "./Icon.svelte";
   import QuizGame from "./QuizGame.svelte";
 
@@ -73,6 +83,16 @@
   // Computed once per opening: the catalogue, place and date do not change under the screen.
   const shapes = untrack(() => constellationShapes(stars, lines));
   const visible = untrack(() => visibleTonight(shapes, date, observer));
+  const magnitudes = untrack(() => new Map(stars.map((s) => [s.hip, s.v])));
+  /** Segments of every figure, for « Relie les étoiles ». */
+  const figures: Record<string, Segment[]> = untrack(() =>
+    Object.fromEntries(
+      Object.entries(lines).map(([abbr, polys]) => [
+        abbr,
+        figureSegments(polys, (hip) => magnitudes.has(hip)),
+      ]),
+    ),
+  );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
   const counts = $derived(
     countMastery(
@@ -80,15 +100,44 @@
       pool.map((a) => itemKey("con", a)),
     ),
   );
-  const best = $derived(progress.games[GAME_ID]?.best ?? 0);
+  const bestOf = (game: string) => progress.games[game]?.best ?? 0;
 
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
-  let series = $state.raw<Question[] | null>(null);
+  let playing = $state.raw<
+    | { game: typeof QUIZ_ID; series: Question[] }
+    | { game: typeof CONNECT_ID; series: string[] }
+    | null
+  >(null);
   const seed = Number(params.get("seed"));
   const rng = mulberry32(Number.isFinite(seed) && seed > 0 ? seed : Date.now());
 
-  function play() {
-    series = buildSeries({ level, shapes, progress, now: Date.now(), rng, visible });
+  function play(game: string) {
+    const now = Date.now();
+    if (game === QUIZ_ID)
+      playing = {
+        game,
+        series: buildSeries({ level, shapes, progress, now, rng, visible }),
+      };
+    else if (game === CONNECT_ID)
+      playing = {
+        game,
+        series: buildConnectSeries({
+          level,
+          figures,
+          shapes,
+          magnitudes: (hip) => magnitudes.get(hip) ?? 99,
+          progress,
+          now,
+          rng,
+          visible,
+        }),
+      };
+  }
+  function traced(abbr: string, trace: Trace): ItemResult {
+    const r = recordItem(progress, "con", abbr, gradeOf(trace), Date.now());
+    progress = r.progress;
+    saveProgress(progress);
+    return r.result;
   }
   function answer(question: Question, chosen: string): Answer {
     const r = answerQuestion(progress, question, chosen, Date.now());
@@ -96,16 +145,17 @@
     saveProgress(progress);
     return r.answer;
   }
-  function finish(score: number): number {
-    const previous = best;
-    progress = recordGame(progress, GAME_ID, score);
+  function finish(game: string, score: number): number {
+    const previous = bestOf(game);
+    progress = recordGame(progress, game, score);
     saveProgress(progress);
     return previous;
   }
   async function leave() {
-    series = null;
+    const game = playing?.game;
+    playing = null;
     await tick();
-    dialog.querySelector<HTMLElement>("[data-game='whichConstellation']")?.focus();
+    dialog.querySelector<HTMLElement>(`[data-game='${game}']`)?.focus();
   }
 
   let dialog: HTMLElement;
@@ -113,7 +163,9 @@
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
-    if (params.get("game") === "1") play(); // captures
+    // Captures: ?game=1 (« Quelle constellation ? ») or ?game=2 (« Relie les étoiles »).
+    const game = GAMES[Number(params.get("game")) - 1];
+    if (game?.available) play(game.id);
     return () => previous?.focus?.();
   });
 
@@ -122,7 +174,7 @@
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (series) void leave();
+      if (playing) void leave();
       else onclose();
       return;
     }
@@ -149,9 +201,26 @@
   bind:this={dialog}
   {onkeydown}
 >
-  {#if series}
+  {#if playing?.game === CONNECT_ID}
+    <ConnectGame
+      series={playing.series}
+      {stars}
+      {lines}
+      {names}
+      {figures}
+      {shapes}
+      {level}
+      {theme}
+      {figureSet}
+      {date}
+      onresult={traced}
+      onfinish={(score) => finish(CONNECT_ID, score)}
+      onreplay={() => play(CONNECT_ID)}
+      onquit={leave}
+    />
+  {:else if playing?.game === QUIZ_ID}
     <QuizGame
-      {series}
+      series={playing.series}
       {stars}
       {lines}
       {names}
@@ -162,8 +231,8 @@
       {date}
       {shapes}
       onanswer={answer}
-      onfinish={finish}
-      onreplay={play}
+      onfinish={(score) => finish(QUIZ_ID, score)}
+      onreplay={() => play(QUIZ_ID)}
       onquit={leave}
     />
   {:else}
@@ -199,14 +268,16 @@
                 <div class="card-text">
                   <h3>{$_(`games.${game.id}.title`)}</h3>
                   <p>{$_(`games.${game.id}.hint`)}</p>
-                  {#if game.available && best > 0}
+                  {#if game.available && bestOf(game.id) > 0}
                     <p class="best">
-                      {$_("games.best", { values: { score: best, total: SERIES_LENGTH } })}
+                      {$_("games.best", {
+                        values: { score: bestOf(game.id), total: game.length },
+                      })}
                     </p>
                   {/if}
                 </div>
                 {#if game.available}
-                  <button class="play" data-game={game.id} onclick={play}>
+                  <button class="play" data-game={game.id} onclick={() => play(game.id)}>
                     <Icon name="play" size={12} />{$_("games.play")}
                   </button>
                 {:else}
