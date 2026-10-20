@@ -1,11 +1,13 @@
 <script lang="ts">
-  // Apprendre screen (#163, #164, #170): the catalogue of the constellations, the games, the
+  // Apprendre screen (#163, #164, #165, #170): the catalogue of the constellations, the games, the
   // player's level and « Ton ciel », the constellations learnt so far as a grid of cards inked by
   // mastery (1-bit dither: none, light, half, full). Opens over the whole app (the map stops under
-  // it) and closes back to it as it was. A game (QuizGame, ConnectGame), the catalogue and a
-  // constellation's page are shown in the same dialog, so that Escape and focus stay in one place.
-  // Both games feed the same memory of each constellation (`con:XXX`). Opened from the map on a
-  // constellation's page, « back » returns to the map.
+  // it) and closes back to it as it was. A game (QuizGame, ConnectGame, NameStarGame), the
+  // catalogue and a constellation's page are shown in the same dialog, so that Escape and focus
+  // stay in one place. The constellation games feed the same memory of each constellation
+  // (`con:XXX`), « Nomme l'étoile » that of each star (`star:HIP`). Opened from the map on a
+  // constellation's page, « back » returns to the map; opened from « Nomme l'étoile », it returns
+  // to the game as it was (the game stays mounted, hidden, under the page).
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type { Observer } from "@asteria/astro-core";
@@ -32,9 +34,18 @@
     saveProgress,
     type Progress,
   } from "../lib/games/progress";
+  import {
+    GAME_ID as NAME_ID,
+    brightnessRanks,
+    buildStarSeries,
+    gradeOf as starGrade,
+    namedStars,
+    starPool,
+    type StarQuestion,
+  } from "../lib/games/name-star";
   import { recordItem, type ItemResult } from "../lib/games/results";
   import { mulberry32 } from "../lib/games/rng";
-  import { visibleTonight } from "../lib/games/visibility";
+  import { upTonight, visibleTonight } from "../lib/games/visibility";
   import {
     GAME_ID as QUIZ_ID,
     answerQuestion,
@@ -48,6 +59,7 @@
   import ConnectGame from "./ConnectGame.svelte";
   import ConstellationPage from "./ConstellationPage.svelte";
   import Icon from "./Icon.svelte";
+  import NameStarGame from "./NameStarGame.svelte";
   import QuizGame from "./QuizGame.svelte";
 
   let {
@@ -104,6 +116,12 @@
       ]),
     ),
   );
+  /** « Nomme l'étoile » (#165): the named stars, their brightness ranks, those up tonight. */
+  const named = untrack(() => namedStars(stars));
+  const ranks = untrack(() => brightnessRanks(stars));
+  const starsTonight = untrack(() =>
+    upTonight(Object.fromEntries(named.map((s) => [String(s.hip), s.dir])), date, observer),
+  );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
   const counts = $derived(
     countMastery(
@@ -153,8 +171,11 @@
   let playing = $state.raw<
     | { game: typeof QUIZ_ID; series: Question[] }
     | { game: typeof CONNECT_ID; series: string[] }
+    | { game: typeof NAME_ID; series: StarQuestion[] }
     | null
   >(null);
+  /** A constellation's page opened from « Nomme l'étoile », over the game (#165). */
+  let gamePage = $state.raw<{ abbr: string; star: number } | null>(null);
   const seed = Number(params.get("seed"));
   const rng = mulberry32(Number.isFinite(seed) && seed > 0 ? seed : Date.now());
 
@@ -179,6 +200,39 @@
           visible,
         }),
       };
+    else if (game === NAME_ID)
+      playing = {
+        game,
+        series: buildStarSeries({
+          level,
+          pool: starPool(level, named, shapes),
+          progress,
+          now,
+          rng,
+          visible: starsTonight,
+        }),
+      };
+  }
+  function namedAnswer(hip: number, correct: boolean): ItemResult {
+    const r = recordItem(progress, "star", String(hip), starGrade(correct), Date.now());
+    progress = r.progress;
+    saveProgress(progress);
+    return r.result;
+  }
+  /** « Voir dans le catalogue » from the game: the page on the star, marked « seen ». */
+  function openGamePage(abbr: string, hip: number) {
+    if (!shapes[abbr]) return;
+    gamePage = { abbr, star: hip };
+    const next = markSeen(progress, itemKey("con", abbr), Date.now());
+    if (next !== progress) {
+      progress = next;
+      saveProgress(progress);
+    }
+  }
+  async function closeGamePage() {
+    gamePage = null;
+    await tick();
+    dialog.querySelector<HTMLElement>(".name-star .go")?.focus();
   }
   function traced(abbr: string, trace: Trace): ItemResult {
     const r = recordItem(progress, "con", abbr, gradeOf(trace), Date.now());
@@ -201,6 +255,7 @@
   async function leave() {
     const game = playing?.game;
     playing = null;
+    gamePage = null;
     await tick();
     dialog.querySelector<HTMLElement>(`[data-game='${game}']`)?.focus();
   }
@@ -210,7 +265,8 @@
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
-    // Captures: ?game=1 (« Quelle constellation ? ») or ?game=2 (« Relie les étoiles »).
+    // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Relie les étoiles »), 3 (« Nomme
+    // l'étoile »).
     const game = GAMES[Number(params.get("game")) - 1];
     if (game?.available) play(game.id);
     if (start?.view === "catalogue") catalogueOpen = true;
@@ -224,7 +280,8 @@
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (playing) void leave();
+      if (gamePage) void closeGamePage();
+      else if (playing) void leave();
       else if (page) void closePage();
       else if (catalogueOpen) void closeCatalogue();
       else onclose();
@@ -272,6 +329,49 @@
       onreplay={() => play(CONNECT_ID)}
       onquit={leave}
     />
+  {:else if playing?.game === NAME_ID}
+    <div class="layer" hidden={gamePage !== null}>
+      <NameStarGame
+        series={playing.series}
+        {stars}
+        {lines}
+        {names}
+        {named}
+        {ranks}
+        {shapes}
+        {level}
+        {theme}
+        {figureSet}
+        {date}
+        onanswer={namedAnswer}
+        onfinish={(score) => finish(NAME_ID, score)}
+        oncatalogue={openGamePage}
+        onreplay={() => play(NAME_ID)}
+        onquit={leave}
+      />
+    </div>
+    {#if gamePage}
+      {@const p = gamePage}
+      <ConstellationPage
+        abbr={p.abbr}
+        name={names[p.abbr] ?? p.abbr}
+        latin={latin[p.abbr] ?? p.abbr}
+        {names}
+        {stars}
+        {lines}
+        shape={shapes[p.abbr]!}
+        {level}
+        {theme}
+        {figureSet}
+        {date}
+        latitude={observer.latitude}
+        {placeName}
+        tonight={visible.has(p.abbr)}
+        initialStar={p.star}
+        onback={closeGamePage}
+        onclose={closeGamePage}
+      />
+    {/if}
   {:else if playing?.game === QUIZ_ID}
     <QuizGame
       series={playing.series}
@@ -450,6 +550,16 @@
     .games {
       animation: none;
     }
+  }
+  /* A game kept under a catalogue page (#165): hidden, still mounted. */
+  .layer {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .layer[hidden] {
+    display: none;
   }
   .head,
   .scroll {

@@ -12,6 +12,7 @@ import {
   type SkyTheme,
   type ViewState,
 } from "@asteria/sky-renderer";
+import type { Vec3 } from "@asteria/astro-core";
 import { zenithObserver, type ConstellationShape } from "./geometry";
 
 /** The theme with no day blue and no visible ground (the frame never reaches the horizon). */
@@ -72,6 +73,11 @@ export function createGameSky(o: GameSkyOptions): SkyMap | undefined {
 
 /** Puts a figure at the zenith, north up, with the given field of view. */
 export function showFigure(map: SkyMap, shape: ConstellationShape, date: Date, fov: number): void {
-  map.setObserver(zenithObserver(shape.centre, date));
+  showDirection(map, shape.centre, date, fov);
+}
+
+/** Puts a direction (J2000 unit vector) at the zenith, north up, with the given field of view. */
+export function showDirection(map: SkyMap, centre: Vec3, date: Date, fov: number): void {
+  map.setObserver(zenithObserver(centre, date));
   map.setView({ azimuth: 180, altitude: 90, roll: 0, fov });
 }

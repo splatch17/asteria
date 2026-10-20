@@ -1,6 +1,6 @@
 /**
  * The games of the Jeux screen (#163). Each one asks about items of one kind and shares the
- * progress of those items; a game not built yet is listed as « bientôt » (#165). Texts:
+ * progress of those items; a game not built yet is listed as « bientôt ». Texts:
  * i18n keys `games.<id>.title` and `games.<id>.hint`.
  */
 import type { ItemKind } from "./progress";
@@ -19,5 +19,5 @@ export interface GameEntry {
 export const GAMES: readonly GameEntry[] = [
   { id: "whichConstellation", items: "con", available: true, length: 10 },
   { id: "connectStars", items: "con", available: true, length: 5 },
-  { id: "nameStar", items: "star", available: false, length: 10, ticket: 165 },
+  { id: "nameStar", items: "star", available: true, length: 10 },
 ];

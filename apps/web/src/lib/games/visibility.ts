@@ -12,6 +12,7 @@ import {
   j2000ToHorizontalMatrix,
   type Observer,
 } from "@asteria/astro-core";
+import type { Vec3 } from "@asteria/astro-core";
 import type { ConstellationShape } from "./geometry";
 
 export const MIN_ALTITUDE = 20;
@@ -27,15 +28,31 @@ export function visibleTonight(
   date: Date,
   observer: Observer,
 ): Set<string> {
+  return upTonight(
+    Object.fromEntries(Object.values(shapes).map((s) => [s.abbr, s.centre])),
+    date,
+    observer,
+  );
+}
+
+/**
+ * The same for any directions (J2000 unit vectors) by key, e.g. stars by HIP number (#165): the
+ * keys of those at least MIN_ALTITUDE high during a dark hour of the coming 24 hours.
+ */
+export function upTonight(
+  directions: Readonly<Record<string, Vec3>>,
+  date: Date,
+  observer: Observer,
+): Set<string> {
   const visible = new Set<string>();
   const sinMin = Math.sin((MIN_ALTITUDE * Math.PI) / 180);
+  const entries = Object.entries(directions);
   for (let h = 0; h < 24; h++) {
     const t = new Date(date.getTime() + h * HOUR_MS);
     if (bodyPosition("Sun", t, observer).altitude > DARK_SUN) continue;
     const m = j2000ToHorizontalMatrix(t, observer);
-    for (const shape of Object.values(shapes))
-      if (!visible.has(shape.abbr) && applyMat3(m, shape.centre)[2] >= sinMin)
-        visible.add(shape.abbr);
+    for (const [key, dir] of entries)
+      if (!visible.has(key) && applyMat3(m, dir)[2] >= sinMin) visible.add(key);
   }
   return visible;
 }

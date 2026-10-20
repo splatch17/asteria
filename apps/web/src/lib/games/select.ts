@@ -10,6 +10,8 @@
  * - × VISIBLE_BOOST when the item is up in tonight's sky at the player's place.
  * At most `maxNew` new items per series while seen items remain, so that a returning player
  * reviews before discovering (all new on the first series, of course).
+ * With `newWindow`, only the first `newWindow` never-asked items of the pool, in the pool's order,
+ * can be drawn as new: a pool listed brightest first is then learnt brightest first (#165).
  */
 import type { Progress } from "./progress";
 import { pickWeighted, type Rng } from "./rng";
@@ -36,15 +38,21 @@ export interface SelectOptions {
   /** Item keys up tonight (preferred); empty: no preference. */
   visible?: ReadonlySet<string> | undefined;
   maxNew?: number;
+  /** New items are drawn among the first `newWindow` never-asked ones of the pool (pool order). */
+  newWindow?: number;
 }
 
 /** `count` distinct keys of `pool` (fewer if the pool is smaller), in draw order. */
 export function selectItems(
   pool: readonly string[],
   progress: Progress,
-  { count, now, rng, visible, maxNew = 4 }: SelectOptions,
+  { count, now, rng, visible, maxNew = 4, newWindow = Infinity }: SelectOptions,
 ): string[] {
-  const left = [...pool];
+  // The window grows when the series could not be filled otherwise (a first series).
+  const seen = pool.filter((k) => progress.items[k]).length;
+  const window = Math.max(newWindow, count - seen);
+  const eligibleNew = new Set(pool.filter((k) => !progress.items[k]).slice(0, window));
+  const left = pool.filter((k) => progress.items[k] || eligibleNew.has(k));
   const chosen: string[] = [];
   let fresh = 0;
   while (chosen.length < count && left.length) {
