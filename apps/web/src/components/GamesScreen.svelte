@@ -238,7 +238,7 @@
   {:else}
     <header class="head">
       <div>
-        <p class="meta">#05 // {$_("games.meta")}</p>
+        <p class="meta">{$_("games.meta")}</p>
         <h1 id="games-title">{$_("games.title")}</h1>
       </div>
       <button
@@ -259,13 +259,12 @@
         {/each}
       </div>
 
-      <section aria-labelledby="games-list">
-        <h2 id="games-list">#01 // {$_("games.section.games")}</h2>
+      <section class="panel-block" aria-labelledby="games-list">
+        <h2 class="panel-title" id="games-list">{$_("games.section.games")}</h2>
         <ul class="cards">
-          {#each GAMES as game, i (game.id)}
+          {#each GAMES as game (game.id)}
             <li class="card" class:soon={!game.available}>
               <div class="card-inner">
-                <span class="num" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
                 <div class="card-text">
                   <h3>{$_(`games.${game.id}.title`)}</h3>
                   <p>{$_(`games.${game.id}.hint`)}</p>
@@ -291,8 +290,8 @@
         {#if visible.size > 0}<p class="note">{$_("games.tonight")}</p>{/if}
       </section>
 
-      <section aria-labelledby="games-sky">
-        <h2 id="games-sky">#02 // {$_("games.section.sky")}</h2>
+      <section class="panel-block" aria-labelledby="games-sky">
+        <h2 class="panel-title" id="games-sky">{$_("games.section.sky")}</h2>
         <p class="summary">
           {$_("games.sky.summary", {
             values: {
@@ -367,8 +366,7 @@
     padding-bottom: 12px;
     border-bottom: 1px solid var(--ast-hairline);
   }
-  .meta,
-  h2 {
+  .meta {
     font: 500 9px/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
@@ -434,11 +432,10 @@
     background: var(--ast-fg);
   }
   section {
-    margin-top: 22px;
+    margin-top: var(--ast-panel-gap);
   }
-  h2 {
-    margin: 0 0 8px;
-    color: var(--ast-fg);
+  .levels + section {
+    margin-top: 16px;
   }
   ul {
     margin: 0;
@@ -466,11 +463,6 @@
     padding: 10px 12px;
     background: var(--ast-bg);
   }
-  .num {
-    align-self: flex-start;
-    font: 700 22px/1 var(--ast-font-display);
-    color: var(--ast-fg-muted);
-  }
   .card-text {
     flex: 1;
     min-width: 0;
@@ -493,8 +485,7 @@
     text-transform: uppercase;
     color: var(--ast-fg);
   }
-  .soon h3,
-  .soon .num {
+  .soon h3 {
     color: var(--ast-fg-muted);
   }
   .play {

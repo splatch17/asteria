@@ -197,7 +197,7 @@
 
 <div class="quiz">
   <GameHeader
-    meta={`#01 // ${$_("games.whichConstellation.title")}`}
+    meta={$_("games.whichConstellation.title")}
     results={answers.map((a) => a.correct)}
     total={series.length}
     {index}

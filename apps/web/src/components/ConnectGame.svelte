@@ -529,7 +529,7 @@
 
 <div class="connect">
   <GameHeader
-    meta={`#02 // ${$_("games.connectStars.title")}`}
+    meta={$_("games.connectStars.title")}
     results={results.map((r) => r.correct)}
     total={series.length}
     {index}

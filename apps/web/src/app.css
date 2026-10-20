@@ -42,6 +42,24 @@ body {
   background-repeat: no-repeat;
 }
 
+/* Panel (#171): one part of a screen or a sheet. A hairline and a faint ink wash, a short
+   title in spaced capitals, no number. Replaces the numbered « #01 // TITRE » labels. */
+.panel-block {
+  border: 1px solid var(--ast-panel-border);
+  background: var(--ast-panel-bg);
+  padding: var(--ast-panel-pad);
+}
+.panel-block + .panel-block {
+  margin-top: var(--ast-panel-gap);
+}
+.panel-title {
+  margin: 0 0 10px;
+  font: 500 10px/1.4 var(--ast-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ast-fg-muted);
+}
+
 /* Read by screen readers only. */
 .sr-only {
   position: absolute;

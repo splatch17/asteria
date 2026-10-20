@@ -1697,7 +1697,6 @@
 <SkyHeader
   bind:element={header}
   bind:height={headerHeight}
-  index={mode === "sky" ? "#02" : "#03"}
   title={mode === "sky" ? $_("map.title") : flying ? $_("space.title") : povTitle}
   place={placeName}
   loading={spaceLoading}
@@ -1863,7 +1862,7 @@
     onclose={() => (selection = null)}
   >
     {#snippet meta()}
-      {#if selected.bayer}{`${hipLabel(selected.hip)} // `}<Designation
+      {#if selected.bayer}{`${hipLabel(selected.hip)} · `}<Designation
           text={selected.bayer}
         />{:else}{hipLabel(selected.hip)}{/if}
     {/snippet}
@@ -1921,7 +1920,7 @@
     bottom={aboveControls}
     onclose={() => (selection = null)}
   >
-    {#snippet meta()}{info.type}{#if info.designations.length}{` // ${info.designations.join(
+    {#snippet meta()}{info.type}{#if info.designations.length}{` · ${info.designations.join(
           " · ",
         )}`}{/if}{/snippet}
   </InfoPanel>

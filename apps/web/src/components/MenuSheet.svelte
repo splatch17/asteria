@@ -682,8 +682,8 @@
   }
   h3 {
     margin: 12px 2px 6px;
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
+    font: 500 10px/1.4 var(--ast-font-mono);
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
@@ -804,11 +804,6 @@
     color: var(--ast-fg);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-  }
-  .r-label::before,
-  .r-idle::before {
-    content: "// ";
-    color: var(--ast-fg-muted);
   }
   .r-idle {
     opacity: 0.8;

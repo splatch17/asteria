@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Head of a game (#163, #164): its number and title, one square per round of the series
+  // Head of a game (#163, #164): its title (no number, #171), one square per round of the series
   // (inked when won, dithered when lost, outlined when to come), and the button that leaves.
   import { _ } from "@asteria/ui";
 
@@ -12,7 +12,7 @@
     progressLabel,
     onquit,
   }: {
-    /** « #01 // QUELLE CONSTELLATION ? » */
+    /** The game's title, « QUELLE CONSTELLATION ? » (#171: no number). */
     meta: string;
     /** Outcome of each round played so far. */
     results: readonly boolean[];
