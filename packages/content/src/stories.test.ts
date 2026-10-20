@@ -10,7 +10,9 @@ import {
 } from "./stories";
 import { CONSTELLATION_LATIN } from "./index";
 
-// Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia.
+// Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia (sources: Wikipédia + checks).
+// Issue #172: the games' Découverte list, then the other Ptolemaic constellations (sources: ancient
+// texts from the Perseus / First1KGreek repositories, Stellarium, catalogue data; see README).
 const IDS = [
   "Ari",
   "Tau",
@@ -27,6 +29,21 @@ const IDS = [
   "Ori",
   "UMa",
   "Cas",
+  // #172
+  "CMa",
+  "Car",
+  "Boo",
+  "Cen",
+  "Lyr",
+  "Aur",
+  "CMi",
+  "Eri",
+  "Aql",
+  "Cru",
+  "PsA",
+  "Cyg",
+  "UMi",
+  "Peg",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
@@ -46,7 +63,6 @@ describe.each(IDS)("constellation story %s", (id) => {
       expect(source.url).toMatch(/^https?:\/\//);
       expect(source.license).toBeTruthy();
     }
-    expect(story.sources.some((s) => s.url.startsWith("https://fr.wikipedia.org/"))).toBe(true);
   });
 
   it("has a non-empty story, in paragraphs without line breaks", () => {
@@ -119,11 +135,11 @@ describe("inlineSegments", () => {
 });
 
 describe("story loading", () => {
-  it("knows the 15 stories without loading them, all valid IAU abbreviations", () => {
+  it("knows the stories without loading them, all valid IAU abbreviations", () => {
     expect(storyIds("fr")).toEqual([...IDS].sort());
     for (const id of storyIds("fr")) expect(CONSTELLATION_LATIN[id]).toBeTruthy();
     expect(hasConstellationStory("fr", "Ori")).toBe(true);
-    expect(hasConstellationStory("fr", "And")).toBe(false);
+    expect(hasConstellationStory("fr", "Ant")).toBe(false);
   });
 
   it('excludes the README with a pattern relative to stories.ts (not "**/", see #67)', () => {
@@ -141,6 +157,6 @@ describe("story loading", () => {
     const ori = await loadConstellationStory("fr", "Ori");
     expect(ori?.id).toBe("Ori");
     expect(ori?.anecdotes).toHaveLength(3);
-    expect(await loadConstellationStory("fr", "And")).toBeNull();
+    expect(await loadConstellationStory("fr", "Ant")).toBeNull();
   });
 });
