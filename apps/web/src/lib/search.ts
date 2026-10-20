@@ -223,7 +223,7 @@ function sameTail(a: string, la: number, ia: number, b: string, lb: number, ib: 
  * A typo is tolerated from four characters, and never in a number: "M 31" must not list M 41 and
  * M 39, nor "58 Ori" 59 Ori (#101).
  */
-function typoAllowed(query: string): boolean {
+export function typoAllowed(query: string): boolean {
   return query.length >= 4 && !/\d/.test(query);
 }
 

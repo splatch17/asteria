@@ -28,6 +28,25 @@ Captures Chromium (SwiftShader), téléphone 360×780 @3x, build de production.
 | `mobile-relie-nuit.jpg` | Vision nocturne |
 | `mobile-relie-fin.jpg` | Fin de série : score sur 5, erreurs et indices de chaque figure |
 
+## « Nomme l'étoile » (#165)
+
+| Capture | Ce qu'elle montre |
+|---|---|
+| `mobile-apprendre-etoile.jpg` | Écran Apprendre : la carte « Nomme l'étoile » jouable |
+| `mobile-etoile-question.jpg` | Découverte : l'étoile dans le réticule, sa constellation mise en avant, 4 noms (d'autres constellations, proches dans le ciel) |
+| `mobile-etoile-reponse.jpg` | Mauvaise réponse : « C'est Bételgeuse. » et la fiche de l'étoile (nom, constellation, magnitude, rang d'éclat), « Voir dans le catalogue » |
+| `mobile-etoile-catalogue.jpg` | La page de la constellation ouverte depuis le jeu, l'étoile marquée |
+| `mobile-etoile-retour.jpg` | Retour au jeu, dans l'état laissé |
+| `mobile-etoile-amateur.jpg` | Amateur : les noms proposés viennent d'abord de la même constellation |
+| `mobile-etoile-juste.jpg` | Bonne réponse |
+| `mobile-etoile-expert.jpg` | Expert : le nom se tape |
+| `mobile-etoile-faute.jpg` | Une faute de frappe pardonnée : « Oui ! On écrit Arcturus. » |
+| `mobile-etoile-je-ne-sais-pas.jpg` | « Je ne sais pas » : la fiche s'affiche quand même |
+| `mobile-etoile-nuit.jpg` | Vision nocturne |
+| `mobile-etoile-fin.jpg` | Fin de série : chaque étoile avec sa constellation |
+
+Les distances n'apparaissent pas sur ces captures : la copie locale des données du conteneur est antérieure aux distances de référence (#75) ; l'application déployée les affiche (« DIST »).
+
 Captures prises avec `--disable-accelerated-2d-canvas` : dans le conteneur, Chromium avec SwiftShader représente parfois l'image précédente d'un canvas 2D vidé (problème du rendu logiciel, absent sans accélération 2D).
 
 La figure est placée au zénith d'un observateur fictif : nord en haut, est à gauche, comme sur une carte du ciel. Fermer les jeux rend la carte exactement comme elle était (vérifié par différence d'images avant/après).

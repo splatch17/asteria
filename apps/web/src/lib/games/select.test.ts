@@ -92,6 +92,30 @@ describe("selectItems", () => {
     }
   });
 
+  it("draws new items within the window, in pool order, widened to fill a first series", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const first = selectItems(POOL, emptyProgress(), {
+        count: 10,
+        now: T0,
+        rng: mulberry32(seed),
+        newWindow: 4,
+      });
+      expect(first).toHaveLength(10);
+      for (const k of first) expect(POOL.indexOf(k)).toBeLessThan(10);
+    }
+    let p: Progress = emptyProgress();
+    for (let i = 0; i < 10; i++) p = recordAnswer(p, POOL[i]!, true, T0);
+    for (let seed = 1; seed <= 20; seed++) {
+      const got = selectItems(POOL, p, {
+        count: 10,
+        now: T0 + 2 * 86_400_000,
+        rng: mulberry32(seed),
+        newWindow: 4,
+      });
+      for (const k of got.filter((k) => !p.items[k])) expect(POOL.indexOf(k)).toBeLessThan(14);
+    }
+  });
+
   it("prefers what is visible tonight", () => {
     const visible = new Set(POOL.slice(0, 15));
     let inSky = 0;

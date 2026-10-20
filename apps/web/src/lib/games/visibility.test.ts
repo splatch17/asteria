@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unitVector } from "@asteria/astro-core";
 import type { ConstellationShape } from "./geometry";
-import { visibleTonight } from "./visibility";
+import { upTonight, visibleTonight } from "./visibility";
 
 const shape = (abbr: string, ra: number, dec: number): ConstellationShape => ({
   abbr,
@@ -39,6 +39,15 @@ describe("visible tonight", () => {
     });
     expect(v.has("Cru")).toBe(true);
     expect(v.has("UMa")).toBe(false);
+  });
+
+  it("works for any direction, e.g. stars by HIP number", () => {
+    const v = upTonight(
+      { "91262": unitVector(279.23, 38.78), "30438": unitVector(95.99, -52.7) }, // Véga, Canopus
+      new Date("2026-10-19T17:00:00Z"),
+      { latitude: 48.85, longitude: 2.35 },
+    );
+    expect([...v]).toEqual(["91262"]);
   });
 
   it("prefers nothing when the night never gets dark (Svalbard, June)", () => {
