@@ -90,6 +90,13 @@ const IDS = [
   "Tel",
   "Mic",
   "Cae",
+  // #172 batch 2: Hevelius's northern additions
+  "Lyn",
+  "CVn",
+  "Sct",
+  "Vul",
+  "Sex",
+  "Lac",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
