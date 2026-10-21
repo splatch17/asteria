@@ -23,3 +23,5 @@ Wikipédia n'étant pas joignable depuis l'environnement de rédaction, ces fich
 - **données du catalogue d'Asteria** déjà documentées dans `docs/DATA_SOURCES.md` : magnitudes et positions Hipparcos, noms IAU WGSN, objets OpenNGC, distance de Deneb (Schiller & Przybilla 2008). Les rangs (« cinquième étoile la plus brillante »), séparations angulaires et hauteurs maximales sont calculés à partir de ces données ; les dates de passage du Soleil et les constellations voisines, avec `Constellation()` d'astronomy-engine 2.1.19 (frontières officielles, Roman 1987).
 
 Une constellation sans mythe dans ces sources le dit (ex. `CMi.md`, `Cru.md`) plutôt que d'en inventer un.
+
+Pour les constellations modernes (lot 2 de #172), l'« Histoire » est celle de leur création, d'après des ouvrages du domaine public du Project Gutenberg lus dans les miroirs GitHub GITenberg à un commit épinglé (Stevenson 1921, Blake 1877, Gore 1909, Berry 1899, Olcott 1914, Proctor) ; ces livres anciens se contredisent parfois sur les attributions : une attribution n'est écrite que si les sources concordent, ou citée avec son auteur. Liste et commits : `docs/DATA_SOURCES.md`.

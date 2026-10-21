@@ -97,6 +97,7 @@ const IDS = [
   "Vul",
   "Sex",
   "Lac",
+  "Col",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
