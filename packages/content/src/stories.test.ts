@@ -65,6 +65,22 @@ const IDS = [
   "Ara",
   "Lup",
   "CrA",
+  // #172 batch 2: Coma, the rest of Argo, the southern birds and animals of the navigators
+  "Com",
+  "Pup",
+  "Vel",
+  "Aps",
+  "Cha",
+  "Dor",
+  "Gru",
+  "Hyi",
+  "Ind",
+  "Mus",
+  "Pav",
+  "Phe",
+  "TrA",
+  "Tuc",
+  "Vol",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
