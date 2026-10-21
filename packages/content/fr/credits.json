@@ -185,8 +185,8 @@
     {
       "id": "stories",
       "name": "Histoires et anecdotes des constellations",
-      "role": "Textes reformulés à partir de Wikipédia et, depuis #172, des textes antiques (Aratos, Hésiode, Homère, Apollodore, Ovide, Hipparque, Ptolémée) des bibliothèques numériques Perseus et First1KGreek ; chaque fiche cite ses propres sources. Ces textes sont diffusés sous la même licence.",
-      "author": "Contributeurs de Wikipédia ; Perseus Digital Library (Tufts University) ; Open Greek and Latin (First1KGreek) ; rédaction Asteria",
+      "role": "Textes reformulés à partir de Wikipédia et, depuis #172, des textes antiques (Aratos, Hésiode, Homère, Apollodore, Ovide, Hipparque, Ptolémée) des bibliothèques numériques Perseus et First1KGreek, et d'ouvrages anciens du domaine public (Project Gutenberg) pour les constellations modernes ; chaque fiche cite ses propres sources. Ces textes sont diffusés sous la même licence.",
+      "author": "Contributeurs de Wikipédia ; Perseus Digital Library (Tufts University) ; Open Greek and Latin (First1KGreek) ; ouvrages du domaine public du Project Gutenberg (miroirs GITenberg) ; rédaction Asteria",
       "notice": "Sources détaillées dans chaque fiche de constellation.",
       "license": "CC BY-SA 4.0",
       "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",

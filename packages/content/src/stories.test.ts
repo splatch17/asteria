@@ -65,6 +65,39 @@ const IDS = [
   "Ara",
   "Lup",
   "CrA",
+  // #172 batch 2: Coma, the rest of Argo, the southern birds and animals of the navigators
+  "Com",
+  "Pup",
+  "Vel",
+  "Aps",
+  "Cha",
+  "Dor",
+  "Gru",
+  "Hyi",
+  "Ind",
+  "Mus",
+  "Pav",
+  "Phe",
+  "TrA",
+  "Tuc",
+  "Vol",
+  // #172 batch 2: Lacaille's instruments
+  "Scl",
+  "For",
+  "Ant",
+  "Hor",
+  "Cir",
+  "Tel",
+  "Mic",
+  "Cae",
+  // #172 batch 2: Hevelius's northern additions
+  "Lyn",
+  "CVn",
+  "Sct",
+  "Vul",
+  "Sex",
+  "Lac",
+  "Col",
 ] as const;
 
 const DIR = new URL("../fr/constellations/", import.meta.url);
@@ -174,7 +207,7 @@ describe("story loading", () => {
     expect(storyIds("fr")).toEqual([...IDS].sort());
     for (const id of storyIds("fr")) expect(CONSTELLATION_LATIN[id]).toBeTruthy();
     expect(hasConstellationStory("fr", "Ori")).toBe(true);
-    expect(hasConstellationStory("fr", "Ant")).toBe(false);
+    expect(hasConstellationStory("fr", "Pyx")).toBe(false);
   });
 
   it('excludes the README with a pattern relative to stories.ts (not "**/", see #67)', () => {
@@ -192,6 +225,6 @@ describe("story loading", () => {
     const ori = await loadConstellationStory("fr", "Ori");
     expect(ori?.id).toBe("Ori");
     expect(ori?.anecdotes).toHaveLength(3);
-    expect(await loadConstellationStory("fr", "Ant")).toBeNull();
+    expect(await loadConstellationStory("fr", "Pyx")).toBeNull();
   });
 });

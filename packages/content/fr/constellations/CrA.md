@@ -27,4 +27,4 @@ Aucun des textes anciens que nous avons lus ne raconte à qui appartenait cette 
 
 - Ptolémée comptait 13 étoiles dans la Couronne australe, aucune plus brillante que la quatrième grandeur.
 - Ses étoiles sont faibles : la plus brillante n'atteint que la magnitude 4,10 dans le catalogue Hipparcos, et sa voisine Meridiana, la seule à porter un nom officiel dans notre catalogue, a une magnitude de 4,11.
-- Avec une déclinaison d'environ −37° à −42°, la Couronne australe reste basse vue de Paris : ses principales étoiles ne montent pas à plus de 14° au-dessus de l'horizon sud.
+- Avec une déclinaison d'environ −37° à −42°, la Couronne australe frôle l'horizon sud vue de Paris : ses principales étoiles n'y montent pas à plus de 4°, et la plus australe ne se lève même pas.
