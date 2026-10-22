@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applyMat3 } from "@asteria/astro-core";
 import {
+  cornerAngle,
+  fovForCornerAngle,
+  limitView,
   panView,
   projectStereo,
   stereoScale,
@@ -117,5 +120,55 @@ describe("panView (#152)", () => {
     expect(v.altitude).toBeCloseTo(70, 6);
     expect(v.azimuth).toBeCloseTo(180, 6);
     expect(Math.abs(v.roll ?? 0)).toBeLessThan(1e-6);
+  });
+});
+
+describe("limitView (#183)", () => {
+  const limits = { minFov: 20, maxFov: 120, zenithReach: 84 };
+
+  it("keeps the field within its range", () => {
+    const wide: ViewState = { azimuth: 180, altitude: 90, fov: 200 };
+    limitView(wide, 0.9, limits);
+    expect(wide.fov).toBe(120);
+    const narrow: ViewState = { azimuth: 180, altitude: 90, fov: 5 };
+    limitView(narrow, 0.9, limits);
+    expect(narrow.fov).toBe(20);
+  });
+
+  it("keeps the corners within the zenith cap", () => {
+    for (const fov of [20, 60, 100, 120]) {
+      const view: ViewState = { azimuth: 30, altitude: 0, fov };
+      limitView(view, 0.9, limits);
+      expect(90 - view.altitude + cornerAngle(view.fov, 0.9)).toBeLessThanOrEqual(84 + 1e-9);
+      expect(view.azimuth).toBe(30);
+    }
+  });
+
+  it("leaves a view inside the cap alone", () => {
+    const view: ViewState = { azimuth: 10, altitude: 80, fov: 40, roll: 12 };
+    limitView(view, 0.9, limits);
+    expect(view).toEqual({ azimuth: 10, altitude: 80, fov: 40, roll: 12 });
+  });
+
+  it("pins a field wider than the cap at the zenith", () => {
+    const view: ViewState = { azimuth: 10, altitude: 70, fov: 150 };
+    limitView(view, 0.9, { minFov: 20, maxFov: 150, zenithReach: 84 });
+    expect(view.altitude).toBe(90);
+  });
+
+  it("has no altitude bound without a cap", () => {
+    const view: ViewState = { azimuth: 10, altitude: -20, fov: 60 };
+    limitView(view, 0.9, { minFov: 20, maxFov: 120 });
+    expect(view.altitude).toBe(-20);
+  });
+});
+
+describe("fovForCornerAngle", () => {
+  it("inverts cornerAngle", () => {
+    for (const aspect of [0.46, 0.9, 1, 1.6])
+      for (const angle of [10, 45, 84, 120]) {
+        const fov = fovForCornerAngle(angle, aspect);
+        expect(cornerAngle(fov, aspect)).toBeCloseTo(angle, 9);
+      }
   });
 });
