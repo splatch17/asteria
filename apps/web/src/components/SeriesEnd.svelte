@@ -12,6 +12,9 @@
     results,
     nameOf,
     detail,
+    of,
+    scoreLabel,
+    recordLabel,
     onreplay,
     onquit,
   }: {
@@ -22,6 +25,10 @@
     nameOf: (item: string) => string;
     /** Short extra line per round (errors, hints), or nothing. */
     detail?: ((index: number) => string) | undefined;
+    /** Points games (#184): text after the big score (default « /total »), spoken score, record. */
+    of?: string | undefined;
+    scoreLabel?: string | undefined;
+    recordLabel?: string | undefined;
     onreplay: () => void;
     onquit: () => void;
   } = $props();
@@ -34,14 +41,14 @@
   <h2 id="series-end-title" tabindex="-1" bind:this={title}>{$_("quiz.end.title")}</h2>
   <p class="score">
     <span class="big" aria-hidden="true">{score}</span><span class="of" aria-hidden="true"
-      >/{total}</span
+      >{of ?? `/${total}`}</span
     >
-    <span class="sr-only">{$_("quiz.end.score", { values: { score, total } })}</span>
+    <span class="sr-only">{scoreLabel ?? $_("quiz.end.score", { values: { score, total } })}</span>
   </p>
   <p class="record">
     {score > previousBest
       ? $_("quiz.end.newBest")
-      : $_("quiz.end.best", { values: { best: previousBest, total } })}
+      : (recordLabel ?? $_("quiz.end.best", { values: { best: previousBest, total } }))}
   </p>
   <h3>{$_("quiz.end.list")}</h3>
   <ul class="results">

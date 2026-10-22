@@ -14,10 +14,13 @@ export interface GameEntry {
   length: number;
   /** Ticket of a game to come. */
   ticket?: number;
+  /** Scored in points (#184), not in right answers: the record reads « N points ». */
+  points?: boolean;
 }
 
 export const GAMES: readonly GameEntry[] = [
   { id: "whichConstellation", items: "con", available: true, length: 10 },
-  { id: "connectStars", items: "con", available: true, length: 5 },
+  // « Où est-elle ? » (#184) replaces « Relie les étoiles » (#164): its stored stats are ignored.
+  { id: "whereIsIt", items: "con", available: true, length: 10, points: true },
   { id: "nameStar", items: "star", available: true, length: 10 },
 ];
