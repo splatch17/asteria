@@ -8,6 +8,7 @@ pip install -r requirements.txt
 python build_stars.py          # → out/ (+ raw/ en cache)
 python build_star_names_fr.py  # → ../content/fr/star-names.json (versionné ; IAU + Wikidata)
 python -I build_deepsky.py     # → out/deepsky.json (ciel profond, OpenNGC v20260501, #100)
+python -I build_bounds.py      # → ../astro-core/src/data/constellation-bounds.json (versionné ; frontières IAU en B1875, d3-celestial, #184)
 ```
 
 Vue Terre : `python build_earth.py` (côtes, relief, lumières → `out/earth/`) et

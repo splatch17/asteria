@@ -257,12 +257,13 @@
       ctx.globalAlpha = 1;
       ctx.lineWidth = 2;
       ctx.stroke();
+      label(right.inner, nameOf(target), true);
+      if (wrong && current?.tapped) label(wrong.inner, nameOf(current.tapped), false);
+      // The tap itself, over the names.
       if (tap) {
         const p = screenOf(tap);
         if (p) cross(p[0], p[1]);
       }
-      label(right.inner, nameOf(target), true);
-      if (wrong && current?.tapped) label(wrong.inner, nameOf(current.tapped), false);
     }
     ctx.globalAlpha = 1;
   }
@@ -390,6 +391,13 @@
     status = bounds ? $_("where.ask") : loadError ? $_("where.loadError") : $_("where.loading");
     askedAt = performance.now();
     asked++;
+    // Captures (`?seed=`): the target somewhere in view (not centred), for the scripted tap.
+    const p = CAPTURE && map && target ? place(target) : null;
+    if (p && map) {
+      const here = map.directionAt(stage.clientWidth / 2, stage.clientHeight / 2);
+      const away = angleBetween(here, p.inner);
+      if (away > 25) aimAt(map, slerp(p.inner, here, 25 / away), date, 0, map.view.fov);
+    }
     drawCard();
     draw();
   }
