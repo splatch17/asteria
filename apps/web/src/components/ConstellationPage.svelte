@@ -4,7 +4,8 @@
   // north up, as in the quiz (#163). A tap on a star shows its name and a few data in a small
   // panel; the main stars below do the same. Then the facts (best evening period, how high it
   // climbs from the user's place, tonight), the story and anecdotes when written (#61, #172), and
-  // the sources. The picture takes no pan or zoom: the page scrolls over it.
+  // the sources. The picture takes no pan or zoom: the page scrolls over it. Given the list it
+  // belongs to, the page turns to the neighbouring constellations (swipe, chevrons, ← / →, #186).
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import {
@@ -33,7 +34,9 @@
   } from "../lib/catalogue";
   import { screenFraction } from "../lib/constellation";
   import { starDistance, type StarDistanceFields } from "../lib/format";
+  import type { CatalogueEntry } from "../lib/catalogue";
   import { framingFov, zenithObserver, type ConstellationShape } from "../lib/games/geometry";
+  import CataloguePager from "./CataloguePager.svelte";
   import Designation from "./Designation.svelte";
   import Icon from "./Icon.svelte";
   import StoryPanels from "./StoryPanels.svelte";
@@ -54,6 +57,8 @@
     placeName,
     tonight,
     initialStar = null,
+    sequence = [],
+    onturn = () => {},
     onback,
     onclose,
   }: {
@@ -76,6 +81,10 @@
     tonight: boolean;
     /** HIP of a star to show at once (coming from its sheet on the map). */
     initialStar?: number | null;
+    /** The catalogue list the page belongs to (lib/catalogue-nav pageSequence): none, no turning. */
+    sequence?: readonly CatalogueEntry[];
+    /** Shows the neighbouring page `abbr` (and marks it consulted, as the list does). */
+    onturn?: (abbr: string) => void;
     onback: () => void;
     onclose: () => void;
   } = $props();
@@ -228,131 +237,133 @@
   });
 </script>
 
-<div class="page">
-  <header class="head">
-    <button
-      class="icon"
-      bind:this={backButton}
-      onclick={onback}
-      aria-label={$_("catalogue.back")}
-      title={$_("catalogue.back")}>←</button
-    >
-    <div class="titles">
-      <!-- Names the Apprendre dialog (aria-labelledby). -->
-      <h1 id="games-title">{name}</h1>
-      <p class="latin"><i lang="la">{latin}</i></p>
-    </div>
-    <button
-      class="icon"
-      onclick={onclose}
-      aria-label={$_("catalogue.close")}
-      title={$_("catalogue.close")}>×</button
-    >
-  </header>
-
-  <div class="scroll">
-    <!-- The picture: taps only (the canvases take no input), so the page scrolls over it. The
-         same stars are buttons in « Étoiles principales » for the keyboard and screen readers. -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-    <div
-      class="stage"
-      class:gone={noSky}
-      bind:this={stage}
-      onclick={ontap}
-      role="group"
-      aria-label={$_("catalogue.sky", { values: { name } })}
-    >
-      <canvas bind:this={canvas} aria-hidden="true"></canvas>
-      <canvas bind:this={overlay} class="overlay" aria-hidden="true"></canvas>
+<CataloguePager {sequence} {abbr} {onturn}>
+  <div class="page">
+    <header class="head">
       <button
-        class="chip"
-        aria-pressed={showFigure}
-        title={$_("catalogue.figure.hint")}
-        onclick={(e) => {
-          e.stopPropagation();
-          toggleFigure();
-        }}><Icon name="figures" size={14} />{$_("catalogue.figure")}</button
+        class="icon"
+        bind:this={backButton}
+        onclick={onback}
+        aria-label={$_("catalogue.back")}
+        title={$_("catalogue.back")}>←</button
       >
-    </div>
-    {#if !noSky}
-      <div class="slot" role="status">
-        {#if selected}
-          {@const s = selected}
-          <!-- The star touched: a small panel under the picture, in the place of the hint. -->
-          <div class="star panel-block">
-            <p class="s-meta">
-              {#if s.bayer}<Designation text={s.bayer} /> ·
-              {/if}{$_("star.hip", {
-                values: { hip: s.hip },
-              })}{#if s.con !== abbr}
-                · {$_("catalogue.star.in", { values: { name: names[s.con] ?? s.con } })}{/if}
-            </p>
-            <p class="s-name"><Designation text={starLabel(s)} /></p>
-            <dl>
-              <dt>{$_("data.v")}</dt>
-              <dd>{s.v.toFixed(2)}</dd>
-              <dt>{$_("data.dist")}</dt>
-              <dd>{distance}</dd>
-            </dl>
-            <button
-              class="s-close"
-              onclick={() => showStar(null)}
-              aria-label={$_("catalogue.star.close")}
-              title={$_("catalogue.star.close")}>×</button
-            >
-          </div>
-        {:else}
-          <p class="hint">{$_("catalogue.tapHint")}</p>
-        {/if}
+      <div class="titles">
+        <!-- Names the Apprendre dialog (aria-labelledby). -->
+        <h1 id="games-title">{name}</h1>
+        <p class="latin"><i lang="la">{latin}</i></p>
       </div>
-    {/if}
+      <button
+        class="icon"
+        onclick={onclose}
+        aria-label={$_("catalogue.close")}
+        title={$_("catalogue.close")}>×</button
+      >
+    </header>
 
-    <section class="panel-block" aria-labelledby={`${titleId}-facts`}>
-      <h2 class="panel-title" id={`${titleId}-facts`}>{$_("catalogue.facts")}</h2>
-      <dl class="facts">
-        <dt>{$_("catalogue.best")}</dt>
-        <dd>{$_("catalogue.bestValue", { values: { month } })}</dd>
-        <dt>{$_("catalogue.height", { values: { place: placeName } })}</dt>
-        <dd>
-          {$_(`catalogue.height.${height.kind}`, {
-            values: { alt: Math.round(height.maxAltitude) },
-          })}
-        </dd>
-        {#if height.kind !== "never"}
-          <dt>{$_("catalogue.tonight")}</dt>
-          <dd>{tonight ? $_("catalogue.tonight.yes") : $_("catalogue.tonight.no")}</dd>
-        {/if}
-        <dt>{$_("constellation.abbr")}</dt>
-        <dd>{abbr}</dd>
-      </dl>
-    </section>
+    <div class="scroll">
+      <!-- The picture: taps only (the canvases take no input), so the page scrolls over it. The
+         same stars are buttons in « Étoiles principales » for the keyboard and screen readers. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <div
+        class="stage"
+        class:gone={noSky}
+        bind:this={stage}
+        onclick={ontap}
+        role="group"
+        aria-label={$_("catalogue.sky", { values: { name } })}
+      >
+        <canvas bind:this={canvas} aria-hidden="true"></canvas>
+        <canvas bind:this={overlay} class="overlay" aria-hidden="true"></canvas>
+        <button
+          class="chip"
+          aria-pressed={showFigure}
+          title={$_("catalogue.figure.hint")}
+          onclick={(e) => {
+            e.stopPropagation();
+            toggleFigure();
+          }}><Icon name="figures" size={14} />{$_("catalogue.figure")}</button
+        >
+      </div>
+      {#if !noSky}
+        <div class="slot" role="status">
+          {#if selected}
+            {@const s = selected}
+            <!-- The star touched: a small panel under the picture, in the place of the hint. -->
+            <div class="star panel-block">
+              <p class="s-meta">
+                {#if s.bayer}<Designation text={s.bayer} /> ·
+                {/if}{$_("star.hip", {
+                  values: { hip: s.hip },
+                })}{#if s.con !== abbr}
+                  · {$_("catalogue.star.in", { values: { name: names[s.con] ?? s.con } })}{/if}
+              </p>
+              <p class="s-name"><Designation text={starLabel(s)} /></p>
+              <dl>
+                <dt>{$_("data.v")}</dt>
+                <dd>{s.v.toFixed(2)}</dd>
+                <dt>{$_("data.dist")}</dt>
+                <dd>{distance}</dd>
+              </dl>
+              <button
+                class="s-close"
+                onclick={() => showStar(null)}
+                aria-label={$_("catalogue.star.close")}
+                title={$_("catalogue.star.close")}>×</button
+              >
+            </div>
+          {:else}
+            <p class="hint">{$_("catalogue.tapHint")}</p>
+          {/if}
+        </div>
+      {/if}
 
-    <section class="panel-block" aria-labelledby={`${titleId}-stars`}>
-      <h2 class="panel-title" id={`${titleId}-stars`}>{$_("catalogue.stars")}</h2>
-      <ul class="stars">
-        {#each listed as s (s.hip)}
-          <li>
-            <button
-              class="s-row"
-              aria-pressed={selected?.hip === s.hip}
-              onclick={() => fromList(s)}
-            >
-              <span class="s-label"><Designation text={starLabel(s)} /></span>
-              {#if s.name && s.bayer}<span class="s-bayer"><Designation text={s.bayer} /></span
-                >{/if}
-              <span class="s-v">V {s.v.toFixed(1)}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </section>
+      <section class="panel-block" aria-labelledby={`${titleId}-facts`}>
+        <h2 class="panel-title" id={`${titleId}-facts`}>{$_("catalogue.facts")}</h2>
+        <dl class="facts">
+          <dt>{$_("catalogue.best")}</dt>
+          <dd>{$_("catalogue.bestValue", { values: { month } })}</dd>
+          <dt>{$_("catalogue.height", { values: { place: placeName } })}</dt>
+          <dd>
+            {$_(`catalogue.height.${height.kind}`, {
+              values: { alt: Math.round(height.maxAltitude) },
+            })}
+          </dd>
+          {#if height.kind !== "never"}
+            <dt>{$_("catalogue.tonight")}</dt>
+            <dd>{tonight ? $_("catalogue.tonight.yes") : $_("catalogue.tonight.no")}</dd>
+          {/if}
+          <dt>{$_("constellation.abbr")}</dt>
+          <dd>{abbr}</dd>
+        </dl>
+      </section>
 
-    {#if story}
-      <StoryPanels {story} heading="h2" />
-    {/if}
-    <p class="data-sources">{$_("catalogue.dataSources")}</p>
+      <section class="panel-block" aria-labelledby={`${titleId}-stars`}>
+        <h2 class="panel-title" id={`${titleId}-stars`}>{$_("catalogue.stars")}</h2>
+        <ul class="stars">
+          {#each listed as s (s.hip)}
+            <li>
+              <button
+                class="s-row"
+                aria-pressed={selected?.hip === s.hip}
+                onclick={() => fromList(s)}
+              >
+                <span class="s-label"><Designation text={starLabel(s)} /></span>
+                {#if s.name && s.bayer}<span class="s-bayer"><Designation text={s.bayer} /></span
+                  >{/if}
+                <span class="s-v">V {s.v.toFixed(1)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+
+      {#if story}
+        <StoryPanels {story} heading="h2" />
+      {/if}
+      <p class="data-sources">{$_("catalogue.dataSources")}</p>
+    </div>
   </div>
-</div>
+</CataloguePager>
 
 <style>
   .page {
@@ -429,6 +440,8 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* Scrolls and zooms; a sideways swipe turns the page (CataloguePager). */
+    touch-action: pan-y pinch-zoom;
     padding-top: 12px;
     padding-bottom: max(20px, env(safe-area-inset-bottom));
   }
