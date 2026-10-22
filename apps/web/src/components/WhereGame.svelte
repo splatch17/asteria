@@ -25,13 +25,14 @@
     type Vec3,
   } from "@asteria/astro-core";
   import {
+    fovForCornerAngle,
     inkPattern,
     type CatalogStar,
     type FigureLevel,
     type SkyMap,
     type SkyTheme,
   } from "@asteria/sky-renderer";
-  import { aimAt, createGameSky, gameTheme, recentre } from "../lib/games/game-sky";
+  import { ZENITH_REACH, aimAt, createGameSky, gameTheme, recentre } from "../lib/games/game-sky";
   import { angleBetween, framingFov } from "../lib/games/geometry";
   import type { ItemResult } from "../lib/games/results";
   import type { Grade } from "../lib/games/srs";
@@ -83,9 +84,17 @@
     onquit: () => void;
   } = $props();
 
-  /** Field of a new question (degrees), and the widest allowed (the corners stay above ground). */
+  /** Field of a new question (degrees), at most; the narrowest the player may zoom to. */
   const START_FOV = 110;
-  const MAX_FOV = 150;
+  const MIN_FOV = 8;
+  /** Widest field: the screen's corners stay within ZENITH_REACH of the zenith (#183). */
+  let maxFov = 140;
+  function setLimits() {
+    if (!map) return;
+    const aspect = stage.clientWidth / Math.max(1, stage.clientHeight);
+    maxFov = fovForCornerAngle(ZENITH_REACH, aspect);
+    map.setViewLimits({ minFov: MIN_FOV, maxFov });
+  }
   /** A tap: one finger, moved less than this (px), lifted within TAP_MS. */
   const TAP_PX = 8;
   const TAP_MS = 600;
@@ -137,6 +146,8 @@
   let allScreen: Float32Array = new Float32Array(0);
   /** Start index (in points) of each ring in allDirs. */
   let allRings: number[] = [];
+  // A cache read by the drawing only: no reactivity needed.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const places = new Map<string, AreaPlace>();
   function place(abbr: string): AreaPlace | null {
     if (!bounds) return null;
@@ -306,8 +317,7 @@
   /** After each map frame: keep the zenith at the centre, bound the field, redraw the areas. */
   function onView() {
     if (!map) return;
-    if (map.view.fov > MAX_FOV) map.setView({ fov: MAX_FOV });
-    if (!flight && map.view.altitude < 80)
+    if (!flight && map.view.altitude < 89.5)
       recentre(map, date, stage.clientWidth, stage.clientHeight);
     draw();
     if (CAPTURE) exposeTarget();
@@ -361,7 +371,7 @@
         ...p.outline.flat().map((q) => angleBetween(centre, q)),
       );
     }
-    const fov = Math.min(MAX_FOV, Math.max(30, framingFov(radius, aspect, 0.85, 30)));
+    const fov = Math.min(maxFov, Math.max(30, framingFov(radius, aspect, 0.85, 30)));
     flyTo(centre, fov);
   }
 
@@ -375,7 +385,8 @@
     shown = null;
     map?.setSelectedConstellation(null);
     map?.setSelectedNameShown(false);
-    if (map && map.view.fov < START_FOV) map.setView({ fov: START_FOV });
+    if (map && map.view.fov < Math.min(START_FOV, maxFov))
+      map.setView({ fov: Math.min(START_FOV, maxFov) });
     status = bounds ? $_("where.ask") : loadError ? $_("where.loadError") : $_("where.loading");
     askedAt = performance.now();
     asked++;
@@ -442,6 +453,8 @@
 
   // --- taps (the map pans and zooms by itself; a short still touch is a tap)
 
+  // Pointer bookkeeping, never read by the markup.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const touches = new Map<number, { x: number; y: number; t: number; moved: boolean }>();
   let multi = false;
   function point(e: PointerEvent): [number, number] {
@@ -559,15 +572,17 @@
       onViewChange: () => onView(),
     });
     sizeAreas();
+    setLimits();
     if (map) {
       // The player's zenith at the app's date: the sky they know, to start from.
       const m = j2000ToHorizontalMatrix(date, observer);
-      aimAt(map, [m[6], m[7], m[8]], date, 0, START_FOV);
+      aimAt(map, [m[6], m[7], m[8]], date, 0, Math.min(START_FOV, maxFov));
     }
     ask();
     void load();
     const resize = new ResizeObserver(() => {
       sizeAreas();
+      setLimits();
       draw();
     });
     resize.observe(stage);
@@ -699,10 +714,8 @@
             <Icon name="play" size={10} />
           </button>
         {:else}
-          <button
-            bind:this={giveUpButton}
-            disabled={!bounds}
-            onclick={() => answer(null)}>{$_("where.giveUp")}</button
+          <button bind:this={giveUpButton} disabled={!bounds} onclick={() => answer(null)}
+            >{$_("where.giveUp")}</button
           >
         {/if}
       </div>

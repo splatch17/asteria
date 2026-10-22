@@ -1,8 +1,10 @@
 <script lang="ts">
   // Apprendre screen (#163, #164, #165, #170): the catalogue of the constellations, the games, the
-  // player's level and « Ton ciel », the constellations learnt so far as a grid of cards inked by
-  // mastery (1-bit dither: none, light, half, full). Opens over the whole app (the map stops under
-  // it) and closes back to it as it was. A game (QuizGame, WhereGame, NameStarGame), the
+  // player's level and « Ton ciel », the constellations learnt so far as a grid of cells filled by
+  // mastery (1-bit dither: none, a third in dots, half in checkerboard, full). Catalogue and games
+  // are cards with a vignette (#185); a game's card comes from its `GAMES` entry. Opens over the
+  // whole app (the map stops under it) and closes back to it as it was. A game (QuizGame, WhereGame,
+  // NameStarGame), the
   // catalogue and a constellation's page are shown in the same dialog, so that Escape and focus
   // stay in one place. The constellation games feed the same memory of each constellation
   // (`con:XXX`), « Nomme l'étoile » that of each star (`star:HIP`). Opened from the map on a
@@ -45,7 +47,7 @@
     type Answer,
     type Question,
   } from "../lib/games/which-constellation";
-  import { GAME_ID as WHERE_ID, buildWhereSeries } from "../lib/games/where-is-it";
+  import { GAME_ID as WHERE_ID, MAX_POINTS, buildWhereSeries } from "../lib/games/where-is-it";
   import type { Grade } from "../lib/games/srs";
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
@@ -55,6 +57,9 @@
   import NameStarGame from "./NameStarGame.svelte";
   import QuizGame from "./QuizGame.svelte";
   import WhereGame from "./WhereGame.svelte";
+  import Vignette from "./Vignette.svelte";
+  import type { IconName } from "../lib/icons";
+  import type { Mastery } from "../lib/games/srs";
 
   let {
     stars,
@@ -86,6 +91,25 @@
   } = $props();
 
   const LEVELS: readonly FigureLevel[] = ["discovery", "amateur", "expert"];
+  /** « Ton ciel » counts, best known first. */
+  const MASTERY: readonly Mastery[] = ["mastered", "known", "learning", "new"];
+
+  /** A card of the screen (#185): the catalogue or a game (one entry of `GAMES` each). */
+  interface Card {
+    /** Vignette and element ids: `catalogue` or the game id. */
+    id: string;
+    title: string;
+    pitch: string;
+    /** Record or progress line; empty for a game to come. */
+    meta: string;
+    /** Gauge: `value` of `total` inked (best score, constellations seen). */
+    value: number;
+    total: number;
+    icon: IconName;
+    action: string;
+    /** Null for a game to come (« Bientôt »). */
+    onclick: (() => void) | null;
+  }
   const params = new URLSearchParams(location.search);
   const urlLevel = params.get("level");
   let level = $state<FigureLevel>(
@@ -396,9 +420,7 @@
     />
   {:else}
     <header class="head">
-      <div>
-        <h1 id="games-title">{$_("learn.title")}</h1>
-      </div>
+      <h1 id="games-title">{$_("learn.title")}</h1>
       <button
         class="close"
         bind:this={closeButton}
@@ -417,89 +439,126 @@
         {/each}
       </div>
 
-      <section class="panel-block" aria-labelledby="learn-catalogue">
-        <h2 class="panel-title" id="learn-catalogue">{$_("catalogue.title")}</h2>
-        <div class="entry">
-          <div class="card-text">
-            <h3>{$_("learn.catalogue.title")}</h3>
-            <p>{$_("learn.catalogue.hint")}</p>
-            <p class="best">
-              {$_("learn.catalogue.seen", { values: { seen: seenCount, total: entries.length } })}
-            </p>
-          </div>
-          <button class="play" data-learn="catalogue" onclick={() => (catalogueOpen = true)}>
-            <Icon name="catalogue" size={12} />{$_("learn.catalogue.open")}
-          </button>
-        </div>
+      <section class="group" aria-labelledby="learn-catalogue">
+        <h2 class="group-title" id="learn-catalogue">{$_("catalogue.title")}</h2>
+        <ul class="cards">
+          {@render card({
+            id: "catalogue",
+            title: $_("learn.catalogue.title"),
+            pitch: $_("learn.catalogue.hint"),
+            meta: $_("learn.catalogue.seen", {
+              values: { seen: seenCount, total: entries.length },
+            }),
+            value: seenCount,
+            total: entries.length,
+            icon: "catalogue",
+            action: $_("learn.catalogue.open"),
+            onclick: () => (catalogueOpen = true),
+          })}
+        </ul>
       </section>
 
-      <section class="panel-block" aria-labelledby="games-list">
-        <h2 class="panel-title" id="games-list">{$_("games.section.games")}</h2>
+      <section class="group" aria-labelledby="games-list">
+        <h2 class="group-title" id="games-list">{$_("games.section.games")}</h2>
         <ul class="cards">
           {#each GAMES as game (game.id)}
-            <li class="card" class:soon={!game.available}>
-              <div class="card-inner">
-                <div class="card-text">
-                  <h3>{$_(`games.${game.id}.title`)}</h3>
-                  <p>{$_(`games.${game.id}.hint`)}</p>
-                  {#if game.available && bestOf(game.id) > 0}
-                    <p class="best">
-                      {game.points
-                        ? $_("games.bestPoints", { values: { score: bestOf(game.id) } })
-                        : $_("games.best", {
-                            values: { score: bestOf(game.id), total: game.length },
-                          })}
-                    </p>
-                  {/if}
-                </div>
-                {#if game.available}
-                  <button class="play" data-game={game.id} onclick={() => play(game.id)}>
-                    <Icon name="play" size={12} />{$_("games.play")}
-                  </button>
-                {:else}
-                  <span class="tag">{$_("games.soon")}</span>
-                {/if}
-              </div>
-            </li>
+            {@const best = bestOf(game.id)}
+            {@render card({
+              id: game.id,
+              title: $_(`games.${game.id}.title`),
+              pitch: $_(`games.${game.id}.hint`),
+              meta: !game.available
+                ? ""
+                : best > 0
+                  ? game.points
+                    ? $_("games.bestPoints", { values: { score: best } })
+                    : $_("games.best", { values: { score: best, total: game.length } })
+                  : $_("games.noRecord"),
+              // Points games (#184): one square per MAX_POINTS of the record.
+              value: game.points ? Math.round(best / MAX_POINTS) : best,
+              total: game.length,
+              icon: "play",
+              action: $_("games.play"),
+              onclick: game.available ? () => play(game.id) : null,
+            })}
           {/each}
         </ul>
         {#if visible.size > 0}<p class="note">{$_("games.tonight")}</p>{/if}
       </section>
 
-      <section class="panel-block" aria-labelledby="games-sky">
-        <h2 class="panel-title" id="games-sky">{$_("games.section.sky")}</h2>
-        <p class="summary">
-          {$_("games.sky.summary", {
-            values: {
-              mastered: counts.mastered,
-              known: counts.known,
-              total: counts.total,
-            },
-          })}
-        </p>
-        <ul class="sky" class:few={pool.length < 40}>
-          {#each pool as abbr (abbr)}
-            {@const state = masteryOfItem(progress, itemKey("con", abbr))}
-            <li
-              class={`cell ${state}`}
-              title={names[abbr] ?? abbr}
-              aria-label={$_("games.sky.cell", {
-                values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
-              })}
-            >
-              <span aria-hidden="true">{abbr}</span>
-            </li>
-          {/each}
-        </ul>
-        <ul class="legend" aria-hidden="true">
-          {#each ["new", "learning", "known", "mastered"] as state (state)}
-            <li><span class={`cell ${state}`}></span>{$_(`games.mastery.${state}`)}</li>
-          {/each}
-        </ul>
+      <section class="group" aria-labelledby="games-sky">
+        <h2 class="group-title" id="games-sky">{$_("games.section.sky")}</h2>
+        <div class="panel-block sky-panel">
+          <dl class="stats">
+            {#each MASTERY as state (state)}
+              <div class="stat">
+                <dt>
+                  <span class={`swatch ${state}`} aria-hidden="true"></span>{$_(
+                    `games.sky.count.${state}`,
+                    { values: { count: counts[state] } },
+                  )}
+                </dt>
+                <dd>{counts[state]}</dd>
+              </div>
+            {/each}
+          </dl>
+          <ul class="sky" class:few={pool.length < 40}>
+            {#each pool as abbr (abbr)}
+              {@const state = masteryOfItem(progress, itemKey("con", abbr))}
+              <li
+                class={`cell ${state}`}
+                title={names[abbr] ?? abbr}
+                aria-label={$_("games.sky.cell", {
+                  values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
+                })}
+              >
+                <span aria-hidden="true">{abbr}</span>
+              </li>
+            {/each}
+          </ul>
+        </div>
       </section>
     </div>
   {/if}
 </div>
+
+<!-- A card of the screen (#185): vignette, title, pitch, record, gauge and the one action,
+     which covers the whole card (a tap anywhere opens it). -->
+{#snippet card(c: Card)}
+  <li class="card" class:soon={!c.onclick}>
+    <div class="art"><Vignette id={c.id} /></div>
+    <div class="text">
+      <h3 id={`card-${c.id}`}>{c.title}</h3>
+      <p class="pitch">{c.pitch}</p>
+      {#if c.meta}
+        <p class="meta">
+          <span class="gauge" class:fine={c.total > 20} aria-hidden="true">
+            {#each Array.from({ length: c.total }, (_, i) => i < c.value) as on, i (i)}
+              <i class:on></i>
+            {/each}
+          </span>
+          <span>{c.meta}</span>
+        </p>
+      {/if}
+    </div>
+    <div class="action">
+      {#if c.onclick}
+        <button
+          class="go"
+          id={`go-${c.id}`}
+          aria-labelledby={`go-${c.id} card-${c.id}`}
+          onclick={c.onclick}
+          data-learn={c.id === "catalogue" ? "catalogue" : undefined}
+          data-game={c.id === "catalogue" ? undefined : c.id}
+        >
+          <Icon name={c.icon} size={12} /><span>{c.action}</span>
+        </button>
+      {:else}
+        <span class="later">{$_("games.soon")}</span>
+      {/if}
+    </div>
+  </li>
+{/snippet}
 
 <style>
   .games {
@@ -552,15 +611,6 @@
     padding-bottom: 12px;
     border-bottom: 1px solid var(--ast-hairline);
   }
-  .meta {
-    font: 500 9px/1.4 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .meta {
-    margin: 0 0 4px;
-  }
   h1 {
     margin: 0;
     font: 700 30px/1 var(--ast-font-display);
@@ -597,18 +647,28 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* Level: a segmented control across the width. */
   .levels {
-    display: flex;
-    width: fit-content;
-    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 16px;
     border: 1px solid var(--ast-hairline);
   }
   .levels button {
-    min-height: 40px;
-    padding: 0 12px;
+    min-height: 44px;
+    padding: 0 6px;
     color: var(--ast-fg-muted);
+    transition:
+      color 120ms var(--ast-ease-out),
+      background-color 120ms var(--ast-ease-out);
   }
   .levels button + button {
     border-left: 1px solid var(--ast-hairline);
@@ -617,101 +677,246 @@
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
-  section {
-    margin-top: var(--ast-panel-gap);
+  .levels button:focus-visible {
+    outline-offset: -4px;
   }
-  .levels + section {
-    margin-top: 16px;
+  .levels button[aria-pressed="true"]:focus-visible {
+    outline-color: var(--ast-bg);
   }
-  ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
+
+  /* Groups: catalogue, games, « Ton ciel ». A spaced-capitals title ruled to the edge. */
+  .group {
+    margin-top: 26px;
   }
-  /* Game cards: a pixel checkerboard band around the card (collection cards, DA §3). */
+  .levels + .group {
+    margin-top: 22px;
+  }
+  .group-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 10px;
+    font: 500 10px/1.4 var(--ast-font-mono);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
+  .group-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--ast-hairline);
+  }
+
+  /* Cards (#185): panels (#171) with a vignette, the record and one action over the card. */
   .cards {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    container-type: inline-size;
   }
   .card {
-    padding: 4px;
-    background: repeating-conic-gradient(var(--ast-fg) 0 25%, transparent 0 50%) 0 0 / 8px 8px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    grid-template-areas:
+      "art text"
+      "art action";
+    gap: 12px 14px;
+    border: 1px solid var(--ast-panel-border);
+    background: var(--ast-panel-bg);
+    padding: 12px;
+    transition:
+      border-color 160ms var(--ast-ease-out),
+      background-color 160ms var(--ast-ease-out);
   }
-  .card.soon {
-    background: repeating-conic-gradient(var(--ast-hairline) 0 25%, transparent 0 50%) 0 0 / 8px 8px;
-  }
-  .entry {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .card-inner {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: 64px;
-    padding: 10px 12px;
+  .art {
+    grid-area: art;
+    align-self: center;
+    width: 104px;
+    height: 104px;
     background: var(--ast-bg);
+    box-shadow: inset 0 0 0 1px var(--ast-hairline);
   }
-  .card-text {
-    flex: 1;
+  .text {
+    grid-area: text;
+    align-self: end;
     min-width: 0;
   }
   h3 {
-    margin: 0 0 3px;
-    font: 700 19px/1.05 var(--ast-font-display);
+    margin: 0 0 4px;
+    font: 700 21px/1 var(--ast-font-display);
     letter-spacing: 0.02em;
     text-transform: uppercase;
+    text-wrap: balance;
   }
-  .card-text p {
+  .pitch {
     margin: 0;
-    font: 400 11px/1.4 var(--ast-font-mono);
+    font: 400 11px/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
-  .card-text .best {
-    margin-top: 4px;
-    font-size: 9px;
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin: 8px 0 0;
+    font: 500 9px/1.3 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
-    color: var(--ast-fg);
   }
-  .soon h3 {
-    color: var(--ast-fg-muted);
+  /* Gauge: one pip per round (the record) or one tick per constellation (the catalogue). */
+  .gauge {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
   }
-  .play {
+  .gauge i {
     flex: none;
+    width: 6px;
+    height: 6px;
+    box-sizing: border-box;
+    border: 1px solid var(--ast-fg-muted);
+  }
+  .gauge i.on {
+    border-color: var(--ast-fg);
+    background: var(--ast-fg);
+  }
+  .gauge.fine {
+    gap: 1px;
+  }
+  .gauge.fine i {
+    width: 1px;
+    height: 6px;
+    border: 0;
+    background: var(--ast-fg-muted);
+    opacity: 0.6;
+  }
+  .gauge.fine i:nth-child(10n) {
+    height: 9px;
+  }
+  .gauge.fine i.on {
+    height: 9px;
+    opacity: 1;
+    background: var(--ast-fg);
+  }
+  .action {
+    grid-area: action;
+    align-self: start;
+    display: flex;
+  }
+  .go {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-height: 44px;
-    padding: 0 14px;
+    padding: 0 16px;
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
-  .play:focus-visible {
-    outline-offset: 3px;
+  /* The action covers the card: a tap anywhere on it plays (one tap, ≤ 2 rule). */
+  .go::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
   }
-  .tag {
-    flex: none;
-    padding: 4px 6px;
-    border: 1px dashed var(--ast-hairline);
-    font: 500 9px/1 var(--ast-font-mono);
+  .go:focus-visible {
+    outline: none;
+  }
+  .go:focus-visible::after {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: 2px;
+  }
+  .go :global(svg) {
+    transition: transform 160ms var(--ast-ease-out);
+  }
+  @media (hover: hover) {
+    .card:hover {
+      border-color: var(--ast-fg-muted);
+    }
+    .card:hover .go :global(svg) {
+      transform: translateX(2px);
+    }
+  }
+  .card:active {
+    background: color-mix(in srgb, var(--ast-fg) 9%, transparent);
+  }
+  .later {
+    font: 500 9px/44px var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
-  .note,
-  .summary {
+  .soon .art,
+  .soon h3 {
+    opacity: 0.55;
+  }
+  /* Wide (tablet, desktop): one row, the action on the right. */
+  @container (min-width: 520px) {
+    .card {
+      grid-template-columns: 96px minmax(0, 1fr) auto;
+      grid-template-areas: "art text action";
+      column-gap: 20px;
+      padding: 14px;
+    }
+    .art {
+      width: 96px;
+      height: 96px;
+    }
+    .text,
+    .action {
+      align-self: center;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card,
+    .levels button,
+    .go :global(svg) {
+      transition: none;
+    }
+  }
+  .note {
     margin: 10px 0 0;
     font: 400 11px/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
-  .summary {
-    margin: 0 0 10px;
-    color: var(--ast-fg);
+
+  /* « Ton ciel » (#185): counts by mastery (the numbers are the legend), then the cells. */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0 0 14px;
   }
-  /* « Ton ciel »: one card per constellation, inked by mastery in 1-bit dither. */
+  .stat {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+  .stat dd {
+    margin: 0;
+    font: 700 28px/1 var(--ast-font-display);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat dt {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    font: 500 9px/1.25 var(--ast-font-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
+  .swatch {
+    position: relative;
+    flex: none;
+    width: 10px;
+    height: 10px;
+    box-sizing: border-box;
+    border: 1px solid var(--ast-hairline);
+  }
   .sky {
     display: grid;
     grid-template-columns: repeat(8, minmax(0, 1fr));
@@ -720,58 +925,80 @@
   .sky.few {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
+  /* A cell fills up from the bottom as the constellation is learnt, with denser ink: under a
+     third in fine dots (25 %), half in a checkerboard (50 %), full and solid. The name stays on the
+     clear top, read without the dither behind it. */
   .cell {
-    display: grid;
-    place-items: center;
+    position: relative;
+    display: flex;
+    justify-content: center;
     aspect-ratio: 1;
+    box-sizing: border-box;
+    padding-top: 5px;
     border: 1px solid var(--ast-hairline);
     font: 500 9px/1 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
-    background-color: var(--ast-bg);
   }
   .sky.few .cell {
+    padding-top: 7px;
     font-size: 11px;
   }
   .cell span {
-    padding: 1px 2px;
-    background: var(--ast-bg);
+    position: relative;
   }
-  .cell.learning {
-    border-style: dashed;
-    border-color: var(--ast-fg-muted);
+  .cell::before,
+  .swatch::before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: var(--fill, 0);
   }
-  .cell.known {
-    border-color: var(--ast-fg);
-    color: var(--ast-fg);
-    background-image: repeating-conic-gradient(var(--ast-fg) 0 25%, transparent 0 50%);
-    background-size: 4px 4px;
+  /* The legend shows the screens only, at full height. */
+  .swatch::before {
+    height: 100%;
   }
-  .cell.mastered {
-    border-color: var(--ast-fg);
-    color: var(--ast-bg);
+  .cell.learning,
+  .swatch.learning {
+    --fill: 30%;
+  }
+  .cell.known,
+  .swatch.known {
+    --fill: 54%;
+  }
+  .cell.mastered,
+  .swatch.mastered {
+    --fill: 100%;
+  }
+  .cell.learning::before,
+  .swatch.learning::before {
+    background: conic-gradient(from 270deg at 1px 1px, var(--ast-fg) 25%, transparent 0) 0 100% /
+      2px 2px;
+  }
+  .cell.known::before,
+  .swatch.known::before {
+    background: repeating-conic-gradient(var(--ast-fg) 0 25%, transparent 0 50%) 0 100% / 4px 4px;
+  }
+  .cell.mastered::before,
+  .swatch.mastered::before {
     background: var(--ast-fg);
   }
-  .cell.mastered span {
-    background: transparent;
+  .cell.learning,
+  .cell.known,
+  .swatch.learning,
+  .swatch.known {
+    border-color: var(--ast-fg-muted);
+  }
+  .cell.learning,
+  .cell.known {
+    color: var(--ast-fg);
+  }
+  .cell.mastered,
+  .swatch.mastered {
+    border-color: var(--ast-fg);
+  }
+  .cell.mastered {
+    color: var(--ast-bg);
     font-weight: 700;
-  }
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 14px;
-    margin-top: 10px;
-    font: 400 10px/1 var(--ast-font-mono);
-    color: var(--ast-fg-muted);
-  }
-  .legend li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .legend .cell {
-    width: 12px;
-    height: 12px;
-    box-sizing: border-box;
   }
 </style>

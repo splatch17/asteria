@@ -59,9 +59,18 @@ describe("« Où est-elle ? » score", () => {
   });
 
   it("accepts a tap inside, or just at the edge", () => {
-    expect(judge("Ori", { tapped: "Ori", distance: 3 }, 0.5)).toEqual({ correct: true, edge: false });
-    expect(judge("Ori", { tapped: "Tau", distance: 0.3 }, 0.5)).toEqual({ correct: true, edge: true });
-    expect(judge("Ori", { tapped: "Tau", distance: 2 }, 0.5)).toEqual({ correct: false, edge: false });
+    expect(judge("Ori", { tapped: "Ori", distance: 3 }, 0.5)).toEqual({
+      correct: true,
+      edge: false,
+    });
+    expect(judge("Ori", { tapped: "Tau", distance: 0.3 }, 0.5)).toEqual({
+      correct: true,
+      edge: true,
+    });
+    expect(judge("Ori", { tapped: "Tau", distance: 2 }, 0.5)).toEqual({
+      correct: false,
+      edge: false,
+    });
   });
 
   it("converts the finger's slop to degrees at the field of view", () => {
@@ -155,24 +164,29 @@ const fs = (
 ).process?.getBuiltinModule?.("node:fs") as Fs | undefined;
 const data = (f: string) =>
   decodeURIComponent(new URL(`../../../public/data/${f}`, import.meta.url).pathname);
-const available =
-  !!fs && ["stars.bin", "star-strings.json"].every((f) => fs.existsSync(data(f)));
+const available = !!fs && ["stars.bin", "star-strings.json"].every((f) => fs.existsSync(data(f)));
 
-describe.skipIf(!available)("boundaries against the catalogue's constellations (public/data)", () => {
-  it("puts ≥ 99.5 % of the stars in the constellation of stars.bin", () => {
-    const text = (f: string) => new TextDecoder().decode(fs!.readFileSync(data(f)));
-    const bin = fs!.readFileSync(data("stars.bin"));
-    const buffer = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength) as ArrayBuffer;
-    const stars = decodeStarCatalog(buffer, JSON.parse(text("star-strings.json")) as StarStrings);
-    const bounds = parseConstellationBounds(boundsFile as ConstellationBoundsFile);
-    const differ: string[] = [];
-    for (const s of stars) {
-      const con = constellationAt(bounds, unitVector(s.ra, s.dec));
-      if (con !== s.con) differ.push(`HIP ${s.hip} ${s.con}→${con}`);
-    }
-    expect(stars.length).toBeGreaterThan(8000);
-    // stars.bin's `con` comes from astropy (Roman 1987), which precesses through the GCRS and so
-    // adds the annual aberration (≤ 20.5″): only stars that close to a boundary may differ.
-    expect(differ.length / stars.length, differ.join(", ")).toBeLessThan(0.005);
-  });
-});
+describe.skipIf(!available)(
+  "boundaries against the catalogue's constellations (public/data)",
+  () => {
+    it("puts ≥ 99.5 % of the stars in the constellation of stars.bin", () => {
+      const text = (f: string) => new TextDecoder().decode(fs!.readFileSync(data(f)));
+      const bin = fs!.readFileSync(data("stars.bin"));
+      const buffer = bin.buffer.slice(
+        bin.byteOffset,
+        bin.byteOffset + bin.byteLength,
+      ) as ArrayBuffer;
+      const stars = decodeStarCatalog(buffer, JSON.parse(text("star-strings.json")) as StarStrings);
+      const bounds = parseConstellationBounds(boundsFile as ConstellationBoundsFile);
+      const differ: string[] = [];
+      for (const s of stars) {
+        const con = constellationAt(bounds, unitVector(s.ra, s.dec));
+        if (con !== s.con) differ.push(`HIP ${s.hip} ${s.con}→${con}`);
+      }
+      expect(stars.length).toBeGreaterThan(8000);
+      // stars.bin's `con` comes from astropy (Roman 1987), which precesses through the GCRS and so
+      // adds the annual aberration (≤ 20.5″): only stars that close to a boundary may differ.
+      expect(differ.length / stars.length, differ.join(", ")).toBeLessThan(0.005);
+    });
+  },
+);

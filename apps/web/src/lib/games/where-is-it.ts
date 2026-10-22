@@ -69,11 +69,7 @@ export interface Tap {
 }
 
 /** Judges a tap: right inside the target, or within `slop` degrees of its edge. */
-export function judge(
-  target: string,
-  tap: Tap,
-  slop: number,
-): { correct: boolean; edge: boolean } {
+export function judge(target: string, tap: Tap, slop: number): { correct: boolean; edge: boolean } {
   if (tap.tapped === target) return { correct: true, edge: false };
   const edge = tap.distance <= slop;
   return { correct: edge, edge };

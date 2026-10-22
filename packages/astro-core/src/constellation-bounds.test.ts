@@ -30,7 +30,10 @@ function fibonacci(n: number): [number, number][] {
   const out: [number, number][] = [];
   for (let i = 0; i < n; i++) {
     const t = i + 0.5;
-    out.push([((t * 180 * (1 + Math.sqrt(5))) % 360 + 360) % 360, Math.asin(1 - (2 * t) / n) * DEG]);
+    out.push([
+      (((t * 180 * (1 + Math.sqrt(5))) % 360) + 360) % 360,
+      Math.asin(1 - (2 * t) / n) * DEG,
+    ]);
   }
   return out;
 }
@@ -123,12 +126,14 @@ describe("constellationAt (spherical point in polygon)", () => {
 
   it("follows Ursa Minor and Octans around the poles (agrees with Roman 1987)", () => {
     for (let ra = 0; ra < 360; ra += 2.5)
-      for (const dec of [86, 87.5, 88.5, -82, -84, -86]) expect(at(ra, dec)).toBe(constellationOf(ra, dec));
+      for (const dec of [86, 87.5, 88.5, -82, -84, -86])
+        expect(at(ra, dec)).toBe(constellationOf(ra, dec));
   });
 
   it("wraps at 0 h", () => {
     for (let dec = -80; dec <= 80; dec += 2.5)
-      for (const ra of [359.99, 0.01, 359.5, 0.5]) expect(at(ra, dec)).toBe(constellationOf(ra, dec));
+      for (const ra of [359.99, 0.01, 359.5, 0.5])
+        expect(at(ra, dec)).toBe(constellationOf(ra, dec));
   });
 
   it("handles a ring by itself at the pole and at the wrap", () => {
