@@ -15,6 +15,7 @@
   import type { Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
   import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
+  import { pageSequence } from "../lib/catalogue-nav";
   import { GAMES } from "../lib/games/catalog";
   import { constellationShapes } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
@@ -403,6 +404,14 @@
         {placeName}
         tonight={visible.has(p.abbr)}
         initialStar={p.star}
+        sequence={pageSequence(entries, p.abbr, {
+          filter,
+          query,
+          level,
+          outside: p.outside,
+          tonight: visible,
+        })}
+        onturn={(abbr) => openPage(abbr, null, p.outside)}
         onback={closePage}
         {onclose}
       />
