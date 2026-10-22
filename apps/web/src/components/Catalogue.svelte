@@ -318,9 +318,11 @@
   .cell.mastered {
     border: 1px solid var(--ast-hairline);
   }
+  /* Fine dots, then checkerboard, then solid: the « Ton ciel » scale (#185, no dashed cells). */
   .cell.learning {
-    border-style: dashed;
     border-color: var(--ast-fg-muted);
+    background: conic-gradient(from 270deg at 1px 1px, var(--ast-fg) 25%, transparent 0) 0 0 / 2px
+      2px;
   }
   .cell.known {
     border-color: var(--ast-fg);

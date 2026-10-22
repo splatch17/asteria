@@ -433,7 +433,6 @@
     color: inherit;
   }
   .choice.wrong {
-    border-style: dashed;
     border-color: var(--ast-fg-muted);
     color: var(--ast-fg-muted);
   }

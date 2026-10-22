@@ -161,7 +161,7 @@
     border-color: var(--ast-fg);
   }
   .tag.review {
-    border-style: dashed;
+    border-color: var(--ast-fg-muted);
   }
   .end-actions {
     display: grid;
