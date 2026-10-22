@@ -43,8 +43,9 @@
 <section class="end" aria-labelledby="series-end-title">
   <h2 id="series-end-title" tabindex="-1" bind:this={title}>{$_("quiz.end.title")}</h2>
   <p class="score">
-    <span class="big" aria-hidden="true">{fmt.format(score)}</span><span class="of" aria-hidden="true"
-      >{of ?? `/${total}`}</span
+    <span class="big" aria-hidden="true">{fmt.format(score)}</span><span
+      class="of"
+      aria-hidden="true">{of ?? `/${total}`}</span
     >
     <span class="sr-only">{scoreLabel ?? $_("quiz.end.score", { values: { score, total } })}</span>
   </p>
