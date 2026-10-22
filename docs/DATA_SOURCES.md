@@ -10,7 +10,7 @@
 | Distances publiées (étoiles brillantes à parallaxe biaisée) | **Schiller & Przybilla 2008**, A&A 479, 849 (`2008A&A...479..849S`, tableau 2 : Deneb 802 ± 66 pc, appartenance à Cyg OB7) ; **Joyce et al. 2020**, ApJ 902, 63 (`2020ApJ...902...63J`, résumé : Bételgeuse 168 +27/−15 pc, modélisation évolutive, astérosismique et hydrodynamique) | — | Publications scientifiques : valeurs factuelles, citation | ✅ intégré (#75). **Seule exception à la règle « aucune donnée saisie à la main »** : ces deux valeurs sont transcrites dans `LITERATURE_DISTANCES` (`build_stars.py`) avec leur référence ADS, vérifiées sur les articles et contrôlées par le pipeline. Ni Gaia (trop brillantes) ni SIMBAD (`mesDistance` vide pour ces deux étoiles) ni Wikidata (Deneb : 1 640 al, non sourcé) n'offrent de valeur exploitable. Ajouter une étoile exige une publication de référence par une autre méthode que la parallaxe |
 | Noms d'étoiles officiels | **IAU WGSN** — fichier `IAU-CSN.txt` (version 2022-04-04, E. Mamajek) | IAU | **CC BY 4.0** (citer l'IAU, https://www.iau.org/public/themes/naming_stars/) | 338 noms pour V ≤ 6.5 — ✅ intégré (#3) ; jeu « Nomme l'étoile » (#165) : étoiles nommées, rang d'éclat calculé sur les magnitudes V Hipparcos du catalogue, aucune étymologie (pas de source retenue) ; fichier lu en UTF-8 depuis #75 (avant : 5 noms manquants ou illisibles, « CitalÃ¡ », « 4.62  V ») |
 | Noms d'étoiles en français | **IAU WGSN** (`IAU-CSN.txt`, nom officiel, V, HIP) + **Wikidata** (titre de l'article Wikipédia FR, libellé et alias français de l'élément portant le numéro HIP, propriété P528 / catalogue Hipparcos Q537199) | IAU / Wikimedia | IAU : CC BY ; Wikidata : **CC0** (aucune donnée CC BY-SA reprise) | ✅ intégré (#67) : `packages/content/fr/star-names.json` (144 étoiles : toutes les étoiles nommées V ≤ 3 et toutes celles dont le nom diffère, soit 13 graphies françaises : Bételgeuse, Aldébaran, Véga, Altaïr, Antarès, Régulus, Alphératz, Saïph, Schédar, Aïn, Maïa, Mérope, Pléioné), généré par `packages/sky-data/build_star_names_fr.py`. Règle reproductible : seule une graphie identique au nom IAU aux diacritiques près est retenue, par ordre de priorité titre Wikipédia FR > libellé > alias ; les noms d'usage réellement différents (ex. « l'Épi » pour Spica, « étoile Polaire ») ne sont pas repris tant qu'une référence française n'est pas choisie (liste `FRENCH_USAGE` du script) |
-| Constellations : frontières | **Delporte 1930 / IAU** | IAU / CDS `VI/49` | Libre | 88 frontières officielles |
+| Constellations : frontières | **Delporte 1930 / IAU**, transcrites par Davenhall & Leggett 1989 (CDS `VI/49`), sous la forme GeoJSON de **d3-celestial** (O. Frohn, https://github.com/ofrohn/d3-celestial, `data/constellations.bounds.json`, **commit épinglé `7e720a3de062059d4c5400a379146a601d9010e0`**, 2022-07-05 ; SHA-256 du fichier et de `LICENSE` vérifiés) | IAU / CDS / O. Frohn | **BSD-3-Clause** (vérifiée : `LICENSE` du dépôt à ce commit, « Copyright (c) 2015, Olaf Frohn » ; texte complet recopié dans le fichier produit, comme la licence l'exige ; page Crédits). Les frontières elles-mêmes sont une définition officielle de l'UAI (faits) ; VI/49 : citation (règles VizieR) | ✅ intégré (#184) : jeu « Où est-elle ? » — 88 régions (Serpens en deux), `build_bounds.py` → `packages/astro-core/src/data/constellation-bounds.json` (versionné, 22,9 Ko, 5,8 Ko gzip), voir ci-dessous |
 | Constellations : noms, abréviations | IAU | IAU | Libre | Latin, génitif, abréviation 3 lettres |
 | Lignes de constellations | **Stellarium**, culture du ciel « modern » (`skycultures/modern/index.json`), tracés usuels proches des cartes Sky & Telescope / IAU, numéros HIP directs | Stellarium | **CC BY-SA 4.0** (attribution ; données dérivées sous CC BY-SA) | 88 figures — ✅ intégré (#43), remplace d3-celestial |
 | Appartenance aux constellations | astropy `get_constellation` (Roman 1987, CDS `VI/42`) | — | Libre | Champ `con` — ✅ intégré (#3) ; planètes à la volée via `Astronomy.Constellation` d’astronomy-engine (même table Roman 1987, `constellationOf`, #53) |
@@ -196,6 +196,46 @@ depuis la direction J2000, filtrage bilinéaire lissé (smoothstep sur la fracti
   crème, bords faibles plus froids ; nuit rouge : la même courbe dans l'encre.
 
 Texture chargée à la demande dans chaque vue ; sans le fichier, le calque ne dessine rien.
+
+## Frontières des constellations (#184)
+
+`packages/sky-data/build_bounds.py` (astropy, numpy ; lancé avec `python -I`) télécharge les deux
+fichiers de d3-celestial au commit épinglé dans `raw/d3-celestial-<commit>/`, vérifie leurs
+SHA-256 et la mention de licence, et écrit `packages/astro-core/src/data/constellation-bounds.json`
+(format `asteria-constellation-bounds` v1, décrit en tête du script). Le fichier est **versionné** :
+petit, nécessaire hors ligne au jeu et aux tests (il entre dans le précache du service worker
+comme module chargé à la demande, `constellation-bounds-*.js`, 5,8 Ko gzip).
+
+**Équinoxe B1875.** Les frontières de Delporte sont des arcs de méridiens (AD constante) et de
+parallèles (Déc constante) de l'équateur moyen de **1875**. d3-celestial donne les sommets
+précessés en J2000 : le script les ramène en B1875 (astropy `FK4NoETerms`, équinoxe et époque
+B1875) et les arrondit à la seconde de temps et à la seconde d'arc, précision des valeurs de
+Delporte (résidus avant arrondi ≤ 0,07 s et 0,21″ : l'arrondi retrouve la définition). Trois
+points ajoutés par d3-celestial sur l'arc du parallèle +88° de 23 h à 8 h (Céphée / Petite Ourse),
+qu'aucune arête droite GeoJSON ne suit, sont retirés : aucune arête ne passe par eux le long d'un
+méridien ou d'un parallèle. Résultat : 1 564 sommets.
+
+**Point dans une région** (`astro-core/constellation-bounds.ts`) : la direction J2000 touchée est
+précessée en B1875 (`precessionMatrix`, IAU 1976), puis on suit son méridien vers le pôle nord en
+comptant les arcs de parallèle franchis (intervalle d'AD pris par le plus court chemin, semi-ouvert
+modulo 24 h) ; parité inversée pour la région qui contient le pôle nord (Petite Ourse). Le test est
+exact sur la sphère (aucune approximation des arêtes courbes), sans cas particulier au passage de
+0 h ; un point d'un méridien commun appartient à un seul des deux voisins.
+
+**Contrôles** (script, sinon échec) : 88 constellations, Serpens en deux parties ; chaque arête
+suit un méridien ou un parallèle ; arcs de parallèle < 12 h ; seules la Petite Ourse et l'Octant
+font le tour d'un pôle ; 40 000 points de la sphère : chacun dans exactement une région, et dans
+celle d'astropy `get_constellation` (Roman 1987) pour 39 987 d'entre eux (99,97 %) ; les 13 autres
+sont à moins de 20″ d'une frontière : `get_constellation` passe par le repère `PrecessedGeocentric`
+d'astropy, qui garde l'aberration annuelle du GCRS (jusqu'à 20,5″). Fichier < 40 000 octets.
+**Tests** (`constellation-bounds.test.ts`, vitest) : précession J2000 → B1875 à < 1″ d'astropy
+(Polaris, Bételgeuse, Sirius) ; un point à 0,05° d'une frontière change de région si l'on oublie
+la précession ; étoiles témoins SIMBAD (Bételgeuse → Ori, Polaris → UMi, Sirius → CMa, α Cen →
+Cen, Véga → Lyr, Alphératz → And, Unukalhai et θ Ser → Ser, Rasalhague → Oph entre les deux,
+σ Oct → Oct) ; pôles et couronnes à 86–88,5° et −82 à −86° tout autour ; passage à 0 h ; 20 000
+points : partition exacte et accord ≥ 99,9 % avec `constellationOf` (Roman 1987,
+astronomy-engine), écarts tous à < 30″ d'une frontière ; catalogue `stars.bin` (si présent) :
+≥ 99,5 % des 8 870 étoiles dans la constellation de leur champ `con` (mesuré : toutes).
 
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.

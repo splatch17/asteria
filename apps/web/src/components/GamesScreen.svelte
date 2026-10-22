@@ -3,7 +3,8 @@
   // player's level and « Ton ciel », the constellations learnt so far as a grid of cells filled by
   // mastery (1-bit dither: none, a third in dots, half in checkerboard, full). Catalogue and games
   // are cards with a vignette (#185); a game's card comes from its `GAMES` entry. Opens over the
-  // whole app (the map stops under it) and closes back to it as it was. A game (QuizGame, ConnectGame, NameStarGame), the
+  // whole app (the map stops under it) and closes back to it as it was. A game (QuizGame, WhereGame,
+  // NameStarGame), the
   // catalogue and a constellation's page are shown in the same dialog, so that Escape and focus
   // stay in one place. The constellation games feed the same memory of each constellation
   // (`con:XXX`), « Nomme l'étoile » that of each star (`star:HIP`). Opened from the map on a
@@ -16,14 +17,6 @@
   import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
   import { pageSequence } from "../lib/catalogue-nav";
   import { GAMES } from "../lib/games/catalog";
-  import {
-    GAME_ID as CONNECT_ID,
-    buildConnectSeries,
-    figureSegments,
-    gradeOf,
-    type Segment,
-    type Trace,
-  } from "../lib/games/connect-stars";
   import { constellationShapes } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
   import {
@@ -55,14 +48,16 @@
     type Answer,
     type Question,
   } from "../lib/games/which-constellation";
+  import { GAME_ID as WHERE_ID, MAX_POINTS, buildWhereSeries } from "../lib/games/where-is-it";
+  import type { Grade } from "../lib/games/srs";
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
   import Catalogue from "./Catalogue.svelte";
-  import ConnectGame from "./ConnectGame.svelte";
   import ConstellationPage from "./ConstellationPage.svelte";
   import Icon from "./Icon.svelte";
   import NameStarGame from "./NameStarGame.svelte";
   import QuizGame from "./QuizGame.svelte";
+  import WhereGame from "./WhereGame.svelte";
   import Vignette from "./Vignette.svelte";
   import type { IconName } from "../lib/icons";
   import type { Mastery } from "../lib/games/srs";
@@ -130,16 +125,6 @@
   // Computed once per opening: the catalogue, place and date do not change under the screen.
   const shapes = untrack(() => constellationShapes(stars, lines));
   const visible = untrack(() => visibleTonight(shapes, date, observer));
-  const magnitudes = untrack(() => new Map(stars.map((s) => [s.hip, s.v])));
-  /** Segments of every figure, for « Relie les étoiles ». */
-  const figures: Record<string, Segment[]> = untrack(() =>
-    Object.fromEntries(
-      Object.entries(lines).map(([abbr, polys]) => [
-        abbr,
-        figureSegments(polys, (hip) => magnitudes.has(hip)),
-      ]),
-    ),
-  );
   /** « Nomme l'étoile » (#165): the named stars, their brightness ranks, those up tonight. */
   const named = untrack(() => namedStars(stars));
   const ranks = untrack(() => brightnessRanks(stars));
@@ -194,7 +179,7 @@
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
   let playing = $state.raw<
     | { game: typeof QUIZ_ID; series: Question[] }
-    | { game: typeof CONNECT_ID; series: string[] }
+    | { game: typeof WHERE_ID; series: string[] }
     | { game: typeof NAME_ID; series: StarQuestion[] }
     | null
   >(null);
@@ -210,20 +195,8 @@
         game,
         series: buildSeries({ level, shapes, progress, now, rng, visible }),
       };
-    else if (game === CONNECT_ID)
-      playing = {
-        game,
-        series: buildConnectSeries({
-          level,
-          figures,
-          shapes,
-          magnitudes: (hip) => magnitudes.get(hip) ?? 99,
-          progress,
-          now,
-          rng,
-          visible,
-        }),
-      };
+    else if (game === WHERE_ID)
+      playing = { game, series: buildWhereSeries({ level, shapes, progress, now, rng, visible }) };
     else if (game === NAME_ID)
       playing = {
         game,
@@ -258,8 +231,8 @@
     await tick();
     dialog.querySelector<HTMLElement>(".name-star .go")?.focus();
   }
-  function traced(abbr: string, trace: Trace): ItemResult {
-    const r = recordItem(progress, "con", abbr, gradeOf(trace), Date.now());
+  function placed(abbr: string, grade: Grade): ItemResult {
+    const r = recordItem(progress, "con", abbr, grade, Date.now());
     progress = r.progress;
     saveProgress(progress);
     return r.result;
@@ -289,7 +262,7 @@
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
-    // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Relie les étoiles »), 3 (« Nomme
+    // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Où est-elle ? »), 3 (« Nomme
     // l'étoile »).
     const game = GAMES[Number(params.get("game")) - 1];
     if (game?.available) play(game.id);
@@ -336,21 +309,20 @@
   bind:this={dialog}
   {onkeydown}
 >
-  {#if playing?.game === CONNECT_ID}
-    <ConnectGame
+  {#if playing?.game === WHERE_ID}
+    <WhereGame
       series={playing.series}
       {stars}
       {lines}
       {names}
-      {figures}
-      {shapes}
       {level}
       {theme}
       {figureSet}
       {date}
-      onresult={traced}
-      onfinish={(score) => finish(CONNECT_ID, score)}
-      onreplay={() => play(CONNECT_ID)}
+      {observer}
+      onresult={placed}
+      onfinish={(score) => finish(WHERE_ID, score)}
+      onreplay={() => play(WHERE_ID)}
       onquit={leave}
     />
   {:else if playing?.game === NAME_ID}
@@ -507,9 +479,12 @@
               meta: !game.available
                 ? ""
                 : best > 0
-                  ? $_("games.best", { values: { score: best, total: game.length } })
+                  ? game.points
+                    ? $_("games.bestPoints", { values: { score: best } })
+                    : $_("games.best", { values: { score: best, total: game.length } })
                   : $_("games.noRecord"),
-              value: best,
+              // Points games (#184): one square per MAX_POINTS of the record.
+              value: game.points ? Math.round(best / MAX_POINTS) : best,
               total: game.length,
               icon: "play",
               action: $_("games.play"),

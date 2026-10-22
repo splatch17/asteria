@@ -303,24 +303,6 @@ function orion(): Scene {
   };
 }
 
-/** « Relie les étoiles »: a figure being traced, the next star ringed. */
-function tracing(): Scene {
-  const pts: Pt[] = [
-    [6, 31],
-    [12, 19],
-    [21, 24],
-    [29, 12],
-    [34, 22],
-  ];
-  const stars: Star[] = pts.map(([x, y], i) => ({ x, y, size: i === 2 ? 2 : 1 }));
-  return {
-    density: band(20, 20, 30, 5, 0.45, 5),
-    stars: [...stars, ...scatter(9, 33, pts, 4)],
-    lines: [{ points: pts.slice(0, 3) }, { points: [pts[2]!, pts[3]!], dashed: true }],
-    rings: [{ x: 29, y: 12, r: 5 }],
-  };
-}
-
 /** « Nomme l'étoile »: one bright star in the map's reticle, a label to fill. */
 function namedStar(): Scene {
   const c: Pt = [20, 17];
@@ -416,7 +398,6 @@ function starrySky(): Scene {
 const SCENES: Record<string, () => Scene> = {
   catalogue: planisphere,
   whichConstellation: orion,
-  connectStars: tracing,
   nameStar: namedStar,
   whereIsIt: search,
 };

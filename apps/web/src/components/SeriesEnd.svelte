@@ -2,7 +2,7 @@
   // End of a series (#163, #164): the score, the record, and what each round changed for the
   // constellation played (apprise, maîtrisée, à revoir, acquise); « Rejouer » or back to the list.
   import { onMount } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import { outcomeOf, type ItemResult } from "../lib/games/results";
 
   let {
@@ -12,6 +12,9 @@
     results,
     nameOf,
     detail,
+    of,
+    scoreLabel,
+    recordLabel,
     onreplay,
     onquit,
   }: {
@@ -22,9 +25,16 @@
     nameOf: (item: string) => string;
     /** Short extra line per round (errors, hints), or nothing. */
     detail?: ((index: number) => string) | undefined;
+    /** Points games (#184): text after the big score (default « /total »), spoken score, record. */
+    of?: string | undefined;
+    scoreLabel?: string | undefined;
+    recordLabel?: string | undefined;
     onreplay: () => void;
     onquit: () => void;
   } = $props();
+
+  // Digit grouping for points scores (« 5 000 »).
+  const fmt = $derived(new Intl.NumberFormat($locale ?? "fr"));
 
   let title: HTMLElement;
   onMount(() => title.focus());
@@ -33,15 +43,16 @@
 <section class="end" aria-labelledby="series-end-title">
   <h2 id="series-end-title" tabindex="-1" bind:this={title}>{$_("quiz.end.title")}</h2>
   <p class="score">
-    <span class="big" aria-hidden="true">{score}</span><span class="of" aria-hidden="true"
-      >/{total}</span
+    <span class="big" aria-hidden="true">{fmt.format(score)}</span><span
+      class="of"
+      aria-hidden="true">{of ?? `/${total}`}</span
     >
-    <span class="sr-only">{$_("quiz.end.score", { values: { score, total } })}</span>
+    <span class="sr-only">{scoreLabel ?? $_("quiz.end.score", { values: { score, total } })}</span>
   </p>
   <p class="record">
     {score > previousBest
       ? $_("quiz.end.newBest")
-      : $_("quiz.end.best", { values: { best: previousBest, total } })}
+      : (recordLabel ?? $_("quiz.end.best", { values: { best: previousBest, total } }))}
   </p>
   <h3>{$_("quiz.end.list")}</h3>
   <ul class="results">
@@ -150,7 +161,7 @@
     border-color: var(--ast-fg);
   }
   .tag.review {
-    border-style: dashed;
+    border-color: var(--ast-fg-muted);
   }
   .end-actions {
     display: grid;

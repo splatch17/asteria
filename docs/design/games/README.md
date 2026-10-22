@@ -14,19 +14,19 @@ Captures Chromium (SwiftShader), téléphone 360×780 @3x, build de production.
 | `mobile-reponse-nuit.jpg` | Vision nocturne, Découverte |
 | `mobile-fin.jpg` | Fin de série : score, record, ce que chaque réponse a changé |
 
-## « Relie les étoiles » (#164)
+## « Où est-elle ? » (#184, remplace « Relie les étoiles » #164)
 
 | Capture | Ce qu'elle montre |
 |---|---|
-| `mobile-relie-debut.jpg` | Début en Découverte : champ d'étoiles réel, sans lignes ni noms, étoiles de la figure légèrement cerclées |
-| `mobile-relie-trace.jpg` | Un trait juste (encre) et un trait faux (pointillé barré, qui s'efface) ; l'étoile choisie a un réticule |
-| `mobile-relie-glisser.jpg` | Glisser d'une étoile vers une autre : trait pointillé jusqu'au doigt |
-| `mobile-relie-indice.jpg` | Indice : l'étoile de départ choisie, l'étoile suivante clignote |
-| `mobile-relie-complete.jpg` | Figure complète : lignes, nom et figure illustrée de la carte |
-| `mobile-relie-solution.jpg` | « Solution » : la figure montrée |
-| `mobile-relie-amateur.jpg` | Amateur : aucune étoile mise en avant |
-| `mobile-relie-nuit.jpg` | Vision nocturne |
-| `mobile-relie-fin.jpg` | Fin de série : score sur 5, erreurs et indices de chaque figure |
+| `mobile-apprendre-ou.jpg` | Écran Apprendre : la carte « Où est-elle ? » à la place de « Relie les étoiles » |
+| `mobile-ou-question-decouverte.jpg` | Découverte : tout le ciel (glisser, pincer), lignes et frontières IAU en pointillé, le nom et la figure en vignette ; barre des points qui s'épuise |
+| `mobile-ou-juste.jpg` | Touche juste : la région s'allume (trame 1-bit), son nom, « +1000 » |
+| `mobile-ou-erreur.jpg` | Erreur : la région touchée nommée et cernée en tirets, la croix du toucher, la vue glisse jusqu'à la bonne région allumée |
+| `mobile-ou-question-amateur.jpg` | Amateur : lignes, sans nom, vignette |
+| `mobile-ou-question-expert.jpg` | Expert : les étoiles seules, sans vignette |
+| `mobile-ou-passee-expert.jpg` | « Je ne sais pas » : la bonne région montrée |
+| `mobile-ou-nuit.jpg` | Vision nocturne |
+| `mobile-ou-fin.jpg` | Fin de série : points sur 10 000, record, temps et points de chaque constellation |
 
 ## « Nomme l'étoile » (#165)
 

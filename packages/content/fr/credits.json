@@ -91,6 +91,16 @@
       "sourceUrl": "https://cdsarc.cds.unistra.fr/viz-bin/cat/VI/42"
     },
     {
+      "id": "d3-celestial-bounds",
+      "name": "Frontières des constellations (Delporte 1930 ; Davenhall & Leggett 1989, via d3-celestial)",
+      "role": "Régions officielles des 88 constellations, dessinées et touchées dans le jeu « Où est-elle ? ».",
+      "author": "E. Delporte (1930) pour l'UAI ; A. C. Davenhall, S. K. Leggett (1989) ; conversion GeoJSON : Olaf Frohn (d3-celestial)",
+      "notice": "Copyright (c) 2015, Olaf Frohn. All rights reserved. Redistribution and use in source and binary forms, with or without modification, are permitted provided that the conditions of the BSD 3-Clause licence are met (texte complet dans constellation-bounds.json). Davenhall & Leggett, Catalogue of Constellation Boundary Data (1989), CDS VI/49.",
+      "license": "BSD-3-Clause",
+      "licenseUrl": "https://github.com/ofrohn/d3-celestial/blob/7e720a3de062059d4c5400a379146a601d9010e0/LICENSE",
+      "sourceUrl": "https://github.com/ofrohn/d3-celestial/blob/7e720a3de062059d4c5400a379146a601d9010e0/data/constellations.bounds.json"
+    },
+    {
       "id": "vizier",
       "name": "VizieR",
       "role": "Service d'accès aux catalogues utilisé pour préparer les données d'étoiles.",

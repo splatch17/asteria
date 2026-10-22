@@ -931,6 +931,43 @@ export class SkyMap {
   }
 
   /**
+   * J2000 unit vector seen at a canvas point (CSS px) with the current observer, date and view:
+   * where a tap lands in the sky (#184).
+   */
+  directionAt(x: number, y: number): Vec3 {
+    return this.tapDirection(x, y, this.eqToView());
+  }
+
+  /**
+   * Projects J2000 unit vectors (`dirs`: x, y, z, x, y, z…) to canvas points (CSS px) into `out`
+   * (x, y, …), NaN for those too far behind the view; points off screen are kept (for outlines
+   * and areas drawn over the map, #184). One matrix for the whole batch, no allocation per point.
+   */
+  projectDirections(dirs: ArrayLike<number>, out: Float32Array | Float64Array): void {
+    const m = this.eqToView();
+    const back = this.backZ();
+    const scale = stereoScale(this.view.fov);
+    const { w, h } = this.size;
+    const count = Math.min(dirs.length / 3, out.length / 2);
+    for (let i = 0; i < count; i++) {
+      const dx = dirs[3 * i]!;
+      const dy = dirs[3 * i + 1]!;
+      const dz = dirs[3 * i + 2]!;
+      const x = m[0] * dx + m[1] * dy + m[2] * dz;
+      const y = m[3] * dx + m[4] * dy + m[5] * dz;
+      const z = m[6] * dx + m[7] * dy + m[8] * dz;
+      if (z < back) {
+        out[2 * i] = NaN;
+        out[2 * i + 1] = NaN;
+        continue;
+      }
+      const k = (2 / (1 + z)) * scale;
+      out[2 * i] = (((x * k * h) / w + 1) / 2) * w;
+      out[2 * i + 1] = ((1 - y * k) / 2) * h;
+    }
+  }
+
+  /**
    * Highlights the selected object (#103): an engraved reticle around a star, planet, Sun or
    * Moon; for a constellation, setSelectedConstellation (figure, stars and name stronger, the
    * rest of the sky dimmed). null clears it (and stops an arrival animation).

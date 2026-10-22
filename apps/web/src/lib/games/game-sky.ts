@@ -144,3 +144,32 @@ export function viewMoved(view: Readonly<ViewState>, framed: Readonly<ViewState>
     return turn(spin(view), spin(framed)) > 0.05;
   return turn(view.azimuth, framed.azimuth) > 0.05 || turn(view.roll ?? 0, framed.roll ?? 0) > 0.05;
 }
+
+/**
+ * Keeps the picture while moving the made-up observer's zenith to the view centre (#184): the
+ * whole sky can then be panned without ever nearing the horizon (no dimmed ground side). The
+ * roll is chosen so that what was up on screen stays up. `width`, `height`: canvas, CSS px.
+ */
+export function recentre(map: SkyMap, date: Date, width: number, height: number): void {
+  const [cx, cy] = [width / 2, height / 2];
+  const centre = map.directionAt(cx, cy);
+  const up = map.directionAt(cx, cy - Math.min(40, height / 4));
+  map.setObserver(zenithObserver(centre, date));
+  const out = new Float64Array(2);
+  const angleOf = (roll: number): number => {
+    map.setView({ azimuth: 180, altitude: 90, roll });
+    map.projectDirections(up, out);
+    return Math.atan2(out[0]! - cx, cy - out[1]!); // 0 when `up` is straight up
+  };
+  const phi = angleOf(0);
+  if (!Number.isFinite(phi) || Math.abs(phi) < 1e-6) return;
+  // Roll turns the picture about the centre; its sign convention is checked, not assumed.
+  const roll = (phi * 180) / Math.PI;
+  if (Math.abs(angleOf(roll)) > Math.abs(phi) / 2) angleOf(-roll);
+}
+
+/** Looks straight at a direction (J2000) with the given roll and field, as `recentre` leaves it. */
+export function aimAt(map: SkyMap, dir: Vec3, date: Date, roll: number, fov: number): void {
+  map.setObserver(zenithObserver(dir, date));
+  map.setView({ azimuth: 180, altitude: 90, roll, fov });
+}

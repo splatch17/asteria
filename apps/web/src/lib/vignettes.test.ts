@@ -13,7 +13,7 @@ function runs(d: string): { x: number; y: number; w: number; h: number }[] {
 }
 
 describe("Apprendre vignettes (#185)", () => {
-  const ids = ["catalogue", ...GAMES.map((g) => g.id), "whereIsIt", "someFutureGame"];
+  const ids = ["catalogue", ...GAMES.map((g) => g.id), "someFutureGame"];
 
   it("draws every card, and a starry sky for a game without its own scene", () => {
     for (const id of ids) {
