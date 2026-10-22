@@ -147,3 +147,35 @@ export function panView(view: ViewState, yaw: number, pitch: number): ViewState 
   const dot = (p: Vec3, q: Vec3) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
   return { ...view, azimuth, altitude, roll: Math.atan2(dot(u, right0), dot(u, up0)) / RAD };
 }
+
+/**
+ * Bounds a caller can put on the view (the games, #183): a range of fields of view, and
+ * optionally a cap around the zenith that the screen's corners never leave. The games show a
+ * figure at the zenith of a made-up observer: the cap keeps that observer's horizon (and its
+ * line) off the screen while the player zooms out and pans around the figure.
+ */
+export interface ViewLimits {
+  minFov: number;
+  maxFov: number;
+  /** Largest angle (degrees) between the zenith and a corner of the screen; none when absent. */
+  zenithReach?: number;
+}
+
+/**
+ * Applies `limits` to `view` in place, for a screen of the given aspect (width / height): the
+ * field first, then the altitude, lowered no further than what keeps the corners within
+ * zenithReach of the zenith (a field whose corners already reach it pins the view at the zenith).
+ */
+export function limitView(view: ViewState, aspect: number, limits: ViewLimits): void {
+  view.fov = Math.max(limits.minFov, Math.min(limits.maxFov, view.fov));
+  if (limits.zenithReach === undefined) return;
+  const room = Math.max(0, limits.zenithReach - cornerAngle(view.fov, aspect));
+  view.altitude = Math.max(view.altitude, 90 - room);
+}
+
+/** Field of view (degrees) whose screen corners lie `angle` degrees from its centre. */
+export function fovForCornerAngle(angle: number, aspect: number): number {
+  const r = 2 * Math.tan((angle * RAD) / 2); // corner radius in the projection
+  const scale = Math.hypot(aspect, 1) / r;
+  return (4 * Math.atan(1 / (2 * scale))) / RAD;
+}

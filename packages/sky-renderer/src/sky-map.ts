@@ -68,6 +68,7 @@ import { belowHorizonAlpha, belowHorizonLimits, horizonPasses, labelAlpha } from
 import { eclipticCircle, eclipticOfDate, graduationLines, spherical, sphericalGrid } from "./grids";
 import {
   backCutoff,
+  limitView,
   maxFov,
   panView,
   projectStereo,
@@ -75,6 +76,7 @@ import {
   unprojectStereo,
   viewAnimationProgress,
   viewMatrix,
+  type ViewLimits,
   type ViewState,
 } from "./view";
 import {
@@ -101,6 +103,8 @@ import {
   drawArrival,
   drawMarker,
   figureStarRadius,
+  emphasisHalo,
+  emphasisRadii,
   inkPattern,
   selectionDim,
 } from "./highlight";
@@ -373,6 +377,12 @@ export class SkyMap {
   private selectedConstellation: string | null = null;
   /** The selected constellation's name is drawn even with the names layer off (games, #163). */
   private selectedNameShown = false;
+  /** The selected figure's stars are drawn larger, in a dithered ink halo (games, #183). */
+  private selectedStarsEmphasis = false;
+  /** Screen points of the emphasised stars (x, y, magnitude, below), reused between frames. */
+  private readonly emphasised: number[] = [];
+  /** Bounds the caller put on the view (games, #183), on top of the map's own. */
+  private viewLimits: ViewLimits | null = null;
   /** Catalogue index of each HIP number (selection marker, #103). */
   private readonly hipIndex: Map<number, number>;
   /** Selected star, Sun, Moon or planet, marked by an engraved reticle (#103). */
@@ -891,6 +901,25 @@ export class SkyMap {
   }
 
   /**
+   * Draws the selected constellation's stars larger, each in a dithered ink halo, lines shown or
+   * not: the games make the stars asked about stand out (#183). Off by default (the map).
+   */
+  setSelectedStarsEmphasis(on: boolean): void {
+    this.selectedStarsEmphasis = on;
+    this.dirty = true;
+  }
+
+  /**
+   * Bounds on the field of view and on how far the view may leave the zenith (see limitView),
+   * applied to gestures and animations alike; null gives the map its own bounds back.
+   */
+  setViewLimits(limits: ViewLimits | null): void {
+    this.viewLimits = limits && { ...limits };
+    this.clampView();
+    this.dirty = true;
+  }
+
+  /**
    * Where a catalogue star is drawn (CSS px, canvas coordinates) at the current date, view and
    * size, null when unknown or off screen: the games draw and pick over the map (#164).
    */
@@ -1141,6 +1170,7 @@ export class SkyMap {
     this.view.azimuth = ((this.view.azimuth % 360) + 360) % 360;
     // Widest field: depends on the screen's shape (maxFov, #89).
     this.view.fov = Math.max(FOV_MIN, Math.min(maxFov(this.size.w / this.size.h), this.view.fov));
+    if (this.viewLimits) limitView(this.view, this.size.w / this.size.h, this.viewLimits);
   }
 
   private resize(): void {
@@ -1969,6 +1999,10 @@ export class SkyMap {
     const scale = stereoScale(this.view.fov);
     const seeThrough = this.layers.seeThroughGround;
     const { stars } = this.options;
+    if (this.selectedStarsEmphasis) {
+      this.drawEmphasisedStars(figure.starIndices, m, scale, seeThrough, ink);
+      return;
+    }
     for (const i of figure.starIndices) {
       const d = this.starDirs[i]!;
       const below = e[6] * d[0] + e[7] * d[1] + e[8] * d[2] <= 0;
@@ -1990,6 +2024,63 @@ export class SkyMap {
       ctx.fillStyle = ink;
       ctx.beginPath();
       ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /**
+   * The selected figure's stars, emphasised (setSelectedStarsEmphasis, #183): every halo first
+   * (a band of the 1-bit ink checkerboard, stopping halfway to the nearest star of the figure),
+   * so that a neighbour's halo never covers a star, then
+   * each star cleared from it by a ring of sky colour and drawn larger than the map's own.
+   */
+  private drawEmphasisedStars(
+    indices: readonly number[],
+    m: Mat3,
+    scale: number,
+    seeThrough: boolean,
+    ink: string,
+  ): void {
+    const { ctx } = this;
+    const { stars } = this.options;
+    const e = this.eq2hor;
+    const pts = this.emphasised;
+    pts.length = 0;
+    for (const i of indices) {
+      const d = this.starDirs[i]!;
+      const below = e[6] * d[0] + e[7] * d[1] + e[8] * d[2] <= 0;
+      if (below && !seeThrough) continue;
+      const p = this.projectXYZ(
+        m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+        m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+        m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+        scale,
+      );
+      if (p) pts.push(p[0], p[1], stars[i]!.v, below ? 1 : 0);
+    }
+    const pattern = this.figurePattern?.pattern ?? null;
+    for (let k = 0; k < pts.length; k += 4) {
+      const [x, y] = [pts[k]!, pts[k + 1]!];
+      let nearest = Infinity; // a figure has a few dozen stars at most
+      for (let j = 0; j < pts.length; j += 4)
+        if (j !== k) nearest = Math.min(nearest, Math.hypot(pts[j]! - x, pts[j + 1]! - y));
+      ctx.globalAlpha = labelAlpha(pattern ? 1 : 0.35, pts[k + 3] === 1);
+      ctx.fillStyle = pattern ?? ink;
+      ctx.beginPath();
+      ctx.arc(x, y, emphasisHalo(pts[k + 2]!, nearest), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let k = 0; k < pts.length; k += 4) {
+      const [x, y] = [pts[k]!, pts[k + 1]!];
+      const r = emphasisRadii(pts[k + 2]!);
+      ctx.globalAlpha = labelAlpha(1, pts[k + 3] === 1);
+      ctx.fillStyle = this.skyColor;
+      ctx.beginPath();
+      ctx.arc(x, y, r.clear, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = ink;
+      ctx.beginPath();
+      ctx.arc(x, y, r.disc, 0, Math.PI * 2);
       ctx.fill();
     }
   }

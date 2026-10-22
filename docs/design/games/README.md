@@ -50,3 +50,19 @@ Les distances n'apparaissent pas sur ces captures : la copie locale des données
 Captures prises avec `--disable-accelerated-2d-canvas` : dans le conteneur, Chromium avec SwiftShader représente parfois l'image précédente d'un canvas 2D vidé (problème du rendu logiciel, absent sans accélération 2D).
 
 La figure est placée au zénith d'un observateur fictif : nord en haut, est à gauche, comme sur une carte du ciel. Fermer les jeux rend la carte exactement comme elle était (vérifié par différence d'images avant/après).
+
+## « Quelle constellation ? » : orientation, étoiles mises en avant, dézoom (#183)
+
+| Capture | Ce qu'elle montre |
+|---|---|
+| `mobile-quiz-decouverte.jpg` | Découverte : cadrage un peu plus large, étoiles de la figure plus grosses dans un halo d'encre tramé (la figure illustrée manque : la copie locale des données n'a pas l'atlas des figures) |
+| `mobile-quiz-amateur.jpg` | Amateur : lignes et étoiles mises en avant |
+| `mobile-quiz-expert.jpg` | Expert : étoiles seules, mises en avant, sans lignes ; figure tournée au hasard (angle tiré de la graine de la série) |
+| `mobile-quiz-expert-tournee.jpg` | Expert, question suivante : un autre angle |
+| `mobile-quiz-expert-reponse.jpg` | Expert après la réponse : lignes et nom révélés, orientation conservée |
+| `mobile-quiz-dezoom.jpg` | Découverte, dézoom à la molette jusqu'à la borne (l'horizon fictif reste hors champ), bouton « Recentrer » |
+| `mobile-quiz-pincement.jpg` | Amateur, dézoom au pincement (deux doigts) |
+| `mobile-quiz-nuit.jpg` | Vision nocturne |
+| `mobile-etoile-dezoom.jpg` | « Nomme l'étoile » : même dézoom et même « Recentrer » |
+
+En Expert, pas de zoom tant que la question est posée (les voisines donneraient la réponse) ; après la réponse, zoom et déplacement libres à tous les niveaux. La question suivante revient au cadrage.

@@ -5,11 +5,25 @@
   // Découverte and Amateur, typed in Expert. Every answer, right or wrong, turns the choices into
   // a short sheet of the star (name, designation, constellation, magnitude, distance, rank), with
   // « Voir dans le catalogue », which opens its constellation's page on the star and comes back.
+  // As in « Quelle constellation ? » (#183), the player may pinch or scroll out, and pan, to see
+  // where the star lies (not while an Expert question is asked); « Recentrer » comes back.
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
-  import type { CatalogStar, FigureLevel, SkyMap, SkyTheme } from "@asteria/sky-renderer";
+  import type {
+    CatalogStar,
+    FigureLevel,
+    SkyMap,
+    SkyTheme,
+    ViewState,
+  } from "@asteria/sky-renderer";
   import { starDistance, type StarDistanceFields } from "../lib/format";
-  import { createGameSky, gameTheme, showDirection } from "../lib/games/game-sky";
+  import {
+    createGameSky,
+    gameTheme,
+    showDirection,
+    viewMoved,
+    zoomLimits,
+  } from "../lib/games/game-sky";
   import type { ConstellationShape } from "../lib/games/geometry";
   import {
     matchStarName,
@@ -22,6 +36,7 @@
   import type { ItemResult } from "../lib/games/results";
   import Designation from "./Designation.svelte";
   import GameHeader from "./GameHeader.svelte";
+  import GameRecentre from "./GameRecentre.svelte";
   import Icon from "./Icon.svelte";
   import SeriesEnd from "./SeriesEnd.svelte";
 
@@ -96,13 +111,35 @@
   let nextButton = $state<HTMLButtonElement>();
   let answerArea = $state<HTMLElement>();
   let field = $state<HTMLInputElement>();
+  /** The question's framing, where « Recentrer » goes back to. */
+  let framed: ViewState | null = null;
+  /** The player has moved the view away from the framing. */
+  let moved = $state(false);
+  /** Zoom and pan: always but while an Expert question is asked. */
+  const free = $derived(!typed || answered !== null);
 
-  /** Frames the question: the constellation (or, among close named stars, the star) at the zenith. */
-  function frame() {
+  /**
+   * Frames the question: the constellation (or, among close named stars, the star) at the
+   * zenith, and bounds the player's zoom around it. `keep`: only the framing and the bounds
+   * follow (the stage was resized while the player looks around).
+   */
+  function frame(keep = false) {
     if (!map || !star || !stage.clientWidth || !stage.clientHeight) return;
     const aspect = stage.clientWidth / stage.clientHeight;
     const f = starFraming(star, shapes[star.con], named, aspect, stage.clientHeight / 2);
-    showDirection(map, f.centre, date, f.fov);
+    map.setViewLimits(zoomLimits(f.fov, aspect));
+    if (keep && framed) {
+      framed = { ...framed, fov: f.fov };
+      return;
+    }
+    framed = showDirection(map, f.centre, date, f.fov);
+    moved = false;
+  }
+
+  function recentre() {
+    if (!map || !framed) return;
+    if (reduceMotion) map.setView(framed);
+    else map.animateTo(framed, 450);
   }
 
   /** The star in the reticle, its constellation highlighted (setSelection clears the latter). */
@@ -127,11 +164,15 @@
       date,
       level,
       layers: { constellationLines: true, constellationFigures: false },
+      onViewChange: (view) => {
+        const m = framed !== null && viewMoved(view, framed);
+        if (m !== moved) moved = m;
+      },
     });
     showQuestion();
     // Typed answers start in the field; choices wait for a touch (no focus ring at first).
     if (typed) void focusAnswer();
-    const resize = new ResizeObserver(() => frame());
+    const resize = new ResizeObserver(() => frame(moved));
     resize.observe(stage);
     // The phone's keyboard (typed answers): the panel rises above it, the sky shrinks.
     const vv = window.visualViewport;
@@ -252,16 +293,16 @@
     {onquit}
   />
 
-  <div
-    class="stage"
-    class:hidden
-    class:gone={done}
-    role="img"
-    aria-label={$_("nameStar.sky", { values: { name: conName(star?.con ?? "") } })}
-    bind:this={stage}
-  >
-    <canvas bind:this={canvas} aria-hidden="true"></canvas>
-    <canvas bind:this={overlay} aria-hidden="true"></canvas>
+  <div class="stage" class:hidden class:gone={done} class:free bind:this={stage}>
+    <div
+      class="sky"
+      role="img"
+      aria-label={$_("nameStar.sky", { values: { name: conName(star?.con ?? "") } })}
+    >
+      <canvas bind:this={canvas} aria-hidden="true"></canvas>
+      <canvas bind:this={overlay} class="overlay" aria-hidden="true"></canvas>
+    </div>
+    <GameRecentre shown={moved && !done} onrecentre={recentre} />
   </div>
 
   {#if done}
@@ -416,6 +457,10 @@
   .stage.hidden::after {
     opacity: 1;
   }
+  .sky {
+    position: absolute;
+    inset: 0;
+  }
   .stage.gone {
     display: none;
   }
@@ -430,8 +475,12 @@
     width: 100%;
     height: 100%;
     display: block;
-    /* A still picture: no pan, zoom or pick in the game. */
+    /* A still picture while an Expert question is asked; never a pick (no onSelect). */
     pointer-events: none;
+  }
+  /* Pinch, scroll and pan (#183), on the map's canvas (the labels' one stays above, inert). */
+  .free canvas:not(.overlay) {
+    pointer-events: auto;
   }
   .panel {
     flex: none;

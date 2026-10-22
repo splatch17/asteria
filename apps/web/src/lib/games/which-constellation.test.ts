@@ -13,6 +13,7 @@ import {
   buildSeries,
   distractors,
   outcomeOf,
+  randomRoll,
 } from "./which-constellation";
 
 const T0 = Date.UTC(2026, 9, 19, 20);
@@ -93,7 +94,7 @@ describe("« Quelle constellation ? » series", () => {
 });
 
 describe("answers", () => {
-  const q = { answer: "Ori", choices: ["Tau", "Ori", "Gem", "Mon"] };
+  const q = { answer: "Ori", choices: ["Tau", "Ori", "Gem", "Mon"], roll: 0 };
 
   it("records a right answer and says it was learnt", () => {
     const { progress, answer } = answerQuestion(emptyProgress(), q, "Ori", T0);
@@ -116,5 +117,43 @@ describe("answers", () => {
     expect(outcomeOf(answer)).toBe("mastered");
     const again = answerQuestion(p, q, "Ori", T0 + DAY_MS + 1000).answer;
     expect(outcomeOf(again)).toBe("kept");
+  });
+});
+
+describe("orientation of the figure (#183)", () => {
+  const series = (level: "discovery" | "amateur" | "expert", seed: number) =>
+    buildSeries({
+      level,
+      shapes: SHAPES,
+      progress: emptyProgress(),
+      now: T0,
+      rng: mulberry32(seed),
+    });
+
+  it("keeps north up in Découverte and Amateur", () => {
+    for (let seed = 1; seed <= 5; seed++)
+      for (const level of ["discovery", "amateur"] as const)
+        for (const q of series(level, seed)) expect(q.roll).toBe(0);
+  });
+
+  it("turns each Expert figure by an angle that depends only on the seed", () => {
+    const a = series("expert", 42);
+    const b = series("expert", 42);
+    expect(b).toEqual(a);
+    const c = series("expert", 43);
+    expect(c.map((q) => q.roll)).not.toEqual(a.map((q) => q.roll));
+    for (const q of a) {
+      expect(Number.isInteger(q.roll)).toBe(true);
+      expect(q.roll).toBeGreaterThanOrEqual(-180);
+      expect(q.roll).toBeLessThan(180);
+    }
+  });
+
+  it("spreads the angles over the whole turn", () => {
+    const rng = mulberry32(5);
+    const rolls = Array.from({ length: 2000 }, () => randomRoll(rng));
+    const quarters = [0, 0, 0, 0];
+    for (const r of rolls) quarters[Math.floor((r + 180) / 90)]!++;
+    for (const n of quarters) expect(n).toBeGreaterThan(400);
   });
 });

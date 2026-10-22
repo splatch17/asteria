@@ -2,8 +2,12 @@
   // « Quelle constellation ? » (#163): a series of questions, each a constellation on the real
   // sky, drawn by the sky map itself (SkyMap: same stars, lines, figures and highlight as the
   // map), with 4 names to choose from. The figure is put at the zenith of a made-up observer
-  // (zenithObserver), north up, framed to fill the stage; the map takes no input there.
+  // (zenithObserver), north up, framed with a little sky around it; its stars stand out (larger,
+  // in an ink halo). Expert turns it by the question's random angle (#183), kept once answered.
   //  - Découverte: lines and the illustrated figure; Amateur: lines; Expert: its stars only.
+  //  - Zoom (#183): pinch or scroll out, and pan, to see where the figure lies; « Recentrer »
+  //    and the next question come back to the framing. Not while an Expert question is asked:
+  //    the neighbouring figures would give it away.
   //  - After the answer: lines, figure and its name (no other name) revealed, right answer
   //    inked, then « Suivante ».
   // Then the end screen: score, record, and what each answer changed.
@@ -15,11 +19,19 @@
     SkyLayers,
     SkyMap,
     SkyTheme,
+    ViewState,
   } from "@asteria/sky-renderer";
-  import { createGameSky, gameTheme, showFigure } from "../lib/games/game-sky";
+  import {
+    createGameSky,
+    gameTheme,
+    showFigure,
+    viewMoved,
+    zoomLimits,
+  } from "../lib/games/game-sky";
   import { framingFov, type ConstellationShape } from "../lib/games/geometry";
-  import type { Answer, Question } from "../lib/games/which-constellation";
+  import { FRAMING_FILL, type Answer, type Question } from "../lib/games/which-constellation";
   import GameHeader from "./GameHeader.svelte";
+  import GameRecentre from "./GameRecentre.svelte";
   import Icon from "./Icon.svelte";
   import SeriesEnd from "./SeriesEnd.svelte";
 
@@ -75,6 +87,12 @@
   let map: SkyMap | undefined;
   let hidden = $state(false);
   let nextButton = $state<HTMLButtonElement>();
+  /** The question's framing, where « Recentrer » goes back to. */
+  let framed: ViewState | null = null;
+  /** The player has moved the view away from the framing. */
+  let moved = $state(false);
+  /** Zoom and pan: always but while an Expert question is asked. */
+  const free = $derived(level !== "expert" || current !== null);
   let choiceList = $state<HTMLElement>();
 
   /** Layers of the question (by level) and of the answer (everything revealed). */
@@ -87,13 +105,30 @@
     };
   }
 
-  /** Frames the current question's figure: at the zenith, north up, filling the stage. */
-  function frame() {
+  /**
+   * Frames the current question's figure: at the zenith, turned by the question's angle, with a
+   * little sky around it, and bounds the player's zoom around that framing. `keep`: only the
+   * framing and the bounds follow (the stage was resized while the player looks around).
+   */
+  function frame(keep = false) {
     const q = question;
     const shape = q && shapes[q.answer];
-    if (!map || !shape) return;
-    const aspect = stage.clientWidth / Math.max(1, stage.clientHeight);
-    showFigure(map, shape, date, framingFov(shape.radius, aspect));
+    if (!map || !q || !shape || !stage.clientWidth || !stage.clientHeight) return;
+    const aspect = stage.clientWidth / stage.clientHeight;
+    const fov = framingFov(shape.radius, aspect, FRAMING_FILL);
+    map.setViewLimits(zoomLimits(fov, aspect));
+    if (keep && framed) {
+      framed = { ...framed, fov };
+      return;
+    }
+    framed = showFigure(map, shape, date, fov, q.roll);
+    moved = false;
+  }
+
+  function recentre() {
+    if (!map || !framed) return;
+    if (reduceMotion) map.setView(framed);
+    else map.animateTo(framed, 450);
   }
 
   function showQuestion() {
@@ -117,10 +152,15 @@
       date,
       level,
       layers: layersFor(false),
+      onViewChange: (view) => {
+        const m = framed !== null && viewMoved(view, framed);
+        if (m !== moved) moved = m;
+      },
     });
     if (!map) return;
+    map.setSelectedStarsEmphasis(true);
     showQuestion();
-    const resize = new ResizeObserver(() => frame());
+    const resize = new ResizeObserver(() => frame(moved));
     resize.observe(stage);
     return () => resize.disconnect();
   });
@@ -208,16 +248,12 @@
     {onquit}
   />
 
-  <div
-    class="stage"
-    class:hidden
-    class:gone={done}
-    role="img"
-    aria-label={$_("quiz.sky")}
-    bind:this={stage}
-  >
-    <canvas bind:this={canvas} aria-hidden="true"></canvas>
-    <canvas bind:this={overlay} class="overlay" aria-hidden="true"></canvas>
+  <div class="stage" class:hidden class:gone={done} class:free bind:this={stage}>
+    <div class="sky" role="img" aria-label={$_("quiz.sky")}>
+      <canvas bind:this={canvas} aria-hidden="true"></canvas>
+      <canvas bind:this={overlay} class="overlay" aria-hidden="true"></canvas>
+    </div>
+    <GameRecentre shown={moved && !done} onrecentre={recentre} />
   </div>
 
   {#if done}
@@ -316,6 +352,10 @@
   .stage.hidden::after {
     opacity: 1;
   }
+  .sky {
+    position: absolute;
+    inset: 0;
+  }
   @media (prefers-reduced-motion: reduce) {
     .stage::after {
       transition: none;
@@ -327,8 +367,12 @@
     width: 100%;
     height: 100%;
     display: block;
-    /* A still picture: no pan, zoom or pick in the quiz. */
+    /* A still picture while an Expert question is asked; never a pick (no onSelect). */
     pointer-events: none;
+  }
+  /* Pinch, scroll and pan (#183), on the map's canvas (the labels' one stays above, inert). */
+  .free canvas:not(.overlay) {
+    pointer-events: auto;
   }
   .panel {
     flex: none;
