@@ -53,7 +53,7 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
   - variante **scanlines** pour les transitions ;
   - **grain** et léger glitch à l'apparition.
 - **Apparition** : la figure « se révèle » depuis les étoiles, les points de trame se densifient.
-- Cadres **damier/pixel** pour les cartes de collection (jeux, badges).
+- ~~Cadres damier/pixel pour les cartes de collection~~ : abandonnés (#185, jugés lourds par le porteur) ; voir « Cartes » dans L'interface.
 
 ### L'interface
 - Titres : grotesque compressée en capitales (candidates libres : *Anton*, *Bebas Neue*, *Big Shoulders Display*, *Oswald* ; à tester).
@@ -61,6 +61,8 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 - Solennel : serif display pour les noms mythologiques (candidates : *Cormorant*, *Cinzel*, *EB Garamond*).
 - Angles vifs, filets fins, panneaux flottants façon fenêtres (comme le buste Hermès).
 - **Séparer les parties : des panneaux, pas des numéros** (#171, demande du porteur). Les intitulés numérotés façon Hermes (`#01 // TITRE`, `//` en préfixe) sont abandonnés partout. Une partie d'écran ou de fiche est un **panneau minimaliste** : filet fin (`--ast-panel-border`, parchemin 20 %), lavis d'encre très léger (`--ast-panel-bg`, parchemin 4 %), marge intérieure généreuse (`--ast-panel-pad`, 14 px), 12 px entre deux panneaux (`--ast-panel-gap`) ; titre court en capitales espacées (mono 10 px, interlettrage 0,12 em, parchemin 65 %), sans numéro ni barres obliques. Classes globales `.panel-block` / `.panel-title` (`apps/web/src/app.css`). Les éléments d'une même partie se séparent par un simple filet. L'en-tête de la carte n'affiche que le titre et le lieu (« CARTE DU CIEL · PARIS ») ; dans les lignes de données, le séparateur est le point médian « · ». En nuit rouge, le lavis devient un rouge très sombre sur noir (mêmes jetons).
+- **Cartes (catalogue, jeux) : une vignette, pas un cadre** (#185, demande du porteur). **Aucun contour en tirets ni cadre damier/pixel** autour d'une carte, d'une étiquette ou d'une case : le pointillé est réservé aux tracés du ciel (trait faux, trajectoire). Une carte est un panneau (#171) qui porte une **vignette** de ciel tramé dessinée par le code (`lib/vignettes.ts`, grille de 40 pixels, fond tramé Bayer 8×8 à double résolution, étoiles en pixels entiers, fils fins qui s'arrêtent avant les étoiles, trame dégagée sous les fils), le titre, une ligne d'accroche, le record ou la progression (jauge de pastilles ou réglet d'une graduation par constellation) et **une seule action** pleine qui couvre toute la carte (un toucher n'importe où). Hiérarchie de l'écran par des intitulés de groupe (capitales espacées prolongées d'un filet), pas par des cadres imbriqués. Apparition : la trame de la vignette se densifie en trois pas (rien en mouvement réduit).
+- **Degrés de maîtrise** (« Ton ciel ») : la case se remplit par le bas, la trame se densifie avec la hauteur : rien, un tiers en points fins (25 %), moitié en damier (50 %), plein ; le nom reste lisible au-dessus du remplissage. Deux indices (hauteur et densité), lisibles sans couleur.
 - Palette **bichrome** nuit #101B52 / parchemin #F0E6D2 (voir §2) ; pas d'autre couleur d'interface.
 - **Mode nuit rouge** : conversion intégrale en rouge sur noir. Le style 1-bit s'y prête parfaitement : c'est un atout majeur de cette DA.
 

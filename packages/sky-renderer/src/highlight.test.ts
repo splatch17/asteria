@@ -5,6 +5,9 @@ import {
   arrivalProgress,
   arrivalRingAlpha,
   arrivalRingScale,
+  EMPHASIS_HALO_MIN,
+  emphasisHalo,
+  emphasisRadii,
   figureStarRadius,
   selectionDim,
 } from "./highlight";
@@ -66,5 +69,31 @@ describe("figureStarRadius", () => {
     expect(figureStarRadius(0)).toBeGreaterThan(figureStarRadius(2));
     expect(figureStarRadius(-2)).toBe(4.5);
     expect(figureStarRadius(6)).toBe(2);
+  });
+});
+
+describe("emphasisRadii (#183)", () => {
+  it("draws an emphasised star larger than a selected one, inside a cleared ring and its halo", () => {
+    for (const v of [-1.5, 0, 2, 4, 6]) {
+      const r = emphasisRadii(v);
+      expect(r.disc).toBeGreaterThan(figureStarRadius(v));
+      expect(r.clear).toBeGreaterThan(r.disc);
+      expect(r.halo).toBeGreaterThan(r.clear + 2);
+    }
+  });
+  it("keeps brighter stars at least as large", () => {
+    expect(emphasisRadii(0).disc).toBeGreaterThanOrEqual(emphasisRadii(3).disc);
+  });
+});
+
+describe("emphasisHalo", () => {
+  it("is the full halo far from other stars", () => {
+    expect(emphasisHalo(2, 200)).toBe(emphasisRadii(2).halo);
+  });
+  it("stops halfway to the nearest star of the figure, keeping a thin ring", () => {
+    const r = emphasisRadii(2);
+    const between = 2 * (r.clear + 2);
+    expect(emphasisHalo(2, between)).toBeCloseTo(between / 2, 9);
+    expect(emphasisHalo(2, 3)).toBe(r.clear + EMPHASIS_HALO_MIN);
   });
 });

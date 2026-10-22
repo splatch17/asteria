@@ -68,6 +68,34 @@ export function figureStarRadius(v: number): number {
   return Math.min(4.5, Math.max(2, 3.6 - 0.5 * v));
 }
 
+/** Emphasised figure stars (games, #183): this much larger than figureStarRadius (CSS px). */
+export const EMPHASIS_GROWTH = 1;
+/** Width (CSS px) of the dithered ink halo around an emphasised star, outside its clearing. */
+export const EMPHASIS_HALO = 4;
+
+/**
+ * Radii (CSS px) of an emphasised figure star (setSelectedStarsEmphasis): its disc, the ring of
+ * sky colour that clears it, and the outer edge of its dithered ink halo.
+ */
+export function emphasisRadii(v: number): { disc: number; clear: number; halo: number } {
+  const disc = figureStarRadius(v) + EMPHASIS_GROWTH;
+  const clear = disc + 2;
+  return { disc, clear, halo: clear + EMPHASIS_HALO };
+}
+
+/** Narrowest halo (CSS px): stars packed together keep at least this ring of ink. */
+export const EMPHASIS_HALO_MIN = 1.5;
+
+/**
+ * Outer radius (CSS px) of an emphasised star's halo, `nearest` CSS px from the closest other
+ * star of its figure: halos stop halfway to their neighbours, so that a figure seen small
+ * (zoomed out, or a tight group of stars) stays a figure and not a blot of ink.
+ */
+export function emphasisHalo(v: number, nearest: number): number {
+  const r = emphasisRadii(v);
+  return Math.max(r.clear + EMPHASIS_HALO_MIN, Math.min(r.halo, nearest / 2));
+}
+
 const DIAGONAL = Math.SQRT1_2;
 
 /**
