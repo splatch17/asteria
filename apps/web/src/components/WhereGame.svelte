@@ -833,7 +833,7 @@
     letter-spacing: 0.02em;
     text-transform: uppercase;
   }
-  /* The figure on a small collection card: checkerboard frame (DA §3). */
+  /* The figure on a small card: a plain panel, like the Apprendre cards (#185, no dashed frame). */
   .card {
     position: relative;
     flex: none;
@@ -841,9 +841,8 @@
     height: 60px;
     padding: 3px;
     box-sizing: content-box;
-    background:
-      linear-gradient(var(--ast-bg), var(--ast-bg)) content-box,
-      repeating-conic-gradient(var(--ast-fg) 0 25%, transparent 0 50%) 0 0 / 6px 6px;
+    border: 1px solid var(--ast-panel-border);
+    background: var(--ast-panel-bg);
   }
   .card canvas {
     inset: 3px;

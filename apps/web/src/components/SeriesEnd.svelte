@@ -2,7 +2,7 @@
   // End of a series (#163, #164): the score, the record, and what each round changed for the
   // constellation played (apprise, maîtrisée, à revoir, acquise); « Rejouer » or back to the list.
   import { onMount } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import { outcomeOf, type ItemResult } from "../lib/games/results";
 
   let {
@@ -33,6 +33,9 @@
     onquit: () => void;
   } = $props();
 
+  // Digit grouping for points scores (« 5 000 »).
+  const fmt = $derived(new Intl.NumberFormat($locale ?? "fr"));
+
   let title: HTMLElement;
   onMount(() => title.focus());
 </script>
@@ -40,7 +43,7 @@
 <section class="end" aria-labelledby="series-end-title">
   <h2 id="series-end-title" tabindex="-1" bind:this={title}>{$_("quiz.end.title")}</h2>
   <p class="score">
-    <span class="big" aria-hidden="true">{score}</span><span class="of" aria-hidden="true"
+    <span class="big" aria-hidden="true">{fmt.format(score)}</span><span class="of" aria-hidden="true"
       >{of ?? `/${total}`}</span
     >
     <span class="sr-only">{scoreLabel ?? $_("quiz.end.score", { values: { score, total } })}</span>
