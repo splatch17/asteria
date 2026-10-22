@@ -439,6 +439,8 @@
   "games.best": "Record {score}/{total}",
   "games.noRecord": "Pas encore joué",
   "games.tonight": "Le ciel de ce soir passe en premier.",
+  "games.recentre": "Recentrer",
+  "games.recentreLabel": "Revenir au cadrage de la question",
   "games.whichConstellation.title": "Quelle constellation ?",
   "games.whichConstellation.hint": "Une figure, quatre noms.",
   "games.connectStars.title": "Relie les étoiles",
