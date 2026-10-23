@@ -22,7 +22,6 @@
     /** Days from the epoch to the displayed date (signed). */
     ageDays: number;
     freshness: "fresh" | "aging" | "stale";
-    source: "celestrak" | "snapshot";
     fetchedAt: Date;
     noradId: number;
     inclination: number;
@@ -253,13 +252,14 @@
         {$_("iss.aging", { values: { days: Math.round(Math.abs(orbit.ageDays)) } })}
       </p>
     {/if}
-    {#if level !== "discovery"}
-      <p class="note">
-        {$_(orbit.source === "celestrak" ? "iss.orbit.source" : "iss.orbit.sourceSnapshot", {
-          values: { date: dateTime.format(orbit.fetchedAt) },
-        })}
-      </p>
-    {/if}
+  {/if}
+  {#if orbit && status === "ready"}
+    <!-- Credit to the source of the elements, at every level (docs/DATA_SOURCES.md). -->
+    <p class="note">
+      {level === "discovery"
+        ? $_("iss.credit")
+        : $_("iss.orbit.source", { values: { date: dateTime.format(orbit.fetchedAt) } })}
+    </p>
   {/if}
 </InfoPanel>
 

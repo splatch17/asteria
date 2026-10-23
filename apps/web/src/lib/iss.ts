@@ -3,13 +3,15 @@
  * the small pieces of logic the panel and the map share (pure, tested).
  *
  * Elements: CelesTrak's GP data for NORAD 25544, as an OMM record in JSON (the format CelesTrak
- * recommends over the TLE). Freshness strategy (docs/DATA_SOURCES.md):
+ * recommends over the TLE), downloaded by the user's own browser straight from CelesTrak and kept
+ * on the device only. Asteria does not ship, serve or redistribute them (no licence is published
+ * for them: docs/DATA_SOURCES.md). Freshness strategy:
  * 1. the copy kept on the device (localStorage) is used at once, whatever the network;
- * 2. online, it is refreshed from CelesTrak when more than REFRESH_HOURS old, at most once per
- *    RETRY_HOURS (CelesTrak updates the ISS a few times a day and asks clients not to download the
- *    same data more often than every 2 hours);
- * 3. without any copy (first use offline, or CelesTrak unreachable), the snapshot taken when the
- *    app was built (`data/iss.json`, part of the offline copy) is used if it is fresh enough;
+ * 2. online, it is refreshed from CelesTrak when more than REFRESH_HOURS old, with at most one
+ *    request per device every RETRY_HOURS, failures included (CelesTrak's usage policy asks
+ *    clients not to download the same data again before it is updated);
+ * 3. without any copy (first use offline, CORS or network failure) the ISS is not shown and its
+ *    sheet says the orbit is unavailable;
  * 4. the age that counts is between the elements' epoch and the displayed date: up to FRESH_DAYS
  *    the ISS is shown as computed, up to MAX_AGE_DAYS with a warning (times off by up to a few
  *    minutes), beyond that it is not shown at all (SGP4 errors grow quickly; reboosts).
@@ -30,12 +32,12 @@ export const MAX_AGE_DAYS = 7;
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_DAY = 86_400_000;
 
-/** Elements kept on the device (or shipped with the build). */
+/** Elements kept on the device, as downloaded from CelesTrak. */
 export interface StoredElements {
   omm: OmmRecord;
   /** When they were downloaded (Unix ms). */
   fetchedAt: number;
-  source: "celestrak" | "snapshot";
+  source: "celestrak";
 }
 
 export type Freshness = "fresh" | "aging" | "stale";
@@ -81,7 +83,7 @@ export function isStoredElements(v: unknown): v is StoredElements {
     isOmmRecord(s.omm) &&
     typeof s.fetchedAt === "number" &&
     Number.isFinite(s.fetchedAt) &&
-    (s.source === "celestrak" || s.source === "snapshot")
+    s.source === "celestrak"
   );
 }
 
@@ -109,7 +111,7 @@ export function refreshDue(
 ): boolean {
   if (!online) return false;
   if (lastAttempt !== null && now - lastAttempt < RETRY_HOURS * MS_PER_HOUR) return false;
-  return !copy || copy.source !== "celestrak" || now - copy.fetchedAt > REFRESH_HOURS * MS_PER_HOUR;
+  return !copy || now - copy.fetchedAt > REFRESH_HOURS * MS_PER_HOUR;
 }
 
 /** Index 0…7 of the compass point (N, NE, E… NW) nearest to an azimuth (degrees from North). */

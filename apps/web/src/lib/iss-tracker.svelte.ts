@@ -1,13 +1,13 @@
 /**
- * The ISS's orbital elements in the app (#12): SGP4 code loaded on demand, elements from the
- * device's copy, CelesTrak or the build's snapshot (strategy in lib/iss.ts).
+ * The ISS's orbital elements in the app (#12): SGP4 code loaded on demand, elements downloaded
+ * by the device itself from CelesTrak and kept on it (strategy in lib/iss.ts). Asteria never
+ * ships or serves the elements.
  */
 import type { OrbitalElements } from "@asteria/astro-core/satellites";
 import { readSetting, writeSetting } from "./storage";
 import {
   CELESTRAK_ISS_URL,
   ISS_CACHE_KEY,
-  REFRESH_HOURS,
   isStoredElements,
   newer,
   pickIss,
@@ -24,19 +24,18 @@ const FETCH_TIMEOUT_MS = 15_000;
 export class IssTracker {
   /** The SGP4 module, once loaded. */
   sat = $state.raw<SatelliteModule | null>(null);
-  /** Elements in use, and where they come from. */
+  /** Elements in use, and when they were downloaded. */
   elements = $state.raw<OrbitalElements | null>(null);
   stored = $state.raw<StoredElements | null>(null);
-  /** No elements could be found (offline without a copy, CelesTrak and snapshot unavailable). */
+  /** No elements at all (never downloaded: offline, CORS, CelesTrak unreachable). */
   failed = $state(false);
   private started = false;
 
-  constructor(private readonly snapshotUrl: string) {}
-
-  /** Loads the module and the elements (once); refreshes from CelesTrak when due. */
+  /** Loads the module and the device's copy (once); downloads from CelesTrak when due. */
   async ensure(online: boolean): Promise<void> {
     if (this.started) {
-      if (online) void this.refresh(online);
+      if (online) await this.refresh(online);
+      this.failed = !this.elements;
       return;
     }
     this.started = true;
@@ -54,10 +53,6 @@ export class IssTracker {
     );
     if (kept) this.use(kept);
     await this.refresh(online);
-    // The build's snapshot may be newer than an old copy (it is part of the offline copy).
-    const s = this.stored;
-    if (!s || s.source !== "celestrak" || Date.now() - s.fetchedAt > REFRESH_HOURS * 3_600_000)
-      await this.loadSnapshot();
     this.failed = !this.elements;
   }
 
@@ -71,6 +66,10 @@ export class IssTracker {
     }
   }
 
+  /**
+   * One request to CelesTrak's GP endpoint for the ISS when refreshDue allows it (at most one
+   * attempt per device every RETRY_HOURS, recorded before the request so that a failure counts).
+   */
   private async refresh(online: boolean): Promise<void> {
     const now = Date.now();
     const last = readSetting<number | null>(ATTEMPT_KEY, null, (v): v is number | null =>
@@ -82,28 +81,14 @@ export class IssTracker {
       const omm = pickIss(await fetchJson(CELESTRAK_ISS_URL));
       if (!omm) throw new Error("No ISS record in CelesTrak's answer");
       const copy: StoredElements = { omm, fetchedAt: now, source: "celestrak" };
-      const best = newer(this.stored, copy);
-      if (best === copy) {
+      if (newer(this.stored, copy) === copy) {
         writeSetting(ISS_CACHE_KEY, copy);
         this.use(copy);
       }
-      this.failed = false;
     } catch (e) {
-      // CORS, network, CelesTrak's rate limit (403): the copy in hand stays.
+      // CORS, network, CelesTrak's rate limit (403): the copy in hand stays; the sheet says
+      // « orbite indisponible » or « trop ancienne ».
       console.warn("CelesTrak unreachable", e);
-    }
-  }
-
-  private async loadSnapshot(): Promise<void> {
-    try {
-      const json: unknown = await fetchJson(this.snapshotUrl);
-      const s = json as { fetchedAt?: unknown; gp?: unknown };
-      const omm = pickIss(s.gp);
-      if (!omm || !isNumber(s.fetchedAt)) return;
-      const copy: StoredElements = { omm, fetchedAt: s.fetchedAt, source: "snapshot" };
-      if (newer(this.stored, copy) === copy) this.use(copy);
-    } catch {
-      // No snapshot in this build (CelesTrak unreachable when it was made).
     }
   }
 }

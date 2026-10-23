@@ -63,13 +63,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
 
-      # ISS orbital elements from CelesTrak (#12), never cached: a fallback for the offline copy.
-      # Optional: the app downloads fresher elements itself.
-      - run: python -I packages/sky-data/build_iss.py
-        continue-on-error: true
-        env:
-          PYTHONIOENCODING: utf-8
-
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

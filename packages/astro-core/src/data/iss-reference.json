@@ -1,5 +1,5 @@
 {
-  "_source": "tools/iss-reference/build_iss_reference.py \u2014 Vallado et al. 2006 (AIAA 2006-6753 Rev 2) via python-sgp4 2.27; Skyfield 1.55 with DE421 (skyfield-data). Not edited by hand.",
+  "_source": "tools/iss-reference/build_iss_reference.py \u2014 test vectors only, not shipped with the app. Vallado et al. 2006 (AIAA 2006-6753 Rev 2) verification cases as redistributed by python-sgp4 2.27 (MIT); ISS element set of 2018-07-03 quoted from Skyfield 1.55's MIT-licensed test suite (JPL Horizons comparison); Skyfield with DE421 (skyfield-data) for look angles, passes and shadow. Not edited by hand.",
   "vallado": [
     {
       "satnum": "5",

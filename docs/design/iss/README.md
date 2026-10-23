@@ -1,7 +1,7 @@
 # ISS sur la carte (#12)
 
-Captures Playwright (Chromium, téléphone 360 × 780 @3x, tactile), Paris, éléments CelesTrak de
-l'ISS du 3 juillet 2018 (ceux du test JPL Horizons d'astro-core) servis à la place de CelesTrak,
+Captures Playwright (Chromium, téléphone 360 × 780 @3x, tactile), Paris, jeu d'éléments de
+l'ISS du 3 juillet 2018 (celui des tests Skyfield / JPL Horizons d'astro-core) servi à la place de CelesTrak,
 horloge fixée à la date indiquée (fuseau Europe/Paris).
 
 | Fichier | Ce qu'on voit |
@@ -12,6 +12,7 @@ horloge fixée à la date indiquée (fuseau Europe/Paris).
 | `mobile-discovery.png` | 5 juil., 21 h 30, niveau Découverte : « La Station spatiale passe cette nuit à 4 h 45, regarde vers le sud. » et deux repères (tour de la Terre en 93 min, 400 km) |
 | `mobile-night.png` | Vision nocturne (rouge sur noir), même passage |
 | `mobile-stale.png` | 20 juil. : éléments de plus de 7 jours, l'ISS n'est pas affichée et la fiche le dit |
+| `mobile-unavailable.png` | CelesTrak injoignable (réseau ou CORS) et aucune copie sur l'appareil : « Orbite non disponible » |
 | `mobile-menu.png` | Menu › Affichage : nouvelle section « Satellites », tuile « ISS » |
 
 Glyphe : un corps entre deux panneaux solaires, orienté dans le sens du mouvement, plein quand le

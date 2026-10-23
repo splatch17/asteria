@@ -132,13 +132,13 @@
     },
     {
       "id": "celestrak",
-      "name": "CelesTrak, éléments orbitaux (GP)",
-      "role": "Orbite de la Station spatiale internationale (ISS), téléchargée par l'appli et propagée par SGP4.",
-      "author": "T. S. Kelso, CelesTrak",
-      "notice": "Orbital data courtesy of CelesTrak (celestrak.org).",
-      "license": "Données publiques, mention de CelesTrak",
-      "licenseUrl": "https://celestrak.org/NORAD/documentation/gp-data-formats.php",
-      "sourceUrl": "https://celestrak.org/"
+      "name": "CelesTrak, éléments orbitaux (GP) de l'ISS",
+      "role": "Orbite de la Station spatiale internationale, téléchargée par ton appareil directement chez CelesTrak (au plus une fois toutes les 2 h), gardée sur l'appareil et propagée par SGP4. Asteria ne la redistribue pas.",
+      "author": "T. S. Kelso, CelesTrak ; catalogue de l'US Space Force (18th et 19th Space Defense Squadrons)",
+      "notice": "Orbite : CelesTrak (celestrak.org).",
+      "license": "Aucune licence publiée ; usage selon la politique d'usage de CelesTrak, sans redistribution",
+      "licenseUrl": "https://celestrak.org/usage-policy.php",
+      "sourceUrl": "https://celestrak.org/NORAD/documentation/gp-data-formats.php"
     }
   ],
   "assets": [

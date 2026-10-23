@@ -72,7 +72,7 @@ describe("elements", () => {
     const recent: StoredElements = {
       omm: { ...record, EPOCH: "2018-07-05T10:00:00.000000" },
       fetchedAt: epoch - DAY, // downloaded earlier does not matter
-      source: "snapshot",
+      source: "celestrak",
     };
     expect(newer(old, recent)).toBe(recent);
     expect(newer(recent, old)).toBe(recent);
@@ -101,9 +101,13 @@ describe("refreshDue", () => {
     expect(refreshDue(null, null, now, false)).toBe(false);
   });
 
-  it("asks when there is no copy, or only the build's snapshot", () => {
+  it("asks when there is no copy", () => {
     expect(refreshDue(null, null, now, true)).toBe(true);
-    expect(refreshDue({ ...copy, fetchedAt: now, source: "snapshot" }, null, now, true)).toBe(true);
+  });
+
+  it("does not ask again within 2 hours of a failed attempt, even without a copy", () => {
+    expect(refreshDue(null, now - 1.9 * HOUR, now, true)).toBe(false);
+    expect(refreshDue(null, now - 2.1 * HOUR, now, true)).toBe(true);
   });
 
   it("asks again after 6 hours, at most once every 2 hours", () => {

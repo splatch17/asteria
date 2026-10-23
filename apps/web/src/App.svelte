@@ -1463,7 +1463,7 @@
   });
 
   // --- The ISS (#12): SGP4 module and elements loaded on demand (layer on, or searched).
-  const issTracker = new IssTracker(dataUrl("iss.json"));
+  const issTracker = new IssTracker();
   const issWanted = $derived(
     status === "ready" && (viewLayers.sky.satellites || selection?.kind === "satellite"),
   );
@@ -1608,7 +1608,6 @@
             epoch: el.epoch,
             ageDays: elementsAgeDaysOf(el.epochMs, date),
             freshness: issFreshness,
-            source: stored.source,
             fetchedAt: new Date(stored.fetchedAt),
             noradId: el.noradId,
             inclination: el.inclination,

@@ -11,6 +11,17 @@ Writes packages/astro-core/src/data/iss-reference.json from:
    seen from Paris (WGS-84, 0 m): altitude, azimuth, range; rise / culmination / set events
    (find_events, horizon 0°, geometric); sunlit state (is_sunlit, DE421) and Sun altitude.
 
+Provenance of the element sets (test vectors only: the file is read by satellites.test.ts and is
+not part of the app's build or of its offline copy):
+- the Vallado cases are the published verification vectors of the paper above (companion files
+  of AIAA 2006-6753), quoted verbatim as redistributed in python-sgp4's MIT-licensed package;
+- the 2018 ISS element set is quoted verbatim from Skyfield's MIT-licensed test suite
+  (skyfield/tests/test_earth_satellites.py, release 1.55), where it is the input of the
+  comparison with JPL Horizons whose vectors we also use.
+Both originate in the US Space Force catalogue (Space-Track, via CelesTrak) like every TLE; they
+are historical (2000–2018) and kept here only as citable test inputs, the practice of these
+MIT-licensed projects. The app itself never ships elements (see docs/DATA_SOURCES.md, ISS).
+
 Run (not part of the build; needs only PyPI):
     python -m venv .venv && .venv/bin/pip install -r tools/iss-reference/requirements.txt
     .venv/bin/python -I tools/iss-reference/build_iss_reference.py
@@ -137,9 +148,12 @@ def skyfield_reference() -> dict:
 def main() -> int:
     data = {
         "_source": (
-            "tools/iss-reference/build_iss_reference.py — Vallado et al. 2006 (AIAA 2006-6753 Rev 2) "
-            f"via python-sgp4 {sgp4.__version__}; Skyfield {skyfield_version} with DE421 "
-            "(skyfield-data). Not edited by hand."
+            "tools/iss-reference/build_iss_reference.py — test vectors only, not shipped with the "
+            "app. Vallado et al. 2006 (AIAA 2006-6753 Rev 2) verification cases as redistributed by "
+            f"python-sgp4 {sgp4.__version__} (MIT); ISS element set of 2018-07-03 quoted from "
+            f"Skyfield {skyfield_version}'s MIT-licensed test suite (JPL Horizons comparison); "
+            "Skyfield with DE421 (skyfield-data) for look angles, passes and shadow. "
+            "Not edited by hand."
         ),
         "vallado": vallado_cases(),
         "skyfield": skyfield_reference(),
