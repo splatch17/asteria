@@ -129,6 +129,16 @@
       "license": "Publication scientifique (citation)",
       "licenseUrl": "https://doi.org/10.1007/s10569-017-9805-5",
       "sourceUrl": "https://doi.org/10.1007/s10569-017-9805-5"
+    },
+    {
+      "id": "celestrak",
+      "name": "CelesTrak, éléments orbitaux (GP) de l'ISS",
+      "role": "Orbite de la Station spatiale internationale, téléchargée par ton appareil directement chez CelesTrak (au plus une fois toutes les 2 h), gardée sur l'appareil et propagée par SGP4. Asteria ne la redistribue pas.",
+      "author": "T. S. Kelso, CelesTrak ; catalogue de l'US Space Force (18th et 19th Space Defense Squadrons)",
+      "notice": "Orbite : CelesTrak (celestrak.org).",
+      "license": "Aucune licence publiée ; usage selon la politique d'usage de CelesTrak, sans redistribution",
+      "licenseUrl": "https://celestrak.org/usage-policy.php",
+      "sourceUrl": "https://celestrak.org/NORAD/documentation/gp-data-formats.php"
     }
   ],
   "assets": [
@@ -259,6 +269,17 @@
       "licenseUrl": "https://github.com/cosinekitty/astronomy/blob/master/LICENSE",
       "sourceUrl": "https://github.com/cosinekitty/astronomy",
       "packages": ["astronomy-engine"]
+    },
+    {
+      "id": "satellite-js",
+      "name": "satellite.js",
+      "role": "Propagation SGP4 de l'orbite de l'ISS (chargée à la demande).",
+      "author": "Shashwat Kandadai et contributeurs",
+      "notice": "Copyright (C) 2013 Shashwat Kandadai, UCSC Jack Baskin School of Engineering.",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/shashwatak/satellite-js/blob/develop/LICENSE.md",
+      "sourceUrl": "https://github.com/shashwatak/satellite-js",
+      "packages": ["satellite.js"]
     },
     {
       "id": "three",

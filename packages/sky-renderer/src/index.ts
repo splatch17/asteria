@@ -21,3 +21,4 @@ export * from "./reference-frames";
 export * from "./rest-frames";
 export * from "./body-frame";
 export * from "./points-of-view";
+export * from "./satellites";

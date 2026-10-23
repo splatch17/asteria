@@ -31,6 +31,7 @@
     planet: "planets",
     body: "sun",
     deepsky: "deepsky",
+    satellite: "satellite",
   };
   const iconOf = (t: SearchTarget): IconName =>
     t.kind === "body" && t.body === "Moon" ? "moon" : ICONS[t.kind];

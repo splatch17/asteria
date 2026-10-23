@@ -117,6 +117,7 @@ describe("Affichage panel (#138)", () => {
         ],
       ],
       ["solar", ["planets", "allPaths"]],
+      ["satellites", ["satellites"]],
       ["guides", ["equatorialGrid", "azimuthalGrid", "ecliptic", "miniGlobe"]],
     ]);
     expect(keys("space")).toEqual([

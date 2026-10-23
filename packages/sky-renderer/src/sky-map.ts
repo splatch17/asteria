@@ -17,6 +17,7 @@
  *   constellationFigures, // #96: illustrated figures under the stars (figures.ts)
  *   deepSky,         // #101: Messier and bright NGC/IC objects (data from setDeepSky; deepsky.ts)
  *   milkyWay,        // #162: band of the Milky Way under everything (options.milkyWay; milky-way.ts)
+ *   satellites,      // #12: the ISS and its pass track (data from setSatellites; satellites.ts)
  * } (all booleans; defaults in DEFAULT_SKY_LAYERS). The selected planet's path does not depend
  * on allPaths (it follows setSelectedPath, and hides with `planets`).
  * New layers (ISS, boundaries…) are added as new keys: callers that pass
@@ -108,6 +109,14 @@ import {
   inkPattern,
   selectionDim,
 } from "./highlight";
+import {
+  SATELLITE_GLYPH_HALF_WIDTH,
+  SATELLITE_PICK_RADIUS,
+  drawSatelliteGlyph,
+  drawTrack,
+  normalAt,
+  type TrackScreenPoint,
+} from "./satellites";
 
 export interface CatalogStar {
   hip: number;
@@ -179,7 +188,31 @@ export type SkySelection =
   /** Picked by its name label, or by a tap inside its figure away from any star (#61). */
   | { kind: "constellation"; abbr: string }
   /** A deep-sky object of setDeepSky, by its catalogue id (#101). */
-  | { kind: "deepsky"; id: string };
+  | { kind: "deepsky"; id: string }
+  /** An artificial satellite of setSatellites, by its id (#12). */
+  | { kind: "satellite"; id: string };
+
+/**
+ * An artificial satellite (#12): J2000 direction that the map turns into the observer's true
+ * altitude and azimuth (astro-core satelliteLook), and the same a few seconds later (orients the
+ * glyph along its motion).
+ */
+export interface SkySatellite {
+  id: string;
+  /** Shown name (already localised), e.g. "ISS". */
+  label: string;
+  ra: number;
+  dec: number;
+  next?: { ra: number; dec: number } | undefined;
+  /** Lit by the Sun (solid glyph); false in the Earth's shadow (outlined). */
+  sunlit: boolean;
+}
+
+/** Track of a satellite's pass: points every few seconds, some with a time label. */
+export interface SkySatelliteTrack {
+  id: string;
+  points: { ra: number; dec: number; visible: boolean; label?: string | undefined }[];
+}
 
 /** Switchable layers of the sky map (see the file header). */
 export interface SkyLayers {
@@ -214,6 +247,8 @@ export interface SkyLayers {
    * loaded on demand (options.milkyWay).
    */
   milkyWay: boolean;
+  /** Artificial satellites (#12): the ISS and the track of its pass (setSatellites). */
+  satellites: boolean;
 }
 
 export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
@@ -230,6 +265,7 @@ export const DEFAULT_SKY_LAYERS: Readonly<SkyLayers> = Object.freeze({
   constellationFigures: false,
   deepSky: true,
   milkyWay: true,
+  satellites: true,
 });
 
 /** What a graduation label measures: value in degrees (RA too: 30 = 2 h). */
@@ -328,6 +364,15 @@ export class SkyMap {
   /** Current planets, in PLANETS order (direction and magnitude), null when unset. */
   private planets: { name: Planet; dir: Vec3; magnitude: number }[] | null = null;
   private moons: { label: string; parent: Planet; dir: Vec3 }[] = [];
+  /** Artificial satellites (#12) and the track of the selected one's pass. */
+  private satellites: {
+    id: string;
+    label: string;
+    dir: Vec3;
+    next: Vec3 | null;
+    sunlit: boolean;
+  }[] = [];
+  private track: { id: string; dirs: Vec3[]; screen: TrackScreenPoint[] } | null = null;
   /** All planets' paths (the "all paths" layer, undated, off by default). */
   private readonly pathPoints: THREE.Points;
   /** Reference lines; aDir in their own frame, uFrame → horizontal. */
@@ -391,6 +436,7 @@ export class SkyMap {
     | { kind: "body"; body: BodyName }
     | { kind: "planet"; planet: Planet }
     | { kind: "deepsky"; index: number }
+    | { kind: "satellite"; id: string }
     | null = null;
   /**
    * Arrival animation of the marker (#103): pending until the view animation ends, then runs
@@ -846,6 +892,31 @@ export class SkyMap {
     this.updateVisibility();
   }
 
+  /**
+   * Artificial satellites (#12), on each position update (null or [] clears them); drawn with
+   * the labels while the satellites layer is on.
+   */
+  setSatellites(satellites: readonly SkySatellite[] | null): void {
+    this.satellites = (satellites ?? []).map((s) => ({
+      id: s.id,
+      label: s.label,
+      dir: unitVector(s.ra, s.dec),
+      next: s.next ? unitVector(s.next.ra, s.next.dec) : null,
+      sunlit: s.sunlit,
+    }));
+    this.dirty = true;
+  }
+
+  /** Track of a satellite's current or next pass (null: none), dated by its labels. */
+  setSatelliteTrack(track: SkySatelliteTrack | null): void {
+    this.track = track && {
+      id: track.id,
+      dirs: track.points.map((p) => unitVector(p.ra, p.dec)),
+      screen: track.points.map((p) => ({ x: NaN, y: NaN, visible: p.visible, label: p.label })),
+    };
+    this.dirty = true;
+  }
+
   /** Moons of the planets (#148), on each date change; drawn with the labels. */
   setMoons(moons: SkyMoon[] | null): void {
     this.moons = (moons ?? []).map((m) => ({
@@ -980,6 +1051,7 @@ export class SkyMap {
     } else if (selection?.kind === "body") this.marked = { kind: "body", body: selection.body };
     else if (selection?.kind === "planet")
       this.marked = { kind: "planet", planet: selection.planet };
+    else if (selection?.kind === "satellite") this.marked = { kind: "satellite", id: selection.id };
     else this.marked = null;
     this.deepSky.setSelected(selection?.kind === "deepsky" ? selection.id : null);
     this.markDeepSky();
@@ -1414,6 +1486,7 @@ export class SkyMap {
 
     this.constellationLabelRects = [];
     this.placeSelectedName(layout, m, isBelow);
+    this.drawSatelliteTrack(m);
     this.drawSelectionMarker(m, layout);
     this.deepSkyLabelRects = [];
     const deepSky = this.deepSkyFrame(m);
@@ -1505,6 +1578,9 @@ export class SkyMap {
           if (r) ctx.fillText(label, r.x, r.y + H / 2);
         }
       }
+
+      // 3c. Artificial satellites (#12) and the times along the selected one's track
+      this.drawSatellites(layout, m, below, isBelow);
 
       // 4. Star names, brightest first (the catalogue is sorted by magnitude)
       // Never name a star the shader hides.
@@ -1647,6 +1723,102 @@ export class SkyMap {
   }
 
   /**
+   * The dotted track of the selected satellite's pass (#12), under every label. Its screen points
+   * are kept for drawSatellites (time labels) and reused between frames.
+   */
+  private drawSatelliteTrack(m: Mat3): void {
+    const track = this.track;
+    if (!track || !this.layers.satellites) return;
+    const scale = stereoScale(this.view.fov);
+    for (let i = 0; i < track.dirs.length; i++) {
+      const d = track.dirs[i]!;
+      const p = this.projectUnclipped(
+        m[0] * d[0] + m[1] * d[1] + m[2] * d[2],
+        m[3] * d[0] + m[4] * d[1] + m[5] * d[2],
+        m[6] * d[0] + m[7] * d[1] + m[8] * d[2],
+        scale,
+      );
+      const s = track.screen[i]!;
+      s.x = p ? p[0] : NaN;
+      s.y = p ? p[1] : NaN;
+    }
+    drawTrack(this.ctx, track.screen, 1, this.options.theme.ink);
+  }
+
+  /** projectXYZ without the screen-edge test: lines run on past the edges (null behind). */
+  private projectUnclipped(
+    x: number,
+    y: number,
+    z: number,
+    scale: number,
+  ): [number, number] | null {
+    if (z < this.backZ()) return null;
+    const { w, h } = this.size;
+    const k = (2 / (1 + z)) * scale;
+    const out = this.screenPt;
+    out[0] = (((x * k * h) / w + 1) / 2) * w;
+    out[1] = ((1 - y * k) / 2) * h;
+    return out;
+  }
+
+  /**
+   * Satellites (#12): glyph along the motion, solid when sunlit, and name; then, above the
+   * horizon pass only, the time labels of the selected track. Dimmed below the horizon like the
+   * planets (hidden there with an opaque ground).
+   */
+  private drawSatellites(
+    layout: LabelLayout,
+    m: Mat3,
+    below: boolean,
+    isBelow: (d: Vec3) => boolean,
+  ): void {
+    if (!this.layers.satellites) return;
+    const { ctx } = this;
+    const ink = this.options.theme.ink;
+    const H = 12;
+    for (const s of this.satellites) {
+      if (isBelow(s.dir) !== below) continue;
+      const p = this.toScreen(applyMat3(m, s.dir));
+      if (!p) continue;
+      const [x, y] = p; // read before the next projection reuses the pair
+      const q = s.next ? this.toScreen(applyMat3(m, s.next)) : null;
+      const angle = q ? Math.atan2(q[1] - y, q[0] - x) : 0;
+      drawSatelliteGlyph(ctx, x, y, angle, s.sunlit, labelAlpha(1, below), ink);
+      const marked = this.marked?.kind === "satellite" && this.marked.id === s.id;
+      const off = marked ? SATELLITE_GLYPH_HALF_WIDTH + MARKER_GAP + 9 : 12;
+      layout.occupy({ x: x - 9, y: y - 9, w: 18, h: 18 });
+      this.setLabelFont("700 10px", "0.12em", labelAlpha(0.95, below));
+      const label = s.label.toUpperCase();
+      const w = this.measure(label);
+      const r = layout.place([
+        { x: x + off, y: y - H / 2, w, h: H },
+        { x: x - off - w, y: y - H / 2, w, h: H },
+        { x: x - w / 2, y: y - off - H, w, h: H },
+        { x: x - w / 2, y: y + off, w, h: H },
+      ]);
+      if (r) ctx.fillText(label, r.x, r.y + H / 2);
+    }
+    const track = this.track;
+    if (below || !track) return;
+    this.setLabelFont("500 9px", "0.06em", 0.85);
+    const h = 10;
+    const pts = track.screen;
+    for (let i = 0; i < pts.length; i++) {
+      const pt = pts[i]!;
+      if (!pt.label || !Number.isFinite(pt.x)) continue;
+      const w = this.measure(pt.label);
+      // Beside the tick, on either side of the line.
+      const [nx, ny] = normalAt(pts, i);
+      const gap = 8;
+      const r = layout.place([
+        { x: pt.x + nx * gap - (nx < 0 ? w : 0), y: pt.y + ny * gap - h / 2, w, h },
+        { x: pt.x - nx * gap - (nx > 0 ? w : 0), y: pt.y - ny * gap - h / 2, w, h },
+      ]);
+      if (r) ctx.fillText(pt.label, r.x, r.y + h / 2);
+    }
+  }
+
+  /**
    * Engraved reticle around the selected star, planet, Sun or Moon (#103), dimmed below the
    * horizon like the rest (still drawn over an opaque ground: it shows where the object is),
    * with the arrival rings while they run. Its area is kept free of labels. No projection
@@ -1671,6 +1843,10 @@ export class SkyMap {
       radius =
         this.deepSky.radius(marked.index, z, stereoScale(this.view.fov), this.size.h / 2) +
         MARKER_GAP;
+    } else if (marked.kind === "satellite") {
+      if (!this.layers.satellites) return;
+      d = this.satellites.find((s) => s.id === marked.id)?.dir;
+      radius = SATELLITE_GLYPH_HALF_WIDTH + MARKER_GAP;
     } else {
       if (!this.planetsShown() || !this.planets) return;
       const p = this.planets[PLANETS.indexOf(marked.planet)];
@@ -2199,6 +2375,15 @@ export class SkyMap {
           [found, bestDist] = [pl.name, d];
       }
       if (found) return { kind: "planet", planet: found };
+    }
+    // Satellites (#12): the glyph, within SATELLITE_PICK_RADIUS.
+    if (this.layers.satellites) {
+      for (const s of this.satellites) {
+        if (applyMat3(this.eq2hor, s.dir)[2] < 0 && !seeThrough) continue;
+        const p = this.toScreen(applyMat3(m, s.dir));
+        if (p && Math.hypot(p[0] - x, p[1] - y) < SATELLITE_PICK_RADIUS)
+          return { kind: "satellite", id: s.id };
+      }
     }
     // Deep-sky objects (#101): their name, or their glyph; a star right under the finger wins.
     const deepSky = this.deepSkyFrame(m);

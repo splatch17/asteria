@@ -70,6 +70,13 @@
     <circle cx="8.2" cy="9.6" r="0.6" class="fill" />
     <circle cx="5.6" cy="11.4" r="0.6" class="fill" />
     <path d={sparkle(12.8, 11.6, 1.8)} class="fill" />
+  {:else if name === "satellite"}
+    <!-- The ISS (#12): a body between two solar panels, on a dotted track. -->
+    <rect x="6.5" y="5" width="3" height="3" class="fill" />
+    <path d="M2 6.5 H14" class="thin" />
+    <rect x="1.5" y="5.2" width="3.5" height="2.6" />
+    <rect x="11" y="5.2" width="3.5" height="2.6" />
+    <path d="M2 13.5 C6 11.5 10 11 14.5 11.5" stroke-dasharray="0.4 1.8" />
   {:else if name === "planets"}
     <circle cx="8" cy="8" r="3" />
     <ellipse cx="8" cy="8" rx="6.5" ry="2" transform="rotate(-20 8 8)" />

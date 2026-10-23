@@ -42,4 +42,5 @@ export type IconName =
   | "settings"
   | "games"
   | "catalogue"
-  | "latitude";
+  | "latitude"
+  | "satellite";

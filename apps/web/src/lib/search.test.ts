@@ -300,3 +300,22 @@ describe("search: deep-sky objects (#101)", () => {
     expect(m31.details).toEqual(["M 31", "NGC 224", "Andromeda Galaxy"]);
   });
 });
+
+describe("satellites (#12)", () => {
+  const withIss = buildSearchIndex({
+    ...SOURCES,
+    satellites: [
+      { id: "25544", name: "ISS", aliases: ["Station spatiale internationale", "ISS (ZARYA)"] },
+    ],
+  });
+  const find = (q: string) => search(withIss, q)[0]?.entry;
+
+  it("finds the ISS by its short name, its French name and its catalogue name", () => {
+    for (const q of ["ISS", "iss", "station spatiale", "Station spatiale internationale", "zarya"])
+      expect(find(q)?.target, q).toEqual({ kind: "satellite", id: "25544" });
+  });
+
+  it("lists its other names", () => {
+    expect(find("ISS")?.details).toEqual(["Station spatiale internationale", "ISS (ZARYA)"]);
+  });
+});

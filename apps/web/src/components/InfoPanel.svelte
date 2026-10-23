@@ -40,7 +40,13 @@
   } = $props();
 </script>
 
-<aside class="panel" style:bottom>
+<!-- Long sheets (the ISS passes, #12) scroll inside: the lower half of the screen at most, the
+     map keeps the upper half (where frameAbove brings what is shown). -->
+<aside
+  class="panel"
+  style:bottom
+  style:max-height={`min(calc(100dvh - (${bottom}) - 96px), 50dvh)`}
+>
   <p class="meta">{@render meta()}</p>
   <p class="name"><Designation text={name} /></p>
   {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
@@ -82,6 +88,8 @@
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
     backdrop-filter: blur(6px);
     padding: 12px 14px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .meta {
     margin: 0;

@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import basicSsl from "@vitejs/plugin-basic-ssl";
@@ -27,6 +28,15 @@ export default defineConfig(({ mode }) => ({
   define: {
     "import.meta.env.APP_VERSION": JSON.stringify(version),
     "import.meta.env.APP_COMMIT": JSON.stringify(commit()),
+  },
+  resolve: {
+    alias: {
+      // satellite.js (#12) also ships WebAssembly builds of SGP4 (≈ 400 KB, Node-only parts),
+      // reached only through createSingleThreadRuntime / createMultiThreadRuntime, which the app
+      // never calls: a stub keeps them out of the build and of the offline copy.
+      "#wasm-single-thread": fileURLToPath(new URL("src/lib/no-wasm.ts", import.meta.url)),
+      "#wasm-multi-thread": fileURLToPath(new URL("src/lib/no-wasm.ts", import.meta.url)),
+    },
   },
   // `--mode phone`: self-signed HTTPS for testing on a phone over Wi-Fi
   // (Brave forces HTTPS, and orientation sensors need a secure context).
