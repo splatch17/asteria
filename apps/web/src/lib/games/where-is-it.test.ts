@@ -120,8 +120,8 @@ describe("« Où est-elle ? » series", () => {
       games: { connectStars: { played: 3, best: 4 }, whichConstellation: { played: 1, best: 7 } },
       seen: {},
     });
-    expect(p.games.whichConstellation).toEqual({ played: 1, best: 7 });
-    expect(p.games.connectStars).toEqual({ played: 3, best: 4 });
+    expect(p.records["whichConstellation:training:amateur"]).toEqual({ played: 1, best: 7 });
+    expect(p.records["connectStars:training:amateur"]).toEqual({ played: 3, best: 4 });
   });
 });
 

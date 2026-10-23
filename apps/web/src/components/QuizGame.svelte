@@ -11,7 +11,9 @@
   //  - After the answer: lines, figure and its name (no other name) revealed, right answer
   //    inked, then « Suivante ».
   // Then the end screen: score, record, and what each answer changed.
-  import { onDestroy, onMount, tick } from "svelte";
+  // Challenges (#187): « Série » goes on until the first mistake, « Chrono » for 60 s; the next
+  // question comes by itself after a short look at the answer (challenge.ts autoNextDelay).
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type {
     CatalogStar,
@@ -30,6 +32,9 @@
   } from "../lib/games/game-sky";
   import { framingFov, type ConstellationShape } from "../lib/games/geometry";
   import { FRAMING_FILL, type Answer, type Question } from "../lib/games/which-constellation";
+  import { autoNextDelay, isChallenge, type ChallengeEnd } from "../lib/games/challenge";
+  import { ChallengeRun } from "../lib/games/challenge-run.svelte";
+  import type { GameMode } from "../lib/games/progress";
   import GameHeader from "./GameHeader.svelte";
   import GameRecentre from "./GameRecentre.svelte";
   import Icon from "./Icon.svelte";
@@ -46,6 +51,8 @@
     figureSet,
     date,
     shapes,
+    mode = "training",
+    best = 0,
     onanswer,
     onfinish,
     onreplay,
@@ -61,9 +68,12 @@
     figureSet: string;
     date: Date;
     shapes: Readonly<Record<string, ConstellationShape>>;
+    /** A training series or a challenge (#187); `best`: its record at this level. */
+    mode?: GameMode;
+    best?: number;
     /** Records the answer, returns what it changed. */
     onanswer: (question: Question, chosen: string) => Answer;
-    /** Records the finished series, returns the record before it. */
+    /** Records the finished series (or challenge), returns the record before it. */
     onfinish: (score: number) => number;
     onreplay: () => void;
     onquit: () => void;
@@ -71,6 +81,7 @@
 
   const nameOf = (abbr: string) => names[abbr] ?? abbr;
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const CAPTURE = new URLSearchParams(location.search).has("seed");
 
   let index = $state(0);
   let answers = $state.raw<Answer[]>([]);
@@ -78,8 +89,27 @@
   let current = $state.raw<Answer | null>(null);
   let done = $state(false);
   let previousBest = $state(0);
+  /** The challenge being played (#187), null in training. */
+  let run = $state.raw<ChallengeRun | null>(null);
+  let autoNext: ReturnType<typeof setTimeout> | null = null;
+  function newRun() {
+    run?.stop();
+    run = isChallenge(mode) ? new ChallengeRun(mode, () => finish("time")) : null;
+  }
+  untrack(newRun);
   const question = $derived(series[index]);
-  const score = $derived(answers.filter((a) => a.correct).length);
+  const score = $derived(run ? run.score(false) : answers.filter((a) => a.correct).length);
+  /** The answer just given ends the challenge (a streak's mistake): « Voir le résultat ». */
+  const last = $derived((run?.over ?? false) || index + 1 >= series.length);
+
+  function finish(why?: ChallengeEnd) {
+    if (done) return;
+    if (autoNext) clearTimeout(autoNext);
+    autoNext = null;
+    run?.end(why ?? run.state.end ?? "exhausted");
+    previousBest = onfinish(score);
+    done = true;
+  }
 
   let stage: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -157,6 +187,7 @@
         if (m !== moved) moved = m;
       },
     });
+    run?.start();
     if (!map) return;
     map.setSelectedStarsEmphasis(true);
     showQuestion();
@@ -164,7 +195,11 @@
     resize.observe(stage);
     return () => resize.disconnect();
   });
-  onDestroy(() => map?.dispose());
+  onDestroy(() => {
+    run?.stop();
+    if (autoNext) clearTimeout(autoNext);
+    map?.dispose();
+  });
 
   $effect(() => {
     map?.setTheme(gameTheme(theme));
@@ -181,27 +216,34 @@
     answers = [];
     current = null;
     done = false;
+    untrack(newRun);
     void tick().then(() => {
       showQuestion();
+      run?.start();
       choiceList?.querySelector<HTMLElement>("button")?.focus();
     });
   });
 
   async function choose(abbr: string) {
-    if (current || !question) return;
+    if (current || !question || done) return;
     current = onanswer(question, abbr);
     answers = [...answers, current];
+    run?.answer(current.correct);
     map?.setLayers(layersFor(true));
     map?.setSelectedNameShown(true);
     await tick();
     nextButton?.focus();
+    const delay = run ? autoNextDelay(run.mode, current.correct) : null;
+    if (delay !== null)
+      autoNext = setTimeout(() => void next(), reduceMotion ? delay + 250 : delay);
   }
 
   async function next() {
-    if (!current) return;
-    if (index + 1 >= series.length) {
-      previousBest = onfinish(score);
-      done = true;
+    if (autoNext) clearTimeout(autoNext);
+    autoNext = null;
+    if (!current || done) return;
+    if (last) {
+      finish();
       return;
     }
     if (!reduceMotion) {
@@ -242,9 +284,12 @@
     total={series.length}
     {index}
     {done}
-    progressLabel={$_("quiz.progress", {
-      values: { n: Math.min(index + 1, series.length), total: series.length },
-    })}
+    progressLabel={run
+      ? $_("games.challenge.streakSr", { values: { count: run.state.right } })
+      : $_("quiz.progress", {
+          values: { n: Math.min(index + 1, series.length), total: series.length },
+        })}
+    challenge={run?.head(best) ?? null}
     {onquit}
   />
 
@@ -263,6 +308,8 @@
       {previousBest}
       results={answers.map((a) => ({ ...a, item: a.answer }))}
       {nameOf}
+      {mode}
+      end={run?.state.end ?? null}
       {onreplay}
       {onquit}
     />
@@ -277,7 +324,14 @@
           {$_("quiz.wrong", { values: { name: nameOf(current.answer) } })}
         {/if}
       </p>
-      <div class="choices" role="group" aria-labelledby="quiz-question" bind:this={choiceList}>
+      <!-- Captures (`?seed=`): the answer, for the scripted taps. -->
+      <div
+        class="choices"
+        role="group"
+        aria-labelledby="quiz-question"
+        data-answer={CAPTURE ? question.choices.indexOf(question.answer) : undefined}
+        bind:this={choiceList}
+      >
         {#each question.choices as abbr, i (abbr)}
           {@const state = choiceState(abbr)}
           <button
@@ -301,7 +355,7 @@
         disabled={current === null}
         onclick={next}
       >
-        {index + 1 >= series.length ? $_("quiz.result") : $_("quiz.next")}
+        {last ? $_("quiz.result") : $_("quiz.next")}
         <Icon name="play" size={10} />
       </button>
     </section>
@@ -403,8 +457,11 @@
     letter-spacing: 0.02em;
     text-transform: none;
   }
-  .choice:hover:not([aria-disabled="true"]) {
-    border-color: var(--ast-fg);
+  /* Hover only where there is one: a tap leaves no sticky hover on the next question. */
+  @media (hover: hover) {
+    .choice:hover:not([aria-disabled="true"]) {
+      border-color: var(--ast-fg);
+    }
   }
   .choice[aria-disabled="true"] {
     cursor: default;

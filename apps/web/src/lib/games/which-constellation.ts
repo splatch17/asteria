@@ -15,8 +15,9 @@ import type { FigureLevel } from "@asteria/sky-renderer";
 import { nearest, type ConstellationShape } from "./geometry";
 import { constellationPool } from "./pool";
 import { itemKey, recordAnswer, type Progress } from "./progress";
+import { CHALLENGE_LENGTH } from "./challenge";
 import { shuffle, type Rng } from "./rng";
-import { selectItems } from "./select";
+import { drawItems } from "./select";
 import { masteryOf, type Mastery } from "./srs";
 
 export const GAME_ID = "whichConstellation";
@@ -58,10 +59,14 @@ export interface SeriesOptions {
   rng: Rng;
   /** Abbreviations up tonight (preferred). */
   visible?: ReadonlySet<string>;
+  /** Only these abbreviations are asked (a sky scope, #187); wrong names still from the pool. */
+  ask?: readonly string[] | undefined;
+  /** A challenge (#187): a long sequence, the pool cycled. */
+  challenge?: boolean;
   length?: number;
 }
 
-/** The questions of a series, for the player's level and memory. */
+/** The questions of a series (or a challenge), for the player's level and memory. */
 export function buildSeries({
   level,
   shapes,
@@ -69,10 +74,12 @@ export function buildSeries({
   now,
   rng,
   visible,
-  length = SERIES_LENGTH,
+  ask,
+  challenge = false,
+  length = challenge ? CHALLENGE_LENGTH : SERIES_LENGTH,
 }: SeriesOptions): Question[] {
   const pool = constellationPool(level, Object.keys(shapes));
-  const keys = selectItems(
+  const keys = drawItems(
     pool.map((a) => itemKey("con", a)),
     progress,
     {
@@ -81,6 +88,8 @@ export function buildSeries({
       rng,
       visible: visible && new Set([...visible].map((a) => itemKey("con", a))),
       maxNew: level === "discovery" ? 5 : 4,
+      ask: ask?.map((a) => itemKey("con", a)),
+      sequence: challenge,
     },
   );
   const questions = keys.map((key) => {

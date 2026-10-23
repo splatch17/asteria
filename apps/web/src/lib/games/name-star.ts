@@ -29,8 +29,9 @@ import { limitingMagnitude, stereoScale, type FigureLevel } from "@asteria/sky-r
 import { normalize, typoAllowed, withinOneEdit } from "../search";
 import { angleBetween, framingFov, type ConstellationShape } from "./geometry";
 import { itemKey, type Progress } from "./progress";
+import { CHALLENGE_LENGTH } from "./challenge";
 import { shuffle, type Rng } from "./rng";
-import { selectItems } from "./select";
+import { drawItems } from "./select";
 import type { Grade } from "./srs";
 
 export const GAME_ID = "nameStar";
@@ -209,22 +210,28 @@ export interface StarSeriesOptions {
   rng: Rng;
   /** HIP numbers (as text) of the stars up tonight: preferred. */
   visible?: ReadonlySet<string>;
+  /** Only these HIP numbers (as text) are asked (a sky scope, #187); names still from the pool. */
+  ask?: readonly string[] | undefined;
+  /** A challenge (#187): a long sequence, the pool cycled. */
+  challenge?: boolean;
   length?: number;
 }
 
-/** The questions of a series, for the player's level and memory. */
+/** The questions of a series (or a challenge), for the player's level and memory. */
 export function buildStarSeries(o: StarSeriesOptions): StarQuestion[] {
   const byHip = new Map(o.pool.map((s) => [s.hip, s]));
-  const keys = selectItems(
+  const keys = drawItems(
     o.pool.map((s) => itemKey("star", s.hip)),
     o.progress,
     {
-      count: o.length ?? SERIES_LENGTH,
+      count: o.length ?? (o.challenge ? CHALLENGE_LENGTH : SERIES_LENGTH),
       now: o.now,
       rng: o.rng,
       visible: o.visible && new Set([...o.visible].map((h) => itemKey("star", h))),
       maxNew: o.level === "discovery" ? 5 : 4,
       newWindow: NEW_WINDOW[o.level],
+      ask: o.ask?.map((h) => itemKey("star", h)),
+      sequence: o.challenge ?? false,
     },
   );
   return keys.map((key) => {

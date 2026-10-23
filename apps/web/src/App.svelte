@@ -2001,6 +2001,7 @@
       theme={night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day}
       figureSet={`${import.meta.env.BASE_URL}data/figures/stellarium-western.json`}
       {placeName}
+      located={place.name === "mine"}
       start={learnStart}
       onclose={closeGames}
     />

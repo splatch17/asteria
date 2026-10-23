@@ -9,6 +9,8 @@
   //  - right: the area lights up (1-bit dither) with its name, points for speed;
   //  - wrong: the area tapped is named (dashed), the view flies to show the right one lit.
   // Areas are redrawn after each map frame only (the map renders on demand).
+  // Challenges (#187): « Série » until the first miss (or « Je ne sais pas »), counted in
+  // answers; « Chrono »: as many points as possible in 60 s.
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { _, locale } from "@asteria/ui";
   import {
@@ -46,6 +48,9 @@
     slerp,
     slopDegrees,
   } from "../lib/games/where-is-it";
+  import { autoNextDelay, isChallenge, type ChallengeEnd } from "../lib/games/challenge";
+  import { ChallengeRun } from "../lib/games/challenge-run.svelte";
+  import type { GameMode } from "../lib/games/progress";
   import GameHeader from "./GameHeader.svelte";
   import Icon from "./Icon.svelte";
   import SeriesEnd from "./SeriesEnd.svelte";
@@ -60,11 +65,16 @@
     figureSet,
     date,
     observer,
+    mode = "training",
+    best = 0,
     onresult,
     onfinish,
     onreplay,
     onquit,
   }: {
+    /** A training series or a challenge (#187); `best`: its record at this level. */
+    mode?: GameMode;
+    best?: number;
     /** Abbreviations of the constellations to find. */
     series: string[];
     stars: CatalogStar[];
@@ -124,7 +134,27 @@
   let loadError = $state(false);
   let bounds = $state.raw<ConstellationBounds | null>(null);
   const target = $derived(series[index] ?? "");
-  const score = $derived(rounds.reduce((s, r) => s + r.points, 0));
+
+  /** The challenge being played (#187), null in training; timed is scored in points. */
+  let run = $state.raw<ChallengeRun | null>(null);
+  function newRun() {
+    run?.stop();
+    run = isChallenge(mode) ? new ChallengeRun(mode, () => finish("time")) : null;
+  }
+  untrack(newRun);
+  const inPoints = $derived(mode !== "streak");
+  const score = $derived(run ? run.score(inPoints) : rounds.reduce((s, r) => s + r.points, 0));
+  /** The answer just given ends the series or the challenge: « Voir le résultat ». */
+  const last = $derived((run?.over ?? false) || index + 1 >= series.length);
+
+  function finish(why?: ChallengeEnd) {
+    if (done) return;
+    if (autoNext) clearTimeout(autoNext);
+    autoNext = null;
+    run?.end(why ?? run.state.end ?? "exhausted");
+    previousBest = onfinish(score);
+    done = true;
+  }
   /** The timer bar restarts with each question (keyed on it). */
   let asked = $state(0);
 
@@ -400,6 +430,8 @@
     }
     drawCard();
     draw();
+    // A challenge's clock starts with the first question that can be answered.
+    if (bounds) run?.start();
   }
 
   async function answer(tapDir: Vec3 | null) {
@@ -416,6 +448,7 @@
     const result = onresult(target, gradeFor(correct, ms, level, edge));
     current = { ...result, points, ms, tapped, edge, gaveUp };
     rounds = [...rounds, current];
+    run?.answer(correct, points);
     shown = {
       right: areaShape(target),
       wrong: !correct && tapped && tapped !== target ? areaShape(tapped) : null,
@@ -436,16 +469,17 @@
     draw();
     await tick();
     nextButton?.focus();
-    if (correct && !CAPTURE) autoNext = setTimeout(() => void next(), NEXT_MS);
+    const delay = run ? autoNextDelay(run.mode, correct, true) : correct ? NEXT_MS : null;
+    if (delay !== null && !CAPTURE)
+      autoNext = setTimeout(() => void next(), reduceMotion ? delay + 250 : delay);
   }
 
   async function next() {
     if (autoNext) clearTimeout(autoNext);
     autoNext = null;
-    if (!current) return;
-    if (index + 1 >= series.length) {
-      previousBest = onfinish(score);
-      done = true;
+    if (!current || done) return;
+    if (last) {
+      finish();
       return;
     }
     if (!reduceMotion) {
@@ -597,6 +631,7 @@
     return () => resize.disconnect();
   });
   onDestroy(() => {
+    run?.stop();
     if (autoNext) clearTimeout(autoNext);
     if (flight !== null) cancelAnimationFrame(flight);
     map?.dispose();
@@ -619,6 +654,7 @@
     index = 0;
     rounds = [];
     done = false;
+    untrack(newRun);
     void tick().then(() => {
       ask();
       giveUpButton?.focus();
@@ -643,9 +679,12 @@
     total={series.length}
     {index}
     {done}
-    progressLabel={$_("where.progress", {
-      values: { n: Math.min(index + 1, series.length), total: series.length },
-    })}
+    progressLabel={run
+      ? $_("games.challenge.streakSr", { values: { count: run.state.right } })
+      : $_("where.progress", {
+          values: { n: Math.min(index + 1, series.length), total: series.length },
+        })}
+    challenge={run?.head(best) ?? null}
     {onquit}
   />
 
@@ -693,6 +732,9 @@
         values: { score, right: rounds.filter((r) => r.correct).length, total: series.length },
       })}
       recordLabel={$_("where.end.best", { values: { best: fmt.format(previousBest) } })}
+      {mode}
+      end={run?.state.end ?? null}
+      inPoints={mode === "timed"}
       {onreplay}
       {onquit}
     />
@@ -715,10 +757,15 @@
       </div>
       <p class="status" role="status" class:right={current?.correct}>{status}</p>
       <div class="actions">
-        <span class="total">{$_("where.score", { values: { score: fmt.format(score) } })}</span>
+        <!-- A streak counts answers (in the head), not points. -->
+        <span class="total"
+          >{mode === "streak"
+            ? ""
+            : $_("where.score", { values: { score: fmt.format(score) } })}</span
+        >
         {#if current}
           <button class="primary" bind:this={nextButton} onclick={next}>
-            {index + 1 >= series.length ? $_("quiz.result") : $_("quiz.next")}
+            {last ? $_("quiz.result") : $_("quiz.next")}
             <Icon name="play" size={10} />
           </button>
         {:else}
