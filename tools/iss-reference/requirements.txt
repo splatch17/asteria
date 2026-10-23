@@ -1,0 +1,5 @@
+sgp4==2.27
+skyfield==1.55
+skyfield-data==7.0.0
+jplephem==2.24
+numpy==2.4.6
