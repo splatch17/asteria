@@ -46,6 +46,7 @@
     titanPosition,
     type Planet,
     type SeasonKind,
+    type Vec3,
   } from "@asteria/astro-core";
   import {
     CONSTELLATION_LATIN,
@@ -86,6 +87,7 @@
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import SkyTools from "./components/SkyTools.svelte";
   import SearchPanel from "./components/SearchPanel.svelte";
+  import IssPanel from "./components/IssPanel.svelte";
   import GestureTip from "./components/GestureTip.svelte";
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
@@ -96,6 +98,9 @@
   import { allowCompass, watchCompass } from "./lib/device-compass";
   import { needsIosInstallHint } from "./lib/install";
   import { network, offline, retryOffline } from "./lib/offline-client.svelte";
+  import { IssTracker } from "./lib/iss-tracker.svelte";
+  import { ISS_ID, freshness, minuteTicks, passToShow, passWindow, trackInstants } from "./lib/iss";
+  import type { SatellitePass } from "@asteria/astro-core/satellites";
   import {
     apparentSize,
     deepSkyLabel,
@@ -866,7 +871,9 @@
                 ? (names[t.abbr] ?? t.abbr)
                 : t.kind === "deepsky"
                   ? deepSkyTitle(t.id)
-                  : starLabel(t.star),
+                  : t.kind === "satellite"
+                    ? $_("iss.name")
+                    : starLabel(t.star),
       });
     } catch (e) {
       console.error(e);
@@ -969,6 +976,9 @@
       })),
       bodies: (["Sun", "Moon"] as const).map((body) => ({ body, name: $_(`body.${body}`) })),
       planets: PLANETS.map((planet) => ({ planet, name: planetName(planet) })),
+      satellites: [
+        { id: ISS_ID, name: $_("iss.name"), aliases: [$_("iss.fullName"), "ISS (ZARYA)"] },
+      ],
       hipLabel,
       ...(deepSky && {
         deepSky: deepSkySearchSources(deepSky, deepSkyNamesFr, deepSkyTypeLabel),
@@ -1010,6 +1020,15 @@
       dirs = [unitVector(o.ra, o.dec)];
       const field = deepSkyFieldFor(deepSkyRank({ ...o, name: deepSkyNamesFr[o.id] }));
       if (map && field < map.view.fov) fov = field;
+    } else if (target.kind === "satellite") {
+      // The ISS (#12): the layer goes on, the sheet opens (loading the orbit if needed); the map
+      // turns to it once it is known (now, or its next pass).
+      viewLayers.sky.satellites = true;
+      selection = target;
+      map?.setSelection(target);
+      if (issModel) frameDirections(issDirections());
+      else issFramePending = true;
+      return;
     } else if (target.kind === "constellation") {
       next = { kind: "constellation", abbr: target.abbr };
       dirs = figureDirections(catalog.stars, catalog.lines, target.abbr, years);
@@ -1442,6 +1461,220 @@
     if (status !== "ready") return;
     map?.setPaths(allPaths);
   });
+
+  // --- The ISS (#12): SGP4 module and elements loaded on demand (layer on, or searched).
+  const issTracker = new IssTracker(dataUrl("iss.json"));
+  const issWanted = $derived(
+    status === "ready" && (viewLayers.sky.satellites || selection?.kind === "satellite"),
+  );
+  $effect(() => {
+    if (issWanted) void issTracker.ensure(network.online);
+  });
+  const issFreshness = $derived(
+    issTracker.elements ? freshness(issTracker.elements.epochMs, date.getTime()) : null,
+  );
+  /** Elements usable at the displayed date (not stale) and the module, or null. */
+  const issModel = $derived(
+    issWanted && issTracker.sat && issTracker.elements && issFreshness !== "stale"
+      ? { sat: issTracker.sat, el: issTracker.elements }
+      : null,
+  );
+  const issLook = $derived(issModel ? issModel.sat.satelliteLook(issModel.el, date, place) : null);
+  // Passes over PASS_DAYS from the displayed date, recomputed when the date leaves the window,
+  // the place or the elements change (≈ 30 ms on a desktop CPU).
+  let issPassCache: {
+    el: unknown;
+    lat: number;
+    lon: number;
+    start: number;
+    validUntil: number;
+    passes: SatellitePass[];
+  } | null = null;
+  const issPasses = $derived.by((): SatellitePass[] => {
+    if (!issModel) return [];
+    const t = date.getTime();
+    const c = issPassCache;
+    if (
+      c &&
+      c.el === issModel.el &&
+      c.lat === place.latitude &&
+      c.lon === place.longitude &&
+      t >= c.start &&
+      t <= c.validUntil
+    )
+      return c.passes;
+    const w = passWindow(t);
+    const passes = issModel.sat.findPasses(issModel.el, place, new Date(w.start), new Date(w.end));
+    issPassCache = { el: issModel.el, lat: place.latitude, lon: place.longitude, ...w, passes };
+    return passes;
+  });
+  const issPassTimes = $derived(
+    issPasses.map((p) => ({
+      rise: p.rise.date.getTime(),
+      set: p.set.date.getTime(),
+      visible: p.visible
+        ? { start: p.visible.start.date.getTime(), end: p.visible.end.date.getTime() }
+        : null,
+    })),
+  );
+  /** Pass chosen in the sheet's list (its rise), else the one under way or the next visible. */
+  let issChosenRise = $state<number | null>(null);
+  const issShown = $derived.by(() => {
+    const t = date.getTime();
+    const chosen = issPassTimes.findIndex((p) => p.rise === issChosenRise && p.set >= t);
+    const i = chosen >= 0 ? chosen : passToShow(issPassTimes, t);
+    return i >= 0 ? i : null;
+  });
+  const issSelected = $derived(selection?.kind === "satellite");
+  const issNowUp = $derived(!!issLook && issLook.altitude > 0);
+  $effect(() => {
+    if (!viewLayers.sky.satellites && selection?.kind === "satellite") selection = null;
+  });
+  $effect(() => {
+    if (!issSelected) issChosenRise = null;
+  });
+  $effect(() => {
+    if (status !== "ready") return;
+    if (!issModel || !issLook) {
+      map?.setSatellites(null);
+      return;
+    }
+    const next = issModel.sat.satelliteLook(issModel.el, new Date(date.getTime() + 10_000), place);
+    map?.setSatellites([
+      {
+        id: ISS_ID,
+        label: $_("iss.name"),
+        ra: issLook.ra,
+        dec: issLook.dec,
+        next: next ? { ra: next.ra, dec: next.dec } : undefined,
+        sunlit: issLook.sunlit,
+      },
+    ]);
+  });
+  // Track of the pass: drawn while the ISS is up (that pass) or selected (the pass shown).
+  const issTrack = $derived.by(() => {
+    if (!issModel || issShown === null) return null;
+    const p = issPassTimes[issShown]!;
+    const t = date.getTime();
+    const current = p.rise <= t && t <= p.set;
+    if (!issSelected && !(current && issNowUp)) return null;
+    const ticks = minuteTicks(p.visible?.start ?? p.rise, p.visible?.end ?? p.set);
+    const instants = [...new Set([...trackInstants(p), ...ticks])].sort((a, b) => a - b);
+    const tickSet = new Set(ticks);
+    const points = [];
+    for (const ms of instants) {
+      const at = new Date(ms);
+      const look = issModel.sat.satelliteLook(issModel.el, at, place);
+      if (!look) continue;
+      points.push({
+        ra: look.ra,
+        dec: look.dec,
+        visible: !!p.visible && ms >= p.visible.start && ms <= p.visible.end,
+        label: tickSet.has(ms)
+          ? $_("iss.time", {
+              values: { h: at.getHours(), m: String(at.getMinutes()).padStart(2, "0") },
+            })
+          : undefined,
+      });
+    }
+    return { id: ISS_ID, points };
+  });
+  $effect(() => {
+    if (status !== "ready") return;
+    map?.setSatelliteTrack(issTrack);
+  });
+  // While the ISS is up (or about to rise), the live map follows it every second.
+  const issFast = $derived(
+    live &&
+      mode === "sky" &&
+      !!issModel &&
+      issPassTimes.some((p) => date.getTime() >= p.rise - 60_000 && date.getTime() <= p.set),
+  );
+  $effect(() => {
+    if (!issFast) return;
+    const id = setInterval(() => {
+      if (live && !playing) goLive();
+    }, 1000);
+    return () => clearInterval(id);
+  });
+  const issPanel = $derived.by(() => {
+    if (!issSelected) return null;
+    const el = issTracker.elements;
+    const sat = issTracker.sat;
+    const stored = issTracker.stored;
+    const orbit =
+      el && sat && stored && issFreshness
+        ? {
+            epoch: el.epoch,
+            ageDays: elementsAgeDaysOf(el.epochMs, date),
+            freshness: issFreshness,
+            source: stored.source,
+            fetchedAt: new Date(stored.fetchedAt),
+            noradId: el.noradId,
+            inclination: el.inclination,
+            ...sat.orbitSummary(el),
+          }
+        : null;
+    const t = date.getTime();
+    const passes = issPasses
+      .filter((p) => p.visible && p.visible.end.date.getTime() >= t)
+      .map((p) => ({
+        rise: p.rise.date.getTime(),
+        set: p.set.date.getTime(),
+        visible: p.visible!,
+      }));
+    return {
+      state: issTracker.failed
+        ? ("failed" as const)
+        : el
+          ? ("ready" as const)
+          : ("loading" as const),
+      orbit,
+      look: issLook,
+      passes,
+      shownPass: issShown === null ? null : (issPassTimes[issShown]?.rise ?? null),
+    };
+  });
+  const elementsAgeDaysOf = (epochMs: number, d: Date) => (d.getTime() - epochMs) / 86_400_000;
+  /**
+   * J2000 directions framing the ISS: itself while it is up, else the pass shown (its visible
+   * part, or the whole pass), as the map draws them.
+   */
+  function issDirections(rise?: number): Vec3[] {
+    if (!issModel) return [];
+    if (rise === undefined && issLook && issLook.altitude > 0)
+      return [unitVector(issLook.ra, issLook.dec)];
+    const r = rise ?? (issShown === null ? undefined : issPassTimes[issShown]?.rise);
+    const p = issPasses.find((q) => q.rise.date.getTime() === r);
+    if (!p) return [];
+    const pts = p.visible
+      ? [p.visible.start, p.visible.max, p.visible.end]
+      : [p.rise, p.culmination, p.set];
+    return pts.map((pt) => {
+      const d = issModel!.sat.horizontalToJ2000(pt, pt.date, place);
+      return unitVector(d.ra, d.dec);
+    });
+  }
+  /** Turns the map (above the sheet) to directions, as a search result. */
+  function frameDirections(dirs: Vec3[]) {
+    if (!map || !dirs.length || pointer.state !== "off") return;
+    const placement = placeFigure(dirs, date, place);
+    const view =
+      placement && frameAbove(placement, map.view, canvas.clientWidth / canvas.clientHeight);
+    if (view) map.animateTo(view, viewTurnMs());
+  }
+  /** Searched before its orbit was known: the map turns to it once it is (#12). */
+  let issFramePending = false;
+  $effect(() => {
+    if (!issModel || !issFramePending) return;
+    issFramePending = false;
+    if (issSelected) frameDirections(issDirections());
+  });
+  /** A pass picked in the sheet: its track is drawn and the map turns to it. */
+  function showIssPass(rise: number) {
+    issChosenRise = rise;
+    frameDirections(issDirections(rise));
+  }
 
   // Sun and Moon follow the displayed date and place.
   const bodies = $derived.by(() => {
@@ -1951,6 +2184,20 @@
   >
     {#snippet meta()}{$_("planet.kind")}{/snippet}
   </InfoPanel>
+{/if}
+{#if issPanel}
+  <IssPanel
+    level={userLevel}
+    now={date}
+    state={issPanel.state}
+    orbit={issPanel.orbit}
+    look={issPanel.look}
+    passes={issPanel.passes}
+    shownPass={issPanel.shownPass}
+    bottom={aboveControls}
+    onpass={showIssPass}
+    onclose={() => (selection = null)}
+  />
 {/if}
 {#if deepSkyInfo}
   {@const info = deepSkyInfo}

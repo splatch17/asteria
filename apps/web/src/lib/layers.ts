@@ -57,6 +57,11 @@ export const LAYER_SECTIONS: readonly LayerSection[] = [
     ],
   },
   {
+    // #12: the ISS for now; bright satellites later.
+    id: "satellites",
+    entries: [{ key: "satellites", icon: "satellite", hint: true, views: SKY }],
+  },
+  {
     id: "guides",
     entries: [
       { key: "equatorialGrid", icon: "eqGrid", hint: true, views: BOTH },

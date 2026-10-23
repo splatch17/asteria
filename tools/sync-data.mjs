@@ -19,6 +19,8 @@ if (existsSync(`${from}/earth`)) cpSync(`${from}/earth`, `${to}/earth`, { recurs
 if (existsSync(`${from}/deepsky.json`)) cpSync(`${from}/deepsky.json`, `${to}/deepsky.json`);
 // Milky Way texture (build_milkyway.py, #162), loaded on demand: optional too.
 if (existsSync(`${from}/milkyway.webp`)) cpSync(`${from}/milkyway.webp`, `${to}/milkyway.webp`);
+// ISS elements snapshot (build_iss.py, #12): optional, the app downloads fresher ones itself.
+if (existsSync(`${from}/iss.json`)) cpSync(`${from}/iss.json`, `${to}/iss.json`);
 // Textures of the realistic style (build_space.py), loaded on demand: optional too.
 if (existsSync(`${from}/space`)) cpSync(`${from}/space`, `${to}/space`, { recursive: true });
 // Illustrated constellation figures (build_figures.py, #95), loaded on demand: optional.

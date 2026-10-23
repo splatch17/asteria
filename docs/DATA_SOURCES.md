@@ -33,7 +33,7 @@
 | Rayon du Soleil ; paramètres gravitationnels des orbites | **IAU 2015 Resolution B3** (rayon solaire nominal 695 700 km) ; constante de Gauss k = 0,01720209895 (IAU 1976) ; rapports de masse Soleil/planète et GM⊕, Terre/Lune du **système de constantes IAU 2009** (Luzum et al. 2011, *Celest. Mech. Dyn. Astr.* 110:293) | IAU | Libre (publication scientifique, citation) | Système solaire à l'échelle réelle (#131) : globe du Soleil, orbites osculatrices (`orbits.ts`), testées à < 0,5 % du trajet d'astronomy-engine un quart de période plus loin — ✅ |
 | Équinoxes et solstices | lib `astronomy-engine` `Seasons` (MIT) ; validation **USNO**, Astronomical Applications Department, « Earth's Seasons » (api.usno.navy.mil/seasons, heures TU à la minute), tableau `generate/seasons/seasons.txt` du dépôt astronomy-engine (commit `865d3da7d811`), l'USNO et l'IMCCE n'étant pas joignables depuis l'environnement de build | U.S. Naval Observatory | Domaine public (œuvre du gouvernement des États-Unis) | Marques de « Les saisons » (#128) : `astro-core` `seasons`, testé à **10 min** pour 2000, 2024, 2025, 2026, 2027 et 2100 — écart maximal mesuré 1,9 min (2100) ; contrôle croisé : déclinaison apparente du Soleil = ± obliquité moyenne IAU 2006 aux solstices (0,005°) — ✅ |
 | Périodes orbitales sidérales | **JPL Horizons**, données physiques des mêmes tables (« Sidereal orb. per. » : Mercure 87,969 j … Neptune 60 189 j, Terre 365,25636 j) | NASA JPL | Libre | Échantillonnage des orbites dessinées par « Le système solaire » (un tour) ; les positions viennent de `heliocentricPosition` |
-| Satellites / ISS | **CelesTrak** (TLE) | — | Libre | Passages |
+| Satellites / ISS | **CelesTrak** (T. S. Kelso), données GP (« general perturbations ») de l'ISS, NORAD 25544, en OMM JSON (`gp.php?CATNR=25544&FORMAT=JSON`), issues du catalogue de l'US Space Force (Space-Track) | CelesTrak | Pas de licence écrite : données publiques redistribuées par CelesTrak, mention « CelesTrak » demandée, règles d'usage (pas plus d'un téléchargement par mise à jour, soit toutes les 2 h) ; **à confirmer** (site injoignable depuis le conteneur, cf. PROGRESS) | ✅ #12 : position et passages visibles de l'ISS, propagés par SGP4 (`satellite.js`, MIT) dans `astro-core/satellites.ts` ; fraîcheur et validation : voir « ISS (#12) » ci-dessous |
 | Exoplanètes | **NASA Exoplanet Archive** | NASA / IPAC | Libre | Étoiles hôtes |
 | Objets (expert) | **SIMBAD** (API TAP) | CDS Strasbourg | Libre, citation | Liens et données croisées |
 | Figures illustrées des constellations (jeu 1, #95) | **Stellarium**, culture du ciel « western » : dépôt `Stellarium/stellarium-skycultures`, dossier `western/`, **commit épinglé `014fbb5e59233d133c22f9811af96b67d05a95c9`** (2026-05-26) ; 85 illustrations WebP de **Johan Meuris** (`western/illustrations/`), chacune ancrée sur 3 étoiles HIP (`index.json`, `constellations[].image.anchors`) | Stellarium | Illustrations : **Licence Art Libre (Free Art License)** — `description.md` ne précise pas la version ; nous appliquons la **1.3** (version en vigueur, https://artlibre.org/licence/lal/) ; texte et données (ancrages) : **CC BY-SA** (version non précisée → CC BY-SA 4.0, comme les lignes). Le fichier `LICENSE-AGPL-3.0.txt` à la racine du dépôt couvre ses scripts Python, pas les cultures. Copyleft : l'atlas dérivé est diffusé sous LAL 1.3 avec attribution (« Illustrations: Johan Meuris »), mention des modifications et lien vers les originaux au commit épinglé (page Crédits, manifeste) ; l'application n'est pas une œuvre dérivée (simple affichage, comme dans Stellarium) | ✅ intégré (#95, #96) : `build_figures.py` vérifie que la mention de licence de `description.md` n'a pas changé, convertit en niveaux de gris (luminance = encre), réduit à 240 px, normalise (99e centile = encre pleine), assemble un atlas 2048×2816 WebP q80 (≈ 361 Ko) + manifeste `asteria-figure-set` v1 (≈ 21 Ko, 5 Ko gzip) ; 84 figures affichées, Télescope (Tel) non affichée : son ancre HIP 91589 a V = 6,8 > 6,5 (hors catalogue). Pas d'image pour Pup, Vel (Argo Navis rattaché à Car) ni Ser |
@@ -263,6 +263,51 @@ frontières (ci-dessus). Calculs dans `astro-core/latitude-visibility.ts` et
 - **Date** : positions J2000 précessées à l'équateur moyen de la date de l'application
   (UAI 1976), nutation et aberration négligées (< 30″).
 
+## ISS (#12)
+
+**Éléments** : CelesTrak, GP de l'ISS au format OMM JSON (recommandé par CelesTrak à la place du
+TLE). Le JSON est lu par `satellite.js` (`json2satrec`, constantes WGS-72, mode « improved » de
+Vallado 2006) et propagé par SGP4 dans `packages/astro-core/src/satellites.ts`, chargé à la
+demande (morceau de 12 Ko gzip, sans les versions WebAssembly de la bibliothèque, remplacées par
+un module vide dans `apps/web/vite.config.ts`).
+
+**Fraîcheur** (`apps/web/src/lib/iss.ts`) :
+1. la copie gardée sur l'appareil (localStorage) sert tout de suite, même hors ligne ;
+2. en ligne, l'appli la remplace depuis CelesTrak si elle a plus de 6 h, au plus une tentative
+   toutes les 2 h (règle d'usage de CelesTrak) ; CORS de celestrak.org **à vérifier sur
+   téléphone** (non testable depuis le conteneur) ; en cas d'échec, la copie reste ;
+3. une copie prise au déploiement (`packages/sky-data/build_iss.py` → `data/iss.json`, dans la
+   copie hors ligne de l'appli) sert de secours si elle est plus récente ; étape facultative du
+   déploiement ;
+4. l'âge qui compte est l'écart entre l'époque des éléments et la **date affichée** : jusqu'à
+   3 jours l'ISS est affichée, de 3 à 7 jours avec un avertissement (heures à quelques minutes
+   près), au-delà elle n'est plus affichée (la fiche le dit). L'erreur de SGP4 avec des éléments
+   récents est d'environ 1 km à l'époque et croît de quelques km par jour pour l'ISS (freinage,
+   rehaussements d'orbite).
+
+**Repères et calculs** : TEME → repère terrestre par le temps sidéral moyen (GMST IAU 1982,
+méthode de Vallado et al. 2006, annexe C), mouvement du pôle négligé (< 20 m) ; observateur sur
+l'ellipsoïde WGS-84 ; hauteur géométrique (sans réfraction) ; direction donnée à la carte telle que
+sa propre matrice J2000 → horizontal redonne la vraie hauteur et le vrai azimut. Ombre de la Terre :
+ligne vers le centre du Soleil (astronomy-engine) qui manque une sphère de 6 378,137 km (comme
+Skyfield). Passage **visible** : partie du passage où l'ISS est éclairée, à plus de 10° de hauteur,
+le Soleil à plus de 6° sous l'horizon de l'observateur. Pas de magnitude : aucune source de
+magnitude standard de l'ISS n'a pu être vérifiée (suivi à créer).
+
+**Validation** (`satellites.test.ts`, données `src/data/iss-reference.json` produites par
+`tools/iss-reference/build_iss_reference.py` depuis PyPI uniquement) :
+- SGP4 : cas de vérification de **Vallado et al. 2006** (AIAA 2006-6753 Rev 2, `SGP4-VER.TLE` et
+  sortie C++ `tcppver.out`, via python-sgp4 2.27, MIT), 8 satellites dont 6 proches de la Terre :
+  < 1 mm (mesuré < 0,01 mm) ;
+- TEME → terrestre : exemple de l'annexe C du même article : < 20 m (mesuré 16 m, mouvement du pôle
+  non appliqué) ;
+- position géocentrique J2000 de l'ISS face à **JPL Horizons** (vecteurs du 4 et 5 juillet 2018
+  cités par les tests de Skyfield) : < 10 m (mesuré 2 m) ;
+- hauteur, azimut, distance depuis Paris face à **Skyfield** 1.55 (102 instants sur trois
+  passages) : < 0,005° et 50 m (mesuré 11″, 22 m) ; levers, culminations, couchers sur 4 jours
+  (25 passages) : < 1 s (mesuré 0,2 s) ; entrées et sorties d'ombre : < 2 s ;
+- Lune passée dans la même chaîne face à astronomy-engine : < 5″.
+
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.
 - Niveau 1 embarqué (~mag 6.5, < 1 Mo) — ✅ format binaire `ASTS` v2 (#16, distances et vitesses radiales #75/#79) : `stars.bin` + `star-strings.json` + `constellation-lines.json` = 491 Ko (313 Ko gzip, v1 : 393 Ko / 262 Ko), décrit dans `packages/sky-data/README.md`, décodé par `@asteria/catalog` ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).
@@ -285,6 +330,7 @@ OFL : la licence doit accompagner les polices redistribuées (fait par `THIRD-PA
 | Paquet | Rôle | Licence | Copyright |
 |---|---|---|---|
 | `astronomy-engine` 2.1 | Soleil, Lune, planètes, constellation d'un point | MIT | © 2019-2023 Don Cross |
+| `satellite.js` 7.1 (chargé à la demande) | Propagation SGP4 de l'ISS (#12) | MIT | © 2013 Shashwat Kandadai, UCSC Jack Baskin School of Engineering |
 | `three` 0.186 | Rendu WebGL | MIT | © 2010-2026 three.js authors |
 | `svelte` 5 | Interface | MIT | © 2016-2025 Svelte Contributors |
 | `svelte-i18n` 4 | i18n (ADR-0002) | MIT | © 2017 Christian Kaisermann |

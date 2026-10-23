@@ -18,6 +18,8 @@ export type SearchTarget =
   | { kind: "constellation"; abbr: string }
   | { kind: "body"; body: "Sun" | "Moon" }
   | { kind: "planet"; planet: Planet }
+  /** An artificial satellite (#12), by its NORAD number: the ISS. */
+  | { kind: "satellite"; id: string }
   | DeepSkyTarget;
 
 export type SearchKind = SearchTarget["kind"];
@@ -58,6 +60,8 @@ export interface SearchSources {
   constellations: readonly { abbr: string; name: string; latin: string }[];
   bodies: readonly { body: "Sun" | "Moon"; name: string }[];
   planets: readonly { planet: Planet; name: string }[];
+  /** Artificial satellites (#12): shown name, then other names searched and listed. */
+  satellites?: readonly { id: string; name: string; aliases: readonly string[] }[];
   /** Label of a star known only by its Hipparcos number. */
   hipLabel: (hip: number) => string;
   /** Deep-sky objects, once their catalogue has loaded (#101). */
@@ -145,6 +149,16 @@ export function buildSearchIndex(src: SearchSources): SearchIndex {
       details: [],
       weight: -50 + i,
       ...keysOf(name, planet),
+    }),
+  );
+  (src.satellites ?? []).forEach(({ id, name, aliases }, i) =>
+    entries.push({
+      target: { kind: "satellite", id },
+      label: name,
+      details: aliases.filter((a) => a !== name),
+      // Listed just after the planets.
+      weight: -40 + i,
+      ...keysOf(name, ...aliases),
     }),
   );
   for (const { abbr, name, latin } of src.constellations)
