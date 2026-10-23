@@ -99,6 +99,7 @@
     placeName,
     located = false,
     start = null,
+    onlatitude,
     onexplain,
     onclose,
   }: {
@@ -122,6 +123,8 @@
     placeName: string;
     /** Where the screen opens: the catalogue (menu), or a constellation's page (map, #170). */
     start?: { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
+    /** Opens « Selon la latitude » (#188) over this screen, at a latitude (null: the player's). */
+    onlatitude?: (latitude?: number | null) => void;
     onclose: () => void;
   } = $props();
 
@@ -572,6 +575,19 @@
             action: $_("learn.catalogue.open"),
             onclick: () => (catalogueOpen = true),
           })}
+          {#if onlatitude}
+            {@render card({
+              id: "latitude",
+              title: $_("learn.latitude.title"),
+              pitch: $_("learn.latitude.hint"),
+              meta: "",
+              value: 0,
+              total: 0,
+              icon: "latitude",
+              action: $_("learn.latitude.open"),
+              onclick: () => onlatitude(),
+            })}
+          {/if}
         </ul>
       </section>
 

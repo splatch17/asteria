@@ -7,3 +7,4 @@ export * from "./heliocentric";
 export * from "./geomagnetism";
 export * from "./titan";
 export * from "./constellation-bounds";
+export * from "./latitude-visibility";

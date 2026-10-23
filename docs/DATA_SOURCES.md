@@ -237,6 +237,32 @@ points : partition exacte et accord ≥ 99,9 % avec `constellationOf` (Roman 198
 astronomy-engine), écarts tous à < 30″ d'une frontière ; catalogue `stars.bin` (si présent) :
 ≥ 99,5 % des 8 870 étoiles dans la constellation de leur champ `con` (mesuré : toutes).
 
+## Visibilité selon la latitude (#188)
+
+Aucune donnée nouvelle : catalogue (`stars.bin`), figures (`constellation-lines.json`) et
+frontières (ci-dessus). Calculs dans `astro-core/latitude-visibility.ts` et
+`apps/web/src/lib/latitude.ts`.
+
+- **Géométrie** (dessins) : depuis la latitude φ, une direction de déclinaison δ culmine à
+  90° − |φ − δ| et passe au plus bas à |φ + δ| − 90° ; zones toujours levée / jamais levée
+  au-delà de ±(90° − |φ|), horizon géométrique à 0° (réfraction, relief, extinction ignorés) ;
+  chaque calotte couvre (1 − cos φ) / 2 du ciel. Testé contre la transformation J2000 → horizontal
+  de l'application, parcourue minute par minute sur un jour sidéral (Sirius, Polaris, Canopus, Véga,
+  quatre latitudes : < 0,02°), et contre 200 000 points de la sphère (parts à 10⁻⁴).
+- **Listes et comptes** : même règle que « Visibles de chez moi » des jeux (#187,
+  `lib/games/visibility.ts`), pour des comptes identiques (Paris 59, équateur 88) : une figure est
+  vue si au moins la moitié de ses étoiles, ou de sa lumière, culmine à 5° ou plus ; « toujours »
+  si cette moitié ne descend jamais sous 5°. Testé : Paris 7 / 52 / 29 (Petite Ourse toujours,
+  Croix du Sud jamais, Orion une partie de l'année), équateur 0 / 88 / 0, pôle Nord : plus rien ne
+  se lève ni ne se couche, figures toutes au nord de +5° toujours visibles, toutes au sud jamais.
+- **Région d'une constellation** (fiche, Expert) : déclinaisons extrêmes de la région UAI à la
+  date (contour tous les 0,5°, précessé ; ±90° si elle contient le pôle de la date), égales aux
+  parallèles de Delporte à B1875 (< 0,001°) ; parts de la région dans chaque zone par un réseau de
+  Fibonacci (40 000 points de la sphère). Précession : il y a 5 000 ans, toute la région de la Croix
+  du Sud se levait au-dessus de l'horizon de Paris (modèle à long terme simplifié).
+- **Date** : positions J2000 précessées à l'équateur moyen de la date de l'application
+  (UAI 1976), nutation et aberration négligées (< 30″).
+
 ## Stratégie
 - Données **pré-compilées** au build en tuiles binaires compactes (HEALPix ou découpage par magnitude) → offline, rapide sur mobile.
 - Niveau 1 embarqué (~mag 6.5, < 1 Mo) — ✅ format binaire `ASTS` v2 (#16, distances et vitesses radiales #75/#79) : `stars.bin` + `star-strings.json` + `constellation-lines.json` = 491 Ko (313 Ko gzip, v1 : 393 Ko / 262 Ko), décrit dans `packages/sky-data/README.md`, décodé par `@asteria/catalog` ; niveaux 2-3 téléchargeables (mag 9-10, puis Gaia partiel).

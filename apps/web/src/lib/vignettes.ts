@@ -374,6 +374,45 @@ function search(): Scene {
   };
 }
 
+/**
+ * « Selon la latitude » (#188): the celestial sphere around the horizon, its axis tilted to the
+ * pole star; the cap that never sets in light dots, the one that never rises denser, as on the
+ * explorer's sphere.
+ */
+function latitude(): Scene {
+  const [c, R] = [20, 15];
+  const tilt = (49 * Math.PI) / 180;
+  const [ax, ay] = [-Math.cos(tilt), -Math.sin(tilt)];
+  const pole: Pt = [Math.round(c + ax * 18) - 1, Math.round(c + ay * 18)];
+  const foot: Pt = [Math.round(c - ax * 18), Math.round(c - ay * 18)];
+  const capSin = Math.sin(((90 - 49) * Math.PI) / 180);
+  const horizon: Pt[] = Array.from({ length: 17 }, (_, i): Pt => {
+    const a = (i / 16) * 2 * Math.PI;
+    return [c - 0.5 + Math.cos(a) * R, c - 0.5 + Math.sin(a) * 3.6];
+  });
+  return {
+    density: (x, y) => {
+      const [dx, dy] = [x - c, y - c];
+      if (Math.hypot(dx, dy) > R) return 0;
+      const u = (dx * ax + dy * ay) / R;
+      if (u > capSin) return 0.32;
+      if (u < -capSin) return 0.62;
+      return Math.abs(dy) < 3.6 * Math.sqrt(Math.max(0, 1 - (dx / R) ** 2)) ? 0.16 : 0;
+    },
+    stars: [
+      { x: pole[0], y: pole[1], size: 2 },
+      ...scatter(6, 91, [pole, [c, c]], 5).filter((s) => Math.hypot(s.x - c, s.y - c) > R + 2),
+    ],
+    lines: [{ points: [foot, pole] }, { points: horizon, gap: 0 }],
+    rings: [{ x: c - 0.5, y: c - 0.5, r: R }],
+    pixels: [
+      [c - 1, c - 3],
+      [c - 1, c - 2],
+      [c - 1, c - 1],
+    ],
+  };
+}
+
 /** Any other game: a starry sky. */
 function starrySky(): Scene {
   const bright: Star[] = [
@@ -400,6 +439,7 @@ const SCENES: Record<string, () => Scene> = {
   whichConstellation: orion,
   nameStar: namedStar,
   whereIsIt: search,
+  latitude,
 };
 
 const cache = new Map<string, Vignette>();

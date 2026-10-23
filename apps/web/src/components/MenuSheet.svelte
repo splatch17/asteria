@@ -60,6 +60,7 @@
     oncredits,
     ongames,
     oncatalogue,
+    onlatitude,
     online,
     offline,
     onofflineretry,
@@ -107,6 +108,8 @@
     /** Opens the Apprendre screen (#163), on its home or on the catalogue (#170). */
     ongames: () => void;
     oncatalogue: () => void;
+    /** Opens « Selon la latitude » (#188). */
+    onlatitude: () => void;
     /** Offline copy of the app (#142); « unsupported »: line hidden (development, old browser). */
     /** The phone has a network (#146): a green or red light in the settings. */
     online: boolean;
@@ -334,6 +337,15 @@
           detail={$_("menu.games")}
           haspopup
           onclick={ongames}
+          {oninfo}
+        />
+        <MenuTile
+          id="latitude"
+          icon="latitude"
+          label={$_("menu.latitude.short")}
+          detail={$_("menu.latitude")}
+          haspopup
+          onclick={onlatitude}
           {oninfo}
         />
       </div>
