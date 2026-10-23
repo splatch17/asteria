@@ -10,25 +10,44 @@
   // (`con:XXX`), « Nomme l'étoile » that of each star (`star:HIP`). Opened from the map on a
   // constellation's page, « back » returns to the map; opened from « Nomme l'étoile », it returns
   // to the game as it was (the game stays mounted, hidden, under the page).
+  // A game's card opens its settings (#187, GameSetup): the mode (training series, « Série »,
+  // « Chrono ») and the part of the sky asked, remembered per game; records are per game, mode
+  // and level. « Rejouer » plays again with the same settings.
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type { Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
   import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
   import { pageSequence } from "../lib/catalogue-nav";
-  import { GAMES } from "../lib/games/catalog";
-  import { constellationShapes } from "../lib/games/geometry";
+  import { GAMES, type GameEntry } from "../lib/games/catalog";
+  import { isChallenge } from "../lib/games/challenge";
+  import { constellationShapes, figureStars } from "../lib/games/geometry";
   import { constellationPool } from "../lib/games/pool";
   import {
+    GAME_MODES,
+    bestScore,
     countMastery,
     itemKey,
     loadProgress,
     markSeen,
     masteryOfItem,
     recordGame,
+    recordKey,
     saveProgress,
+    type GameMode,
     type Progress,
   } from "../lib/games/progress";
+  import {
+    defaultSettings,
+    isGameSettings,
+    playableScope,
+    scopeCounts,
+    scopeItems,
+    settingsKey,
+    type GameSettings,
+    type ScopeSets,
+    type SkyScope,
+  } from "../lib/games/settings";
   import {
     GAME_ID as NAME_ID,
     brightnessRanks,
@@ -40,7 +59,12 @@
   } from "../lib/games/name-star";
   import { recordItem, type ItemResult } from "../lib/games/results";
   import { mulberry32 } from "../lib/games/rng";
-  import { upTonight, visibleTonight } from "../lib/games/visibility";
+  import {
+    upFromLatitude,
+    upTonight,
+    visibleFromLatitude,
+    visibleTonight,
+  } from "../lib/games/visibility";
   import {
     GAME_ID as QUIZ_ID,
     answerQuestion,
@@ -54,6 +78,7 @@
   import { readSetting, writeSetting } from "../lib/storage";
   import Catalogue from "./Catalogue.svelte";
   import ConstellationPage from "./ConstellationPage.svelte";
+  import GameSetup from "./GameSetup.svelte";
   import Icon from "./Icon.svelte";
   import NameStarGame from "./NameStarGame.svelte";
   import QuizGame from "./QuizGame.svelte";
@@ -72,9 +97,18 @@
     theme,
     figureSet,
     placeName,
+    located = false,
     start = null,
+    onexplain,
     onclose,
   }: {
+    /** The player's own place is known (else `observer` is the app's default place, #187). */
+    located?: boolean;
+    /**
+     * « Pourquoi ? » next to « Visibles de chez moi » in a game's settings: opens the latitude
+     * explorer (#188) when given; no link otherwise.
+     */
+    onexplain?: (() => void) | undefined;
     stars: CatalogStar[];
     lines: Record<string, number[][]>;
     /** Constellation names (French) and official Latin names, by IAU abbreviation. */
@@ -106,6 +140,8 @@
     /** Gauge: `value` of `total` inked (best score, constellations seen). */
     value: number;
     total: number;
+    /** Challenge records (#187), small tags under the gauge. */
+    chips?: string[];
     icon: IconName;
     action: string;
     /** Null for a game to come (« Bientôt »). */
@@ -121,7 +157,13 @@
     if (!isLevel(urlLevel)) writeSetting(LEVEL_STORAGE_KEY, l);
   }
 
-  let progress = $state.raw<Progress>(loadProgress());
+  // Older records (one per game, #163) become the training records of the level chosen.
+  let progress = $state.raw<Progress>(
+    loadProgress(
+      undefined,
+      untrack(() => level),
+    ),
+  );
   // Computed once per opening: the catalogue, place and date do not change under the screen.
   const shapes = untrack(() => constellationShapes(stars, lines));
   const visible = untrack(() => visibleTonight(shapes, date, observer));
@@ -131,14 +173,59 @@
   const starsTonight = untrack(() =>
     upTonight(Object.fromEntries(named.map((s) => [String(s.hip), s.dir])), date, observer),
   );
+  /** « Visibles de chez moi » (#187): figures and named stars up from this latitude in a year. */
+  const home = untrack(() =>
+    visibleFromLatitude(figureStars(stars, lines), observer.latitude, date),
+  );
+  const starsHome = untrack(() =>
+    upFromLatitude(
+      Object.fromEntries(named.map((s) => [String(s.hip), s.dir])),
+      observer.latitude,
+      date,
+    ),
+  );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
+  const starItems = $derived(starPool(level, named, shapes));
   const counts = $derived(
     countMastery(
       progress,
       pool.map((a) => itemKey("con", a)),
     ),
   );
-  const bestOf = (game: string) => progress.games[game]?.best ?? 0;
+  const bestOf = (game: string, mode: GameMode = "training") =>
+    bestScore(progress, recordKey(game, mode, level));
+
+  /** What a game asks about at this level, and the sky scopes over it (#187). */
+  function askable(game: GameEntry): { pool: string[]; sets: ScopeSets } {
+    return game.items === "star"
+      ? {
+          pool: starItems.map((s) => String(s.hip)),
+          sets: { home: starsHome, tonight: starsTonight },
+        }
+      : { pool, sets: { home, tonight: visible } };
+  }
+
+  // --- Settings of each game (#187), remembered per game.
+  const stored = (id: string): GameSettings =>
+    readSetting(settingsKey(id), defaultSettings(located), isGameSettings);
+  let settings = $state<Record<string, GameSettings>>(
+    untrack(() => Object.fromEntries(GAMES.map((g) => [g.id, stored(g.id)]))),
+  );
+  /** The game whose settings sheet is open. */
+  let setup = $state<string | null>(null);
+  const setupGame = $derived(GAMES.find((g) => g.id === setup) ?? null);
+  async function closeSetup() {
+    const id = setup;
+    setup = null;
+    await tick();
+    dialog.querySelector<HTMLElement>(`[data-game='${id}']`)?.focus();
+  }
+  function startGame(game: string, chosen: GameSettings) {
+    settings = { ...settings, [game]: chosen };
+    writeSetting(settingsKey(game), chosen);
+    setup = null;
+    play(game, chosen);
+  }
 
   // --- Catalogue (#170): the list (filter and search kept while a page is open) and a page.
   const entries: CatalogueEntry[] = untrack(() =>
@@ -178,9 +265,11 @@
 
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
   let playing = $state.raw<
-    | { game: typeof QUIZ_ID; series: Question[] }
-    | { game: typeof WHERE_ID; series: string[] }
-    | { game: typeof NAME_ID; series: StarQuestion[] }
+    | ((
+        | { game: typeof QUIZ_ID; series: Question[] }
+        | { game: typeof WHERE_ID; series: string[] }
+        | { game: typeof NAME_ID; series: StarQuestion[] }
+      ) & { settings: GameSettings; best: number })
     | null
   >(null);
   /** A constellation's page opened from « Nomme l'étoile », over the game (#165). */
@@ -188,28 +277,30 @@
   const seed = Number(params.get("seed"));
   const rng = mulberry32(Number.isFinite(seed) && seed > 0 ? seed : Date.now());
 
-  function play(game: string) {
+  /** Plays a game with its settings (#187): mode, and the items of the sky scope chosen. */
+  function play(game: string, chosen: GameSettings = settings[game] ?? defaultSettings(located)) {
+    const entry = GAMES.find((g) => g.id === game);
+    if (!entry) return;
     const now = Date.now();
+    const { pool: all, sets } = askable(entry);
+    const scope = playableScope(chosen.scope, scopeCounts(all, sets));
+    const ask = scope === "all" ? undefined : scopeItems(all, scope, sets);
+    const challenge = isChallenge(chosen.mode);
+    const common = { level, progress, now, rng, ask, challenge };
+    const meta = { settings: chosen, best: bestOf(game, chosen.mode) };
     if (game === QUIZ_ID)
-      playing = {
-        game,
-        series: buildSeries({ level, shapes, progress, now, rng, visible }),
-      };
+      playing = { game, series: buildSeries({ ...common, shapes, visible }), ...meta };
     else if (game === WHERE_ID)
-      playing = { game, series: buildWhereSeries({ level, shapes, progress, now, rng, visible }) };
+      playing = { game, series: buildWhereSeries({ ...common, shapes, visible }), ...meta };
     else if (game === NAME_ID)
       playing = {
         game,
-        series: buildStarSeries({
-          level,
-          pool: starPool(level, named, shapes),
-          progress,
-          now,
-          rng,
-          visible: starsTonight,
-        }),
+        series: buildStarSeries({ ...common, pool: starItems, visible: starsTonight }),
+        ...meta,
       };
   }
+  /** « Rejouer »: the same settings, the record to beat updated. */
+  const replay = () => playing && play(playing.game, playing.settings);
   function namedAnswer(hip: number, correct: boolean): ItemResult {
     const r = recordItem(progress, "star", String(hip), starGrade(correct), Date.now());
     progress = r.progress;
@@ -243,9 +334,11 @@
     saveProgress(progress);
     return r.answer;
   }
+  /** Records a finished series or challenge; returns the record it had to beat. */
   function finish(game: string, score: number): number {
-    const previous = bestOf(game);
-    progress = recordGame(progress, game, score);
+    const mode = playing?.settings.mode ?? "training";
+    const previous = bestOf(game, mode);
+    progress = recordGame(progress, recordKey(game, mode, level), score);
     saveProgress(progress);
     return previous;
   }
@@ -263,9 +356,17 @@
     const previous = document.activeElement as HTMLElement | null;
     closeButton?.focus();
     // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Où est-elle ? »), 3 (« Nomme
-    // l'étoile »).
+    // l'étoile »), with its remembered settings or ?mode= and ?scope=; ?setup=N opens a game's
+    // settings.
     const game = GAMES[Number(params.get("game")) - 1];
-    if (game?.available) play(game.id);
+    const mode = params.get("mode") as GameMode | null;
+    const scope = params.get("scope") as SkyScope | null;
+    if (game?.available) {
+      const chosen = { ...settings[game.id]!, ...(mode && { mode }), ...(scope && { scope }) };
+      play(game.id, isGameSettings(chosen) ? chosen : settings[game.id]);
+    }
+    const sheet = GAMES[Number(params.get("setup")) - 1];
+    if (sheet?.available) setup = sheet.id;
     if (start?.view === "catalogue") catalogueOpen = true;
     else if (start?.view === "page" && shapes[start.abbr])
       openPage(start.abbr, start.star ?? null, true);
@@ -279,6 +380,7 @@
       e.stopPropagation();
       if (gamePage) void closeGamePage();
       else if (playing) void leave();
+      else if (setup) void closeSetup();
       else if (page) void closePage();
       else if (catalogueOpen) void closeCatalogue();
       else onclose();
@@ -287,7 +389,7 @@
     if (e.key !== "Tab") return;
     const focusable = [
       ...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input, summary, a[href]"),
-    ];
+    ].filter((el) => !el.closest("[inert]")); // the list under an open settings sheet
     const first = focusable[0];
     const last = focusable.at(-1);
     if (e.shiftKey && document.activeElement === first) {
@@ -322,7 +424,9 @@
       {observer}
       onresult={placed}
       onfinish={(score) => finish(WHERE_ID, score)}
-      onreplay={() => play(WHERE_ID)}
+      mode={playing.settings.mode}
+      best={playing.best}
+      onreplay={replay}
       onquit={leave}
     />
   {:else if playing?.game === NAME_ID}
@@ -342,7 +446,9 @@
         onanswer={namedAnswer}
         onfinish={(score) => finish(NAME_ID, score)}
         oncatalogue={openGamePage}
-        onreplay={() => play(NAME_ID)}
+        mode={playing.settings.mode}
+        best={playing.best}
+        onreplay={replay}
         onquit={leave}
       />
     </div>
@@ -382,7 +488,9 @@
       {shapes}
       onanswer={answer}
       onfinish={(score) => finish(QUIZ_ID, score)}
-      onreplay={() => play(QUIZ_ID)}
+      mode={playing.settings.mode}
+      best={playing.best}
+      onreplay={replay}
       onquit={leave}
     />
   {:else if page}
@@ -428,7 +536,7 @@
       {onclose}
     />
   {:else}
-    <header class="head">
+    <header class="head" inert={setup !== null}>
       <h1 id="games-title">{$_("learn.title")}</h1>
       <button
         class="close"
@@ -439,7 +547,7 @@
       >
     </header>
 
-    <div class="scroll">
+    <div class="scroll" inert={setup !== null}>
       <div class="levels" role="group" aria-label={$_("games.level")}>
         {#each LEVELS as l (l)}
           <button aria-pressed={level === l} onclick={() => chooseLevel(l)}
@@ -472,7 +580,20 @@
         <ul class="cards">
           {#each GAMES as game (game.id)}
             {@const best = bestOf(game.id)}
+            {@const streak = bestOf(game.id, "streak")}
+            {@const timed = bestOf(game.id, "timed")}
             {@render card({
+              // Challenge records at this level (#187), when there are some.
+              chips: [
+                ...(streak > 0 ? [$_("games.card.streak", { values: { score: streak } })] : []),
+                ...(timed > 0
+                  ? [
+                      game.points
+                        ? $_("games.card.timedPoints", { values: { score: timed } })
+                        : $_("games.card.timed", { values: { score: timed } }),
+                    ]
+                  : []),
+              ],
               id: game.id,
               title: $_(`games.${game.id}.title`),
               pitch: $_(`games.${game.id}.hint`),
@@ -482,13 +603,15 @@
                   ? game.points
                     ? $_("games.bestPoints", { values: { score: best } })
                     : $_("games.best", { values: { score: best, total: game.length } })
-                  : $_("games.noRecord"),
+                  : streak + timed > 0
+                    ? $_("games.setup.noRecord")
+                    : $_("games.noRecord"),
               // Points games (#184): one square per MAX_POINTS of the record.
               value: game.points ? Math.round(best / MAX_POINTS) : best,
               total: game.length,
               icon: "play",
               action: $_("games.play"),
-              onclick: game.available ? () => play(game.id) : null,
+              onclick: game.available ? () => (setup = game.id) : null,
             })}
           {/each}
         </ul>
@@ -528,6 +651,30 @@
         </div>
       </section>
     </div>
+    {#if setupGame}
+      {@const g = setupGame}
+      {@const scope = askable(g)}
+      <GameSetup
+        game={g.id}
+        title={$_(`games.${g.id}.title`)}
+        items={g.items}
+        length={g.length}
+        points={g.points ?? false}
+        {level}
+        settings={settings[g.id] ?? defaultSettings(located)}
+        counts={scopeCounts(scope.pool, scope.sets)}
+        records={Object.fromEntries(GAME_MODES.map((m) => [m, bestOf(g.id, m)])) as Record<
+          GameMode,
+          number
+        >}
+        {located}
+        {placeName}
+        latitude={observer.latitude}
+        {onexplain}
+        onplay={(chosen) => startGame(g.id, chosen)}
+        onclose={closeSetup}
+      />
+    {/if}
   {/if}
 </div>
 
@@ -547,6 +694,11 @@
             {/each}
           </span>
           <span>{c.meta}</span>
+        </p>
+      {/if}
+      {#if c.chips?.length}
+        <p class="chips">
+          {#each c.chips as chip (chip)}<span class="chip">{chip}</span>{/each}
         </p>
       {/if}
     </div>
@@ -808,6 +960,20 @@
     height: 9px;
     opacity: 1;
     background: var(--ast-fg);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 6px 0 0;
+  }
+  .chip {
+    padding: 3px 5px 2px;
+    border: 1px solid var(--ast-hairline);
+    font: 500 8px/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
   }
   .action {
     grid-area: action;

@@ -20,8 +20,9 @@ import type { Vec3 } from "@asteria/astro-core";
 import type { ConstellationShape } from "./geometry";
 import { constellationPool } from "./pool";
 import { itemKey, type Progress } from "./progress";
+import { CHALLENGE_LENGTH } from "./challenge";
 import type { Rng } from "./rng";
-import { selectItems } from "./select";
+import { drawItems } from "./select";
 import type { Grade } from "./srs";
 
 export const GAME_ID = "whereIsIt";
@@ -83,10 +84,14 @@ export interface WhereOptions {
   rng: Rng;
   /** Abbreviations up tonight (preferred). */
   visible?: ReadonlySet<string>;
+  /** Only these abbreviations are asked (a sky scope, #187). */
+  ask?: readonly string[] | undefined;
+  /** A challenge (#187): a long sequence, the pool cycled. */
+  challenge?: boolean;
   length?: number;
 }
 
-/** The constellations of a series, for the player's level and memory (pool.ts, select.ts). */
+/** The constellations of a series (or a challenge), for the player's level and memory. */
 export function buildWhereSeries({
   level,
   shapes,
@@ -94,10 +99,12 @@ export function buildWhereSeries({
   now,
   rng,
   visible,
-  length = SERIES_LENGTH,
+  ask,
+  challenge = false,
+  length = challenge ? CHALLENGE_LENGTH : SERIES_LENGTH,
 }: WhereOptions): string[] {
   const pool = constellationPool(level, Object.keys(shapes));
-  return selectItems(
+  return drawItems(
     pool.map((a) => itemKey("con", a)),
     progress,
     {
@@ -106,6 +113,8 @@ export function buildWhereSeries({
       rng,
       visible: visible && new Set([...visible].map((a) => itemKey("con", a))),
       maxNew: level === "discovery" ? 5 : 4,
+      ask: ask?.map((a) => itemKey("con", a)),
+      sequence: challenge,
     },
   ).map((key) => key.slice(4));
 }

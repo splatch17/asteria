@@ -66,3 +66,22 @@ La figure est placée au zénith d'un observateur fictif : nord en haut, est à 
 | `mobile-etoile-dezoom.jpg` | « Nomme l'étoile » : même dézoom et même « Recentrer » |
 
 En Expert, pas de zoom tant que la question est posée (les voisines donneraient la réponse) ; après la réponse, zoom et déplacement libres à tous les niveaux. La question suivante revient au cadrage.
+
+## Réglages de partie et mode Défi (#187)
+
+| Capture | Ce qu'elle montre |
+|---|---|
+| `mobile-defi-apprendre.jpg` | Écran Apprendre : sous le record d'entraînement, les records des défis au niveau choisi (« SÉRIE 14 », « CHRONO 11 ») |
+| `mobile-defi-reglages.jpg` | Réglages (feuille ouverte depuis la carte du jeu) : mode en trois tuiles (Entraînement, Série, Chrono) avec leur record au niveau, ciel « Visibles de chez moi » / « Ce soir » / « Toutes » et le nombre de constellations de chacun |
+| `mobile-defi-reglages-serie.jpg` | Le mode Série choisi, sa règle en une ligne |
+| `mobile-defi-reglages-inconnu.jpg` | « Nomme l'étoile », position inconnue : « Toutes » par défaut, ciel de Paris expliqué |
+| `mobile-defi-serie.jpg` | Série en cours : une case par bonne réponse, le compteur en grand, « Record battu » une fois le record dépassé |
+| `mobile-defi-serie-erreur.jpg` | La première erreur arrête la série : bonne réponse montrée, « Voir le résultat » |
+| `mobile-defi-serie-record.jpg` | Fin de série avec nouveau record : étoiles 1-bit lancées autour du nombre, plaque « Nouveau record ! », ancien record |
+| `mobile-defi-chrono.jpg` | Contre-la-montre : chrono, bonnes réponses, barre du temps restant le long du bas de l'en-tête |
+| `mobile-defi-chrono-urgent.jpg` | Les 10 dernières secondes : chiffres sur plaque d'encre, barre plus épaisse |
+| `mobile-defi-chrono-fin.jpg` | « Temps écoulé » sans record : le record du mode rappelé |
+| `mobile-defi-ou-chrono.jpg` | « Où est-elle ? » en chrono : des points en 60 s |
+| `mobile-defi-nuit.jpg` | Vision nocturne, « Nomme l'étoile » en série |
+
+Règle « Visibles de chez moi » (`lib/games/visibility.ts`) : une étoile culmine à 90° − |φ − δ| (déclinaison à la date, réfraction ignorée) ; une constellation compte quand au moins la moitié de sa figure, en nombre d'étoiles ou en éclat, monte à 5° ou plus au cours de l'année. Depuis Paris : 59 constellations (Scorpion et Éridan compris, jamais la Croix du Sud) ; depuis l'équateur : les 88.

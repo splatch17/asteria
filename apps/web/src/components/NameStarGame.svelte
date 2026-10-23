@@ -7,6 +7,8 @@
   // « Voir dans le catalogue », which opens its constellation's page on the star and comes back.
   // As in « Quelle constellation ? » (#183), the player may pinch or scroll out, and pan, to see
   // where the star lies (not while an Expert question is asked); « Recentrer » comes back.
+  // Challenges (#187): « Série » until the first mistake, « Chrono » for 60 s; the next star
+  // comes by itself after a short look at its sheet, without « Voir dans le catalogue ».
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
   import type {
@@ -34,6 +36,9 @@
     type StarQuestion,
   } from "../lib/games/name-star";
   import type { ItemResult } from "../lib/games/results";
+  import { autoNextDelay, isChallenge, type ChallengeEnd } from "../lib/games/challenge";
+  import { ChallengeRun } from "../lib/games/challenge-run.svelte";
+  import type { GameMode } from "../lib/games/progress";
   import Designation from "./Designation.svelte";
   import GameHeader from "./GameHeader.svelte";
   import GameRecentre from "./GameRecentre.svelte";
@@ -52,12 +57,17 @@
     theme,
     figureSet,
     date,
+    mode = "training",
+    best = 0,
     onanswer,
     onfinish,
     oncatalogue,
     onreplay,
     onquit,
   }: {
+    /** A training series or a challenge (#187); `best`: its record at this level. */
+    mode?: GameMode;
+    best?: number;
     series: StarQuestion[];
     stars: CatalogStar[];
     lines: Record<string, number[][]>;
@@ -82,6 +92,7 @@
   } = $props();
 
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const CAPTURE = new URLSearchParams(location.search).has("seed");
   const items = untrack(() => new Map(named.map((s) => [s.hip, s])));
   const records = untrack(() => new Map(stars.map((s) => [s.hip, s])));
   const typed = untrack(() => level === "expert");
@@ -100,7 +111,27 @@
   const question = $derived(series[index]);
   const star = $derived(question ? items.get(question.hip) : undefined);
   const record = $derived(question ? records.get(question.hip) : undefined);
-  const score = $derived(results.filter((r) => r.correct).length);
+
+  /** The challenge being played (#187), null in training. */
+  let run = $state.raw<ChallengeRun | null>(null);
+  let autoNext: ReturnType<typeof setTimeout> | null = null;
+  function newRun() {
+    run?.stop();
+    run = isChallenge(mode) ? new ChallengeRun(mode, () => finish("time")) : null;
+  }
+  untrack(newRun);
+  const score = $derived(run ? run.score(false) : results.filter((r) => r.correct).length);
+  /** The answer just given ends the series or the challenge: « Voir le résultat ». */
+  const last = $derived((run?.over ?? false) || index + 1 >= series.length);
+
+  function finish(why?: ChallengeEnd) {
+    if (done) return;
+    if (autoNext) clearTimeout(autoNext);
+    autoNext = null;
+    run?.end(why ?? run.state.end ?? "exhausted");
+    previousBest = onfinish(score);
+    done = true;
+  }
 
   let root: HTMLDivElement;
   let stage: HTMLDivElement;
@@ -170,6 +201,7 @@
       },
     });
     showQuestion();
+    run?.start();
     // Typed answers start in the field; choices wait for a touch (no focus ring at first).
     if (typed) void focusAnswer();
     const resize = new ResizeObserver(() => frame(moved));
@@ -186,7 +218,11 @@
       vv?.removeEventListener("resize", onViewport);
     };
   });
-  onDestroy(() => map?.dispose());
+  onDestroy(() => {
+    run?.stop();
+    if (autoNext) clearTimeout(autoNext);
+    map?.dispose();
+  });
 
   $effect(() => {
     map?.setTheme(gameTheme(theme));
@@ -204,8 +240,10 @@
     answered = null;
     input = "";
     done = false;
+    untrack(newRun);
     void tick().then(() => {
       showQuestion();
+      run?.start();
       void focusAnswer();
     });
   });
@@ -217,12 +255,18 @@
   }
 
   async function settle(correct: boolean, chosen: number | null, typo = false) {
-    if (answered || !question) return;
+    if (answered || !question || done) return;
     answered = { correct, chosen, typo };
     results = [...results, onanswer(question.hip, correct)];
-    field?.blur();
+    run?.answer(correct);
+    // A challenge goes on with the keyboard up (typed answers): the field comes back at once.
+    if (!run) field?.blur();
     await tick();
-    nextButton?.focus();
+    if (!run || !typed) nextButton?.focus();
+    const delay = run ? autoNextDelay(run.mode, correct) : null;
+    if (delay !== null)
+      autoNext = setTimeout(() => void next(), reduceMotion ? delay + 250 : delay);
+    else if (run) nextButton?.focus();
   }
 
   function choose(hip: number) {
@@ -237,10 +281,11 @@
   }
 
   async function next() {
-    if (!answered) return;
-    if (index + 1 >= series.length) {
-      previousBest = onfinish(score);
-      done = true;
+    if (autoNext) clearTimeout(autoNext);
+    autoNext = null;
+    if (!answered || done) return;
+    if (last) {
+      finish();
       return;
     }
     if (!reduceMotion) {
@@ -287,9 +332,12 @@
     total={series.length}
     {index}
     {done}
-    progressLabel={$_("nameStar.progress", {
-      values: { n: Math.min(index + 1, series.length), total: series.length },
-    })}
+    progressLabel={run
+      ? $_("games.challenge.streakSr", { values: { count: run.state.right } })
+      : $_("nameStar.progress", {
+          values: { n: Math.min(index + 1, series.length), total: series.length },
+        })}
+    challenge={run?.head(best) ?? null}
     {onquit}
   />
 
@@ -313,6 +361,8 @@
       {results}
       nameOf={(item) => nameOf(Number(item))}
       detail={(i) => conName(items.get(Number(results[i]?.item))?.con ?? "")}
+      {mode}
+      end={run?.state.end ?? null}
       {onreplay}
       {onquit}
     />
@@ -353,12 +403,20 @@
                 {$_(`nameStar.rank.${rank.kind}`, { values: { rank: rank.rank } })}
               </p>
             {/if}
-            <button class="go" onclick={() => oncatalogue(star.con, star.hip)}>
-              {$_("catalogue.openStar")}<span aria-hidden="true">›</span>
-            </button>
+            <!-- Not during a challenge: its clock and rhythm stay on the game. -->
+            {#if !run}
+              <button class="go" onclick={() => oncatalogue(star.con, star.hip)}>
+                {$_("catalogue.openStar")}<span aria-hidden="true">›</span>
+              </button>
+            {/if}
           </div>
         {:else if question.choices}
-          <div class="choices" role="group" aria-labelledby="ns-question">
+          <div
+            class="choices"
+            role="group"
+            aria-labelledby="ns-question"
+            data-answer={CAPTURE ? question.choices.indexOf(question.hip) : undefined}
+          >
             {#each question.choices as hip, i (hip)}
               <button class="choice" onclick={() => choose(hip)}>
                 <span class="n" aria-hidden="true">{i + 1}</span>
@@ -399,7 +457,7 @@
         disabled={answered === null}
         onclick={next}
       >
-        {index + 1 >= series.length ? $_("quiz.result") : $_("quiz.next")}
+        {last ? $_("quiz.result") : $_("quiz.next")}
         <Icon name="play" size={10} />
       </button>
     </section>
@@ -523,8 +581,10 @@
     letter-spacing: 0.02em;
     text-transform: none;
   }
-  .choice:hover {
-    border-color: var(--ast-fg);
+  @media (hover: hover) {
+    .choice:hover {
+      border-color: var(--ast-fg);
+    }
   }
   .n {
     flex: none;

@@ -53,6 +53,23 @@ export function constellationShapes(
   return out;
 }
 
+/** The stars of each figure (each once), with their direction and magnitude (#187). */
+export function figureStars(
+  stars: readonly { hip: number; ra: number; dec: number; v: number }[],
+  lines: Readonly<Record<string, readonly (readonly number[])[]>>,
+): Record<string, { dir: Vec3; v: number }[]> {
+  const byHip = new Map(stars.map((s) => [s.hip, s]));
+  const out: Record<string, { dir: Vec3; v: number }[]> = {};
+  for (const [abbr, polys] of Object.entries(lines)) {
+    const list = [...new Set(polys.flat())]
+      .map((hip) => byHip.get(hip))
+      .filter((s) => s !== undefined)
+      .map((s) => ({ dir: unitVector(s.ra, s.dec), v: s.v }));
+    if (list.length) out[abbr] = list;
+  }
+  return out;
+}
+
 /**
  * An observer who sees `centre` (J2000) exactly at the zenith at `date`: latitude = declination
  * of date, local sidereal time = right ascension of date. The sky map then shows the figure

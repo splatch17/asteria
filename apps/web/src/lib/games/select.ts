@@ -70,3 +70,53 @@ export function selectItems(
   }
   return chosen;
 }
+
+/**
+ * The draw of a game (#187): a series (selectItems) or a challenge's long sequence
+ * (selectSequence), among the pool's keys or only those of `ask` (a sky scope), pool order kept.
+ */
+export function drawItems(
+  pool: readonly string[],
+  progress: Progress,
+  {
+    ask,
+    sequence = false,
+    ...options
+  }: SelectOptions & { ask?: readonly string[] | undefined; sequence?: boolean },
+): string[] {
+  const wanted = ask && new Set(ask);
+  const asked = wanted ? pool.filter((k) => wanted.has(k)) : pool;
+  return sequence
+    ? selectSequence(asked, progress, options)
+    : selectItems(asked, progress, options);
+}
+
+/** A challenge's sequence is drawn in batches of this many (each like a series). */
+export const SEQUENCE_BATCH = 20;
+
+/**
+ * A long sequence for a challenge (#187): `count` keys drawn in batches of SEQUENCE_BATCH with
+ * the rules of a series (selectItems), the pool cycled as often as needed. A batch avoids the
+ * items of the one before when the pool leaves enough others, and never starts with the item
+ * just asked: no item comes back right away.
+ */
+export function selectSequence(
+  pool: readonly string[],
+  progress: Progress,
+  options: SelectOptions,
+): string[] {
+  const out: string[] = [];
+  let recent = new Set<string>();
+  while (out.length < options.count && pool.length) {
+    const batch = Math.min(SEQUENCE_BATCH, pool.length, options.count - out.length);
+    const rest = pool.filter((k) => !recent.has(k));
+    const last = out.at(-1);
+    const others = pool.filter((k) => k !== last);
+    const from = rest.length >= batch ? rest : others.length ? others : pool;
+    const drawn = selectItems(from, progress, { ...options, count: Math.min(batch, from.length) });
+    if (!drawn.length) break;
+    out.push(...drawn);
+    recent = new Set(drawn);
+  }
+  return out;
+}
