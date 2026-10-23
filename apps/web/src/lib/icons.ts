@@ -41,4 +41,5 @@ export type IconName =
   | "placeTime"
   | "settings"
   | "games"
-  | "catalogue";
+  | "catalogue"
+  | "latitude";

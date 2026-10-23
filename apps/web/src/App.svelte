@@ -236,6 +236,32 @@
     else space?.start();
     menuButton?.focus();
   }
+  /**
+   * « Selon la latitude » (#188), over the whole app (and over the Apprendre screen when opened
+   * from it): `latitude` null opens at the player's place, else at that latitude (the games'
+   * « visible from home » setting).
+   */
+  let latitudeExplorer = $state.raw<{
+    latitude: number | null;
+    sky: { stars: CatalogStar[]; lines: Record<string, number[][]> };
+  } | null>(null);
+  function openLatitude(latitude: number | null = null) {
+    if (!catalog) return;
+    if (!games) {
+      stopPlaying();
+      if (mode === "sky") map?.stop();
+      else space?.stop();
+    }
+    latitudeExplorer = { latitude, sky: catalog };
+  }
+  function closeLatitude() {
+    latitudeExplorer = null;
+    if (games) return;
+    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
+    if (mode === "sky") map?.start();
+    else space?.start();
+    menuButton?.focus();
+  }
   /** Constellation 3D view (#8): the figure, the catalogue and the map's view it starts from. */
   let view3d = $state.raw<{
     abbr: string;
@@ -502,7 +528,15 @@
   /** Keyboard: Escape folds the time controls or leaves immersive mode; Tab shows the interface. */
   function onHudKey(e: KeyboardEvent) {
     if (e.key === "Tab") immersive = false;
-    if (e.key !== "Escape" || menuOpen || frameOpen || searchOpen || creditsOpen || gamesOpen)
+    if (
+      e.key !== "Escape" ||
+      menuOpen ||
+      frameOpen ||
+      searchOpen ||
+      creditsOpen ||
+      gamesOpen ||
+      latitudeExplorer
+    )
       return;
     if (timeOpen) {
       timeOpen = false;
@@ -872,6 +906,7 @@
     if (params.get("panel") === "time") timeOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
     if (params.get("panel") === "games") openGames(); // captures
+    if (params.get("panel") === "latitude") openLatitude(); // captures (#188)
     // Captures (#170): ?learn=catalogue, or ?learn=<abbr>[&learnStar=<HIP>] for a page.
     const learn = params.get("learn");
     if (learn === "catalogue") openGames({ view: "catalogue" });
@@ -2003,7 +2038,27 @@
       {placeName}
       located={place.name === "mine"}
       start={learnStart}
+      onlatitude={openLatitude}
+      onexplain={() => openLatitude(place.latitude)}
       onclose={closeGames}
+    />
+  {/await}
+{/if}
+
+{#if latitudeExplorer}
+  {@const sky = latitudeExplorer.sky}
+  <!-- Loaded on demand with its drawings (#188). -->
+  {#await import("./components/LatitudeExplorer.svelte") then { default: LatitudeExplorer }}
+    <LatitudeExplorer
+      stars={sky.stars}
+      lines={sky.lines}
+      {names}
+      {date}
+      observer={place}
+      {placeName}
+      latitude={latitudeExplorer.latitude}
+      theme={night ? { ink: nightInk(brightness), sky: THEMES.red.sky } : THEMES.day}
+      onclose={closeLatitude}
     />
   {/await}
 {/if}
@@ -2107,6 +2162,7 @@
     oncredits={fromMenu(() => (creditsOpen = true))}
     ongames={fromMenu(() => openGames())}
     oncatalogue={fromMenu(() => openGames({ view: "catalogue" }))}
+    onlatitude={fromMenu(() => openLatitude())}
     online={network.online}
     iosInstall={needsIosInstallHint()}
     offline={offline.current}

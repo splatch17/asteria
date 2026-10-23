@@ -212,6 +212,12 @@
     <circle cx="10" cy="10.5" r="0.9" class="fill" />
     <circle cx="11.2" cy="6.5" r="0.9" class="fill" />
     <circle cx="13" cy="8" r="0.9" class="fill" />
+  {:else if name === "latitude"}
+    <!-- The celestial sphere, its horizon and its axis tilted to the pole (« Latitude », #188). -->
+    <circle cx="8" cy="8.6" r="5.6" />
+    <ellipse cx="8" cy="8.6" rx="5.6" ry="1.6" class="thin" />
+    <path d="M11.6 13.4 L4.2 3.4" class="thin" />
+    <path d={sparkle(3.6, 2.6, 2.4)} class="fill" />
   {/if}
 </svg>
 
