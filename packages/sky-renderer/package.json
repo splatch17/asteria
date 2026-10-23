@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./constellation-3d": "./src/constellation-3d.ts"
+    "./constellation-3d": "./src/constellation-3d.ts",
+    "./latitude": "./src/latitude.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
