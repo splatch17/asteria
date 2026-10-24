@@ -1,3 +1,12 @@
+/** The device's localStorage, or null where reaching it throws (blocked site data). */
+export function appStorage(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /** localStorage wrapper that never throws (private mode, blocked storage, previews). */
 export function readSetting<T>(key: string, fallback: T, valid: (v: unknown) => v is T): T {
   try {
