@@ -263,8 +263,8 @@
   }
   .teaser {
     margin: 10px 0 0;
-    font-size: 13px;
-    line-height: 1.6;
+    max-width: var(--ast-text-measure);
+    font: 400 var(--ast-text-size) / var(--ast-text-leading) var(--ast-font-text);
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
@@ -302,8 +302,6 @@
     overscroll-behavior: contain;
     margin: 10px -14px 0;
     padding: 0 14px 4px;
-    font-size: 13px;
-    line-height: 1.6;
   }
   i {
     font-family: var(--ast-font-serif);

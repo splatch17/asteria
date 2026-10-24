@@ -1472,9 +1472,11 @@
   .mark.never {
     background: var(--ast-zone-never-wash);
   }
+  /* Reading text (#208). */
   .lead {
     margin: 16px 0 0;
-    font: 400 12px/1.6 var(--ast-font-mono);
+    max-width: var(--ast-text-measure);
+    font: 400 var(--ast-text-size) / var(--ast-text-leading) var(--ast-font-text);
     text-wrap: pretty;
   }
   .note,
@@ -1547,9 +1549,11 @@
   .definition {
     margin-top: 18px;
   }
+  /* Secondary reading text (#208): a step under the lead, muted. */
   .definition p {
     margin: 0;
-    font: 400 10.5px/1.6 var(--ast-font-mono);
+    max-width: var(--ast-text-measure);
+    font: 400 14px / var(--ast-text-leading) var(--ast-font-text);
     color: var(--ast-fg-muted);
   }
   .definition p + p {

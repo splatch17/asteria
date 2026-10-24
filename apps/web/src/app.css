@@ -4,6 +4,8 @@
 @import "@fontsource/jetbrains-mono/700.css";
 @import "@fontsource/big-shoulders-display/700";
 @import "@fontsource/cormorant/500-italic";
+/* Reading text (#208): latin, plus latin-ext fetched only for a rare letter (ń of Gdańsk). */
+@import "@fontsource/atkinson-hyperlegible/400.css";
 
 html,
 body {

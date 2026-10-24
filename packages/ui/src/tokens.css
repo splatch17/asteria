@@ -41,6 +41,15 @@
   --ast-font-display: "Big Shoulders Display", "Oswald", sans-serif;
   --ast-font-mono: "JetBrains Mono", ui-monospace, monospace;
   --ast-font-serif: "Cormorant", "EB Garamond", serif;
+  /* Reading text (#208): prose longer than about three lines (stories, anecdotes, explanations).
+     Atkinson Hyperlegible has no Greek: the browser takes α, β, φ, δ… (and ′ ″) from the next
+     font of the stack, JetBrains Mono, so Bayer letters and symbols read as data, without markup. */
+  --ast-font-text: "Atkinson Hyperlegible", "JetBrains Mono", ui-sans-serif, sans-serif;
+  --ast-text-size: 15px;
+  --ast-text-leading: 1.55;
+  /* Longest comfortable line where the layout leaves room: about 65 characters of Atkinson
+     (65ch would be about 80, the ch being the width of a wide « 0 »); phones are narrower. */
+  --ast-text-measure: 32em;
   --ast-tracking-meta: 0.1em;
   --ast-radius: 0;
 

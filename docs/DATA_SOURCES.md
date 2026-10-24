@@ -337,6 +337,7 @@ de licence CelesTrak si besoin.
 | **JetBrains Mono** 400/500/700 | Données, interface | The JetBrains Mono Project Authors (2020) | SIL OFL 1.1 | https://github.com/JetBrains/JetBrainsMono |
 | **Big Shoulders Display** 700 | Titres | The Big Shoulders Project Authors (2019) | SIL OFL 1.1 | https://github.com/xotypeco/big_shoulders |
 | **Cormorant** 500 italique | Noms latins, récits | The Cormorant Project Authors (2015) | SIL OFL 1.1 | https://github.com/CatharsisFonts/Cormorant |
+| **Atkinson Hyperlegible** 400 (latin ; latin-ext chargé seulement pour une lettre rare) | Lecture : histoires, anecdotes, explications de « Selon la latitude » (#208) | Braille Institute of America, Inc. (2020) | SIL OFL 1.1 (fichier `LICENSE` de `@fontsource/atkinson-hyperlegible` 5.3.0, vérifié) | https://github.com/fontsource/font-files/tree/main/fonts/google/atkinson-hyperlegible (Google Fonts, Braille Institute) |
 
 OFL : la licence doit accompagner les polices redistribuées (fait par `THIRD-PARTY-LICENSES.txt`) ; pas de vente des polices seules.
 

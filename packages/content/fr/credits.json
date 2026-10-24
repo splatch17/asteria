@@ -256,6 +256,17 @@
       "licenseUrl": "https://openfontlicense.org/open-font-license-official-text/",
       "sourceUrl": "https://github.com/CatharsisFonts/Cormorant",
       "packages": ["@fontsource/cormorant"]
+    },
+    {
+      "id": "atkinson-hyperlegible",
+      "name": "Atkinson Hyperlegible",
+      "role": "Police de lecture des histoires, anecdotes et explications.",
+      "author": "Braille Institute of America, Inc.",
+      "notice": "Copyright 2020 Braille Institute of America, Inc. Distribuée via Fontsource (Google Fonts).",
+      "license": "SIL OFL 1.1",
+      "licenseUrl": "https://openfontlicense.org/open-font-license-official-text/",
+      "sourceUrl": "https://github.com/fontsource/font-files/tree/main/fonts/google/atkinson-hyperlegible",
+      "packages": ["@fontsource/atkinson-hyperlegible"]
     }
   ],
   "libraries": [
