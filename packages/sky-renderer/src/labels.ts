@@ -59,3 +59,10 @@ export class LabelLayout {
     this.placed.push(r);
   }
 }
+
+/**
+ * Constellation names on the map (#198): ink strength, and the width of the sky-coloured
+ * outline drawn under each name so that the figures' lines do not cross the letters.
+ */
+export const NAME_ALPHA = 0.65;
+export const NAME_HALO_PX = 3;
