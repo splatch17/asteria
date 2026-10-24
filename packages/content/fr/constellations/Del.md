@@ -33,4 +33,4 @@ Alors, chose incroyable, un dauphin vint se glisser sous lui et l'emporta sur so
 
 - Ovide fait briller le Dauphin de neuf étoiles ; Ptolémée, lui, en comptait 10.
 - Le poète grec Aratos décrit quatre étoiles groupées deux par deux : c'est le petit quadrilatère qu'on appelle aujourd'hui le « Cercueil de Job ».
-- Les deux étoiles les plus brillantes du Dauphin portent des noms officiels curieux, Rotanev (magnitude 3,64) et Sualocin (3,77) : lisez-les à l'envers !
+- Les deux étoiles les plus brillantes du Dauphin portent des noms officiels curieux, Rotanev (magnitude 3,64) et Sualocin (3,77) : lis-les à l'envers !

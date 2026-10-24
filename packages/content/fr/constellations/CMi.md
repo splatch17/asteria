@@ -24,7 +24,7 @@ Le Petit Chien est une toute petite constellation, presque réduite à une seule
 
 Le poète Aratos se contente de dire qu'elle « brille joliment sous les Gémeaux ». Et chez l'astronome Ptolémée, l'animal n'a presque pas de corps : une étoile sur le cou, et Procyon sur l'arrière-train. Ni l'un ni l'autre ne racontent de légende à son sujet. Contrairement à la plupart de ses voisins, ce petit chien n'a donc pas de mythe grec bien établi.
 
-Aujourd'hui, on l'appelle le Petit Chien, et on peut l'imaginer trottant derrière son grand frère, qui accompagne le chasseur Orion. Pour le trouver, rien de plus simple : cherchez l'étoile brillante qui forme un grand triangle avec Sirius et Bételgeuse.
+Aujourd'hui, on l'appelle le Petit Chien, et on peut l'imaginer trottant derrière son grand frère, qui accompagne le chasseur Orion. Pour le trouver, rien de plus simple : cherche l'étoile brillante qui forme un grand triangle avec Sirius et Bételgeuse.
 
 ## Anecdotes
 

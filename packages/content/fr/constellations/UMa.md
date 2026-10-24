@@ -20,6 +20,6 @@ Les versions ne manquent pas : selon Ératosthène, c'est Artémis qui transform
 
 ## Anecdotes
 
-- Pour trouver l'étoile Polaire, prolongez la ligne qui va de Merak à Dubhe, au bord de la « casserole », d'environ cinq fois leur écart.
+- Pour trouver l'étoile Polaire, prolonge la ligne qui va de Merak à Dubhe, au bord de la « casserole », d'environ cinq fois leur écart.
 - Dans le manche, Mizar a une petite voisine, Alcor. Réussir à les séparer à l'œil nu était un test de vue traditionnel. Mizar fut aussi, en 1889, la première binaire spectroscopique identifiée, c'est-à-dire une étoile double repérée grâce à l'analyse de sa lumière.
 - En grec, ours se dit *arktos* : c'est de là, via les étoiles de l'Ourse qui tournent autour du pôle, que vient le mot « Arctique ».
