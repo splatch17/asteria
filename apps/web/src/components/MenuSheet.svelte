@@ -680,7 +680,7 @@
     flex: none;
     width: 44px;
     border: 0;
-    border-left: 1px solid var(--ast-hairline);
+    border-left: 1px solid var(--ast-control-border);
     background: transparent;
     color: var(--ast-fg);
     font: 400 20px/1 var(--ast-font-mono);
@@ -762,7 +762,7 @@
     height: 44px;
     color: var(--ast-fg);
     background: transparent;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     cursor: pointer;
   }
@@ -773,20 +773,21 @@
   .network {
     margin-top: 12px;
   }
-  /* Network light (#146): green when connected, red offline — a signal, outside the palette. */
+  /* Network light (#146, #198): a full dot when connected, a hollow one offline, in the ink of
+     the palette (read without colour, and the same in red night vision). */
   .light {
     display: inline-block;
-    width: 7px;
-    height: 7px;
-    margin-right: 5px;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border: 1.5px solid var(--ast-fg);
     border-radius: 50%;
     vertical-align: 0;
-    background: #ff5a4f;
-    box-shadow: 0 0 6px #ff5a4f;
+    background: transparent;
   }
   .light.on {
-    background: #5fd47a;
-    box-shadow: 0 0 6px #5fd47a;
+    background: var(--ast-fg);
   }
   .sub.ok {
     color: var(--ast-fg);

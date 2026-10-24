@@ -280,7 +280,7 @@
     min-height: 44px;
     margin-top: 8px;
     padding: 0 12px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg);
   }
   .go {

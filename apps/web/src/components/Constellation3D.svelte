@@ -449,7 +449,7 @@
     top: max(6px, env(safe-area-inset-top));
     right: max(6px, env(safe-area-inset-right));
     background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   /* Round button (as the former dials column of the sky map). */
   .dial {
@@ -479,7 +479,7 @@
   .levels {
     display: flex;
     width: fit-content;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
   }
   .levels button {
@@ -533,7 +533,7 @@
     width: 100%;
     min-height: 44px;
     margin-top: 10px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .sr-only {
     position: absolute;

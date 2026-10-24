@@ -295,7 +295,7 @@
     width: 100%;
     min-height: 44px;
     margin: 4px 0 2px;
-    border: 1px solid var(--ast-control-border, var(--ast-hairline));
+    border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     background: transparent;
     font: 500 11px/1 var(--ast-font-mono);

@@ -876,7 +876,7 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 16px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .levels button {
     min-height: 44px;

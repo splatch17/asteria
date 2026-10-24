@@ -575,7 +575,7 @@
     width: 100%;
     min-height: 48px;
     padding: 0 12px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     text-align: left;
     font: 500 14px/1.2 var(--ast-font-mono);
     letter-spacing: 0.02em;
@@ -626,7 +626,7 @@
   }
   .row button {
     min-height: 48px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .primary {
     color: var(--ast-bg);

@@ -388,7 +388,7 @@
   .modes {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .mode {
     display: flex;
@@ -578,7 +578,7 @@
     width: 100%;
     min-height: 44px;
     margin-top: 8px;
-    border: 1px solid var(--ast-control-border, var(--ast-hairline));
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg);
   }
   .locate:disabled {

@@ -1152,7 +1152,7 @@
     place-items: center;
     width: 44px;
     height: 44px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .play[aria-pressed="true"] {
     color: var(--ast-bg);
@@ -1252,7 +1252,7 @@
     flex: none;
     min-height: 36px;
     padding: 0 10px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg-muted);
   }
   .presets button.home {
@@ -1298,7 +1298,7 @@
     min-height: 36px;
     margin: 10px 0 0;
     padding: 0 10px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .map {
     aspect-ratio: 2 / 1;
@@ -1383,7 +1383,7 @@
   .zoom {
     flex: none;
     display: flex;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .zoom button {
     width: 44px;
@@ -1512,7 +1512,7 @@
     gap: 6px;
     min-height: 32px;
     padding: 0 9px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     font: 400 11px/1 var(--ast-font-mono);
     letter-spacing: 0;
     text-transform: none;
@@ -1565,7 +1565,7 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 20px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .levels button {
     min-height: 40px;

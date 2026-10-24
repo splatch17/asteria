@@ -8,6 +8,11 @@
   --ast-fg: var(--ast-parchment);
   --ast-fg-muted: color-mix(in srgb, var(--ast-parchment) 65%, transparent);
   --ast-hairline: color-mix(in srgb, var(--ast-parchment) 20%, transparent);
+  /* Outline of a control (button, field, segmented group): at least 3:1 against the night and
+     its panels (WCAG 1.4.11, #198), where a hairline (20 %, 1.7:1) only separates parts. */
+  --ast-control-border: color-mix(in srgb, var(--ast-parchment) 45%, var(--ast-night));
+  /* Keyboard focus ring (#198), drawn by the global :focus-visible rule of the app. */
+  --ast-focus: var(--ast-parchment);
   --ast-surface: color-mix(in srgb, var(--ast-parchment) 6%, var(--ast-night));
   /* Panels (#171): a faint ink wash and a hairline mark the parts of a screen. */
   --ast-panel-bg: color-mix(in srgb, var(--ast-parchment) 4%, transparent);
@@ -47,6 +52,11 @@
   --ast-night: #000;
   --ast-night-deep: #000;
   --ast-parchment: #ff2a1a;
+  /* Red on black is dim (#ff2a1a: 5.6:1 at full strength): secondary text at 90 % keeps 4.5:1,
+     hairlines and control outlines are stronger than by day (#198). */
+  --ast-fg-muted: color-mix(in srgb, var(--ast-parchment) 90%, transparent);
+  --ast-hairline: color-mix(in srgb, var(--ast-parchment) 40%, transparent);
+  --ast-control-border: color-mix(in srgb, var(--ast-parchment) 70%, var(--ast-night));
   /* Red only: the two zones are two strengths of the red ink (brighter: always up). */
   --ast-zone-always: var(--ast-parchment);
   --ast-zone-always-alpha: 0.4;

@@ -928,7 +928,7 @@
     text-transform: uppercase;
     color: var(--ast-fg);
     background: transparent;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;

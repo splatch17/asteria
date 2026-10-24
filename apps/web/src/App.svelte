@@ -2745,7 +2745,7 @@
     gap: 6px;
   }
   .action {
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg);
     justify-content: center;
     min-width: 44px;
@@ -2838,7 +2838,7 @@
     gap: 2px 10px;
     min-height: 44px;
     padding: 6px 14px;
-    border-color: var(--ast-control-border, var(--ast-hairline));
+    border-color: var(--ast-control-border);
     text-align: center;
     cursor: pointer;
   }

@@ -433,7 +433,7 @@
     gap: 6px;
     min-height: 40px;
     padding: 0 10px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
     color: var(--ast-fg-muted);
     font-size: 10px;
