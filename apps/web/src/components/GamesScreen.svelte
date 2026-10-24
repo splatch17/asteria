@@ -77,6 +77,7 @@
   import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
   import { readSetting, writeSetting } from "../lib/storage";
   import Catalogue from "./Catalogue.svelte";
+  import CatalogueDeck, { type DeckCardProps } from "./CatalogueDeck.svelte";
   import ConstellationPage from "./ConstellationPage.svelte";
   import GameSetup from "./GameSetup.svelte";
   import Icon from "./Icon.svelte";
@@ -239,13 +240,36 @@
   let catalogueOpen = $state(false);
   let filter = $state<CatalogueFilter>(untrack(() => defaultFilter(level)));
   let query = $state("");
-  /** The page shown; `outside`: opened from the map, « back » closes the screen. */
-  let page = $state.raw<{ abbr: string; star: number | null; outside: boolean } | null>(null);
+  /**
+   * The page shown, a card of the deck (#196) of the list as it was left (`sequence`, fixed while
+   * the deck is open); `outside`: opened from the map, « back » closes the screen.
+   */
+  let page = $state.raw<{
+    abbr: string;
+    star: number | null;
+    outside: boolean;
+    sequence: CatalogueEntry[];
+  } | null>(null);
   const seenCount = $derived(Object.keys(progress.seen).filter((k) => k.startsWith("con:")).length);
 
   function openPage(abbr: string, star: number | null = null, outside = false) {
-    page = { abbr, star, outside };
-    // A page read is « seen » (#170): kept apart from the games' review schedule.
+    const sequence = pageSequence(entries, abbr, {
+      filter,
+      query,
+      level,
+      outside,
+      tonight: visible,
+    });
+    page = { abbr, star, outside, sequence };
+    markPageSeen(abbr);
+  }
+  /** The deck rests on another card: it is the page now, and consulted. */
+  function turnTo(abbr: string) {
+    if (page) page = { ...page, abbr };
+    markPageSeen(abbr);
+  }
+  /** A page read is « seen » (#170): kept apart from the games' review schedule. */
+  function markPageSeen(abbr: string) {
     const next = markSeen(progress, itemKey("con", abbr), Date.now());
     if (next !== progress) {
       progress = next;
@@ -314,11 +338,7 @@
   function openGamePage(abbr: string, hip: number) {
     if (!shapes[abbr]) return;
     gamePage = { abbr, star: hip };
-    const next = markSeen(progress, itemKey("con", abbr), Date.now());
-    if (next !== progress) {
-      progress = next;
-      saveProgress(progress);
-    }
+    markPageSeen(abbr);
   }
   async function closeGamePage() {
     gamePage = null;
@@ -405,6 +425,27 @@
   }
 </script>
 
+{#snippet constellationCard(entry: CatalogueEntry, deck: DeckCardProps)}
+  <ConstellationPage
+    abbr={entry.abbr}
+    name={entry.name}
+    latin={entry.latin}
+    {names}
+    {stars}
+    {lines}
+    shape={shapes[entry.abbr]!}
+    {date}
+    latitude={observer.latitude}
+    {placeName}
+    tonight={visible.has(entry.abbr)}
+    initialStar={deck.star}
+    sky={deck.sky}
+    current={deck.current}
+    figures={deck.figures}
+    onfigures={deck.onfigures}
+  />
+{/snippet}
+
 <div
   class="games"
   role="dialog"
@@ -457,24 +498,22 @@
     </div>
     {#if gamePage}
       {@const p = gamePage}
-      <ConstellationPage
+      <!-- A deck of one card: the page of the star's constellation, back to the game after. -->
+      <CatalogueDeck
+        sequence={entries.filter((e) => e.abbr === p.abbr)}
         abbr={p.abbr}
-        name={names[p.abbr] ?? p.abbr}
-        latin={latin[p.abbr] ?? p.abbr}
-        {names}
-        {stars}
-        {lines}
-        shape={shapes[p.abbr]!}
-        {level}
-        {theme}
-        {figureSet}
-        {date}
-        latitude={observer.latitude}
-        {placeName}
-        tonight={visible.has(p.abbr)}
         initialStar={p.star}
+        onturn={() => {}}
         onback={closeGamePage}
         onclose={closeGamePage}
+        {stars}
+        {lines}
+        {names}
+        {theme}
+        {figureSet}
+        {level}
+        {date}
+        card={constellationCard}
       />
     {/if}
   {:else if playing?.game === QUIZ_ID}
@@ -498,33 +537,23 @@
     />
   {:else if page}
     {@const p = page}
-    {#key p.abbr}
-      <ConstellationPage
+    <!-- Keyed by the list: the deck stays as its cards turn (p.abbr follows them). -->
+    {#key p.sequence}
+      <CatalogueDeck
+        sequence={p.sequence}
         abbr={p.abbr}
-        name={names[p.abbr] ?? p.abbr}
-        latin={latin[p.abbr] ?? p.abbr}
-        {names}
-        {stars}
-        {lines}
-        shape={shapes[p.abbr]!}
-        {level}
-        {theme}
-        {figureSet}
-        {date}
-        latitude={observer.latitude}
-        {placeName}
-        tonight={visible.has(p.abbr)}
         initialStar={p.star}
-        sequence={pageSequence(entries, p.abbr, {
-          filter,
-          query,
-          level,
-          outside: p.outside,
-          tonight: visible,
-        })}
-        onturn={(abbr) => openPage(abbr, null, p.outside)}
+        onturn={turnTo}
         onback={closePage}
         {onclose}
+        {stars}
+        {lines}
+        {names}
+        {theme}
+        {figureSet}
+        {level}
+        {date}
+        card={constellationCard}
       />
     {/key}
   {:else if catalogueOpen}
