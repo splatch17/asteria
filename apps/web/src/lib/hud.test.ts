@@ -3,6 +3,8 @@ import fr from "@asteria/ui/locales/fr.json";
 import {
   compassHeading,
   compassPoint,
+  HIDDEN_TIP_SHOWS,
+  hiddenTipDue,
   immersiveAfterTap,
   needleRotation,
   pointingShortcut,
@@ -68,5 +70,20 @@ describe("compass (#138)", () => {
   it("has a French name for each point", () => {
     const messages = fr as Record<string, string>;
     for (let i = 0; i < 8; i++) expect(messages[`compass.dir.${i}`]).toBeTruthy();
+  });
+});
+
+describe("hidden interface tip (#198)", () => {
+  it("is shown the first three times only", () => {
+    expect(HIDDEN_TIP_SHOWS).toBe(3);
+    expect([0, 1, 2, 3, 4].map(hiddenTipDue)).toEqual([true, true, true, false, false]);
+  });
+  it("is not shown for a corrupt count", () => {
+    expect(hiddenTipDue(Number.NaN)).toBe(false);
+  });
+  it("has its texts", () => {
+    const messages = fr as Record<string, string>;
+    expect(messages["hud.hidden"]).toMatch(/touche le ciel/);
+    expect(messages["hud.show"]).toBeTruthy();
   });
 });

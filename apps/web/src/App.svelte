@@ -91,7 +91,13 @@
   import GestureTip from "./components/GestureTip.svelte";
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
-  import { immersiveAfterTap, pointingShortcut } from "./lib/hud";
+  import {
+    HIDDEN_TIP_KEY,
+    HIDDEN_TIP_MS,
+    hiddenTipDue,
+    immersiveAfterTap,
+    pointingShortcut,
+  } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf } from "./lib/horizon";
@@ -482,6 +488,27 @@
   let timeOpen = $state(false);
   /** Immersive mode: an empty-sky tap fades the header and the time line out (not remembered). */
   let immersive = $state(false);
+  /**
+   * The interface just hid (#198): the first times, a bubble says how to get it back; a small
+   * button where the menu was stays while it is hidden.
+   */
+  let hiddenTip = $state(false);
+  let hudReturn = $state<HTMLElement>();
+  let hiddenTipTimer: ReturnType<typeof setTimeout> | undefined;
+  let wasImmersive = false;
+  $effect(() => {
+    const now = immersive;
+    if (now === wasImmersive) return;
+    wasImmersive = now;
+    clearTimeout(hiddenTipTimer);
+    hiddenTip = false;
+    if (!now) return;
+    const shown = readSetting(HIDDEN_TIP_KEY, 0, isNum);
+    if (!hiddenTipDue(shown)) return;
+    writeSetting(HIDDEN_TIP_KEY, shown + 1);
+    hiddenTip = true;
+    hiddenTipTimer = setTimeout(() => (hiddenTip = false), HIDDEN_TIP_MS);
+  });
   /** Earth view caption unfolded (a single line at rest). */
   let captionOpen = $state(false);
   /** Sensor pointing on the time line where it can work (phone, HTTPS); else in the menu. */
@@ -1106,7 +1133,7 @@
 
   // Labels (graduations, names) are not written under the HUD: header line, time line (and its
   // unfolded controls), the instruments on the right (search, mini-globe, compass, #138). In
-  // immersive mode nothing is in the way (#130).
+  // immersive mode only the mark that brings the interface back is in the way (#130, #198).
   let header = $state<HTMLElement>();
   let bottomNav: HTMLElement;
   /** The time line itself (folded): what the Earth view's framing keeps clear (#130). */
@@ -1122,18 +1149,18 @@
     );
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
-    const rects = immersive
-      ? []
-      : hudBlocks()
-          .map((el) => el.getBoundingClientRect())
-          .filter((r) => r.width > 0) // hidden (mini-globe in the Earth view)
-          .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
+    const rects = (immersive ? [hudReturn] : hudBlocks())
+      .filter((el) => el !== undefined && el !== null)
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0) // hidden (mini-globe in the Earth view)
+      .map((r) => ({ x: r.left - m, y: r.top - m, w: r.width + 2 * m, h: r.height + 2 * m }));
     map?.setHudExclusions(rects);
     space?.setHudExclusions(rects);
     space?.setSafeArea(spaceSafeArea());
   }
   $effect(() => {
     void immersive;
+    void hudReturn;
     void visitBack;
     void restChip;
     if (status === "ready") tick().then(updateGraduationExclusions);
@@ -2310,6 +2337,19 @@
 {/if}
 
 <p class="sr-only" role="status">{immersive ? $_("hud.hidden") : ""}</p>
+{#if immersive}
+  <!-- Hidden interface (#198): a bubble the first times, then only this mark to come back. -->
+  {#if hiddenTip}<p class="hidden-tip" aria-hidden="true">{$_("hud.hidden")}</p>{/if}
+  <button
+    class="hud-return"
+    bind:this={hudReturn}
+    onclick={() => (immersive = false)}
+    aria-label={$_("hud.show")}
+    title={$_("hud.show")}
+  >
+    <Icon name="eye" size={18} />
+  </button>
+{/if}
 
 <!-- Bottom of the interface (#130): one time line; the slider unfolds above it on a tap. -->
 <nav class="hud bottom" class:hidden={immersive} bind:this={bottomNav}>
@@ -2449,6 +2489,54 @@
     position: relative;
     z-index: 1;
     pointer-events: none;
+  }
+  /* Hidden interface (#198): the bubble above where the time line was, and a discreet mark in
+     the menu's corner (44 px to touch, faint ink) that brings the interface back. */
+  .hidden-tip {
+    position: fixed;
+    z-index: 3;
+    left: max(16px, env(safe-area-inset-left));
+    right: max(16px, env(safe-area-inset-right));
+    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 60px);
+    width: fit-content;
+    max-width: 320px;
+    margin: 0 auto;
+    padding: 10px 12px;
+    border: 1px solid var(--ast-hairline);
+    background: color-mix(in srgb, var(--ast-bg) 88%, transparent);
+    font: 12px/1.5 var(--ast-font-mono);
+    color: var(--ast-fg);
+    text-align: center;
+    pointer-events: none;
+    animation: tip-in 220ms var(--ast-ease-out);
+  }
+  @keyframes tip-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  .hud-return {
+    position: fixed;
+    z-index: 3;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid var(--ast-hairline);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ast-bg) 50%, transparent);
+    color: var(--ast-fg-muted);
+    opacity: 0.75;
+    cursor: pointer;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hidden-tip {
+      animation: none;
+    }
   }
   /* Below the header line, centred (#130: no column on the right any more). */
   .toast {

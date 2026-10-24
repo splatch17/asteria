@@ -37,6 +37,20 @@ export function immersiveAfterTap(c: SkyTapContext): boolean {
 }
 
 /**
+ * Hidden interface (#198): the first times it hides, a bubble says how to get it back, for
+ * HIDDEN_TIP_MS; past HIDDEN_TIP_SHOWS times only the permanent mark stays (a small button where
+ * the menu was), so that the interface can never get lost.
+ */
+export const HIDDEN_TIP_SHOWS = 3;
+export const HIDDEN_TIP_MS = 2000;
+export const HIDDEN_TIP_KEY = "asteria.hud.hiddenTips";
+
+/** Whether the bubble is shown, given how many times it has been shown already. */
+export function hiddenTipDue(shown: number): boolean {
+  return Number.isFinite(shown) && shown < HIDDEN_TIP_SHOWS;
+}
+
+/**
  * Compass of the sky map (#138): heading of the view's centre, whole degrees in [0, 360), from
  * the map's azimuth (degrees from north through east, any turn count).
  */
