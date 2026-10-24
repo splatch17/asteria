@@ -48,6 +48,8 @@
     type SeasonKind,
     type Vec3,
   } from "@asteria/astro-core";
+  import { nextDarkNight, type NightStart } from "@asteria/astro-core";
+  import { nightJump } from "./lib/tonight";
   import {
     CONSTELLATION_LATIN,
     constellationNames,
@@ -383,6 +385,15 @@
     live = false;
     date = dateAt(anchor, offset, range);
     map?.setDate(date);
+  }
+
+  /** Shows a given instant (« Voir ce soir », #198): the time line moves there, paused. */
+  function showDate(target: Date) {
+    stopPlaying();
+    range = "48h";
+    speedIndex = 1;
+    anchor = date; // the date shown: the scrubber says « +6 h » from it
+    setOffset(target.getTime() - anchor.getTime());
   }
 
   function goLive() {
@@ -1958,6 +1969,25 @@
   const hint = $derived(
     playing && !demo ? $_(HINTS[range]) : daylightHint && !demo ? $_("map.daylightHint") : "",
   );
+  /**
+   * By day, the banner offers the coming dark night (#198): computed once per minute shown and
+   * place (a root search, ≈ 1 ms), only while the banner is up.
+   */
+  let nightCache: { key: string; night: NightStart | null } | null = null;
+  const tonight = $derived.by(() => {
+    if (!daylightHint || playing || demo) return null;
+    const key = `${Math.floor(date.getTime() / 60_000)}|${place.latitude}|${place.longitude}`;
+    if (nightCache?.key !== key) nightCache = { key, night: nextDarkNight(date, place) };
+    return nightCache.night ? nightJump(nightCache.night.date, date) : null;
+  });
+  const clockFormat = $derived(
+    new Intl.DateTimeFormat(lang, { hour: "numeric", minute: "2-digit" }),
+  );
+  const clockLabel = (d: Date) => {
+    const parts = clockFormat.formatToParts(d);
+    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return $_("time.clock", { values: { h: part("hour"), m: part("minute") } });
+  };
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
     if (selectedNow) return altitudeOf(selectedNow.ra, selectedNow.dec, date, place) < 0;
@@ -2365,7 +2395,16 @@
 <nav class="hud bottom" class:hidden={immersive} bind:this={bottomNav}>
   <div class="controls" bind:clientHeight={controlsHeight}>
     <!-- Kept clear of the scrubber's bubble when it rises during playback (#80). -->
-    {#if hint}<p
+    {#if tonight}
+      <!-- By day (#106, #198): what is hidden, and a way to the coming night. -->
+      <button class="hint daylight" onclick={() => showDate(tonight.at)}>
+        <span class="why">{hint}</span>
+        <span class="go">
+          {$_(`map.daylight.${tonight.when}`, { values: { time: clockLabel(tonight.at) } })}
+          <span aria-hidden="true">›</span>
+        </span>
+      </button>
+    {:else if hint}<p
         class="hint"
         class:quiet={!playing}
         style:margin-bottom={timeOpen && playing ? `${BUBBLE_RISE - 8}px` : undefined}
@@ -2746,6 +2785,27 @@
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
     font: 11px/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
+  }
+  /* By day (#198): the banner is a button to the coming night, the way there in full ink. */
+  .hint.daylight {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 2px 10px;
+    min-height: 44px;
+    padding: 6px 14px;
+    border-color: var(--ast-control-border, var(--ast-hairline));
+    text-align: center;
+    cursor: pointer;
+  }
+  .hint.daylight .why {
+    font-size: 10px;
+  }
+  .hint.daylight .go {
+    color: var(--ast-fg);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
   /* Standing hint (daytime sky, #106): lighter than the playback hints. */
   .hint.quiet {
