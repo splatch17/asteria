@@ -4,12 +4,14 @@
   // as the games' « visible from home » setting opens it there), the celestial sphere seen from
   // outside with the observer's horizon and the sky turning about the tilted axis
   // (LatitudeSphere), the flat map of the whole sky with the three zones as bands
-  // (LatitudeMap), the counts and lists of the constellations always seen, seen part of the year
-  // and never seen (astro-core latitude-visibility.ts), and an explanation by level. A tap on a
-  // constellation (lists, map, sphere) shows it on both drawings.
+  // (LatitudeMap) with each band's count of constellations written on it, the lists of the
+  // constellations always seen, seen part of the year and never seen (astro-core
+  // latitude-visibility.ts), and an explanation by level. A tap on a constellation (lists, map,
+  // sphere) shows it on both drawings. The zones are translucent washes (#197, tokens
+  // --ast-zone-*), and the map can be enlarged to the whole screen, turned and zoomed.
   // Motion: tweens to a preset and the « play » sweep (90° cos t, slow at the poles); with
   // reduced motion, no tween, a still sky and a play that steps through notable latitudes.
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { _, locale } from "@asteria/ui";
   import {
     areaSamplesOf,
@@ -34,6 +36,7 @@
   import {
     LatitudeMap,
     LatitudeSphere,
+    MAP_MAX_ZOOM,
     phaseOf,
     sweepLatitude,
     type LatitudeTheme,
@@ -53,10 +56,14 @@
     listsByZone,
     nextStep,
     numberFormat,
+    placeBandLabels,
     presetLatitude,
     tweenLatitude,
+    washFrom,
+    zoneBands,
     type ListedConstellation,
     type Preset,
+    type ZoneBand,
   } from "../lib/latitude";
   import { figureStars } from "../lib/games/geometry";
   import { HOME_MIN_ALTITUDE, HOME_MIN_SHARE, visibleFromLatitude } from "../lib/games/visibility";
@@ -205,7 +212,9 @@
   let phase = 0;
   let stepTimer: ReturnType<typeof setInterval> | undefined;
   let stepSouth = true;
-  let lst = untrack(() => greenwichMeanSiderealTime(date) + observer.longitude);
+  /** Local sidereal time of the app's date and place: the right ascension on the meridian. */
+  const lst0 = untrack(() => greenwichMeanSiderealTime(date) + observer.longitude);
+  let lst = lst0;
 
   function goTo(target: number) {
     stop();
@@ -286,12 +295,30 @@
     map?.setLabels(m);
     sphereDirty = mapDirty = true;
   });
+  // The zones' washes come from the tokens (--ast-zone-*, red at night): read on the next frame,
+  // once the root's night variables are in place.
+  let themeDirty = true;
   $effect(() => {
-    const t = { ink: theme.ink, sky: theme.sky };
+    void theme.ink;
+    void theme.sky;
+    themeDirty = true;
+  });
+  function applyTheme() {
+    themeDirty = false;
+    const style = getComputedStyle(document.documentElement);
+    const get = (name: string) => style.getPropertyValue(name);
+    const always = washFrom(get, "always");
+    const never = washFrom(get, "never");
+    const t: LatitudeTheme = {
+      ink: theme.ink,
+      sky: theme.sky,
+      ...(always && { always }),
+      ...(never && { never }),
+    };
     sphere?.setTheme(t);
     map?.setTheme(t);
     sphereDirty = mapDirty = true;
-  });
+  }
   $effect(() => {
     const abbr = selected;
     void bounds;
@@ -307,6 +334,7 @@
   });
 
   function draw(now: number, dt: number) {
+    if (themeDirty) applyTheme();
     if (tween) {
       lat = tweenLatitude(tween.from, tween.to, now - tween.start);
       if (now - tween.start >= 700) tween = null;
@@ -318,7 +346,8 @@
       lst += (dt * 360) / SKY_TURN_MS;
       sphereDirty = true;
     }
-    if (sphere && sphereDirty) {
+    // Under the enlarged map the sphere is hidden: not drawn.
+    if (sphere && sphereDirty && !expanded) {
       sphere.setLatitude(lat);
       sphere.setSiderealTime(lst);
       const ms = sphere.draw();
@@ -330,7 +359,145 @@
       const ms = map.draw();
       perf?.map.push(ms);
       mapDirty = false;
+      const m = map;
+      const next = zoneBands(lat, (d) => m.screenY(d), mapH);
+      // The labels move with the bands: only when they move by a quarter pixel or more.
+      if (
+        next.length !== bands.length ||
+        next.some(
+          (b, i) =>
+            b.zone !== bands[i]!.zone ||
+            Math.abs(b.top - bands[i]!.top) > 0.25 ||
+            Math.abs(b.bottom - bands[i]!.bottom) > 0.25,
+        )
+      )
+        bands = next;
     }
+  }
+
+  // --- The bands' labels on the map: each count with its zone, on its band (#197).
+  let mapH = $state(0);
+  let bands = $state.raw<ZoneBand[]>([]);
+  const labelH = $state<Record<SkyZone, number>>({ always: 0, sometimes: 0, never: 0 });
+  const bandTops = $derived(
+    placeBandLabels(
+      bands,
+      bands.map((b) => labelH[b.zone] || 28),
+      mapH,
+      4,
+    ),
+  );
+
+  // --- The enlarged map (#197): the whole screen, turned by a drag, zoomed by a pinch.
+  let expanded = $state(false);
+  let zoom = $state(1);
+  let expandButton = $state<HTMLButtonElement>();
+  let collapseButton = $state<HTMLButtonElement>();
+  async function expandMap() {
+    stopGesture();
+    expanded = true;
+    // Centred on the constellation picked, else on the sky of the meridian at the app's time.
+    map?.resetView(map.selectedRa() ?? ((lst0 % 360) + 360) % 360);
+    zoom = 1;
+    mapDirty = true;
+    await tick();
+    collapseButton?.focus();
+  }
+  async function collapseMap() {
+    stopGesture();
+    expanded = false;
+    map?.resetView();
+    zoom = 1;
+    mapDirty = true;
+    await tick();
+    expandButton?.focus();
+  }
+  function zoomBy(factor: number) {
+    if (!map) return;
+    map.zoomAt(factor, mapBox.clientWidth / 2, mapBox.clientHeight / 2);
+    zoom = map.view.zoom;
+    mapDirty = true;
+  }
+  function panBy(dx: number, dy: number) {
+    map?.panBy(dx, dy);
+    mapDirty = true;
+  }
+  /** Pointers on the enlarged map: one drags, two pinch; a tap still picks. */
+  // Gesture bookkeeping, never read by the template.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const pointers = new Map<number, { x: number; y: number }>();
+  let gesture: { moved: number; multi: boolean } | null = null;
+  /** While a finger or the wheel moves the map, its layer is moved, not redrawn. */
+  function interacting(on: boolean) {
+    map?.setInteracting(on);
+    if (!on) mapDirty = true; // redrawn sharp at the final zoom
+  }
+  function stopGesture() {
+    pointers.clear();
+    gesture = null;
+    interacting(false);
+  }
+  function mapDown(e: PointerEvent) {
+    if (!expanded) return mapTap.down(e);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) gesture = { moved: 0, multi: false };
+    else if (gesture) gesture.multi = true;
+    interacting(true);
+  }
+  function mapMove(e: PointerEvent) {
+    const old = pointers.get(e.pointerId);
+    if (!expanded || !old || !map) return;
+    if (pointers.size === 1) {
+      panBy(e.clientX - old.x, e.clientY - old.y);
+      if (gesture) gesture.moved += Math.hypot(e.clientX - old.x, e.clientY - old.y);
+    } else if (pointers.size === 2) {
+      const other = [...pointers.entries()].find(([id]) => id !== e.pointerId)![1];
+      const rect = mapBox.getBoundingClientRect();
+      const d0 = Math.hypot(old.x - other.x, old.y - other.y);
+      const d1 = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+      const [mx0, my0] = [(old.x + other.x) / 2, (old.y + other.y) / 2];
+      const [mx1, my1] = [(e.clientX + other.x) / 2, (e.clientY + other.y) / 2];
+      if (d0 > 4) map.zoomAt(d1 / d0, mx1 - rect.left, my1 - rect.top);
+      map.panBy(mx1 - mx0, my1 - my0);
+      zoom = map.view.zoom;
+      mapDirty = true;
+    }
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  }
+  function mapUp(e: PointerEvent) {
+    if (!expanded) return mapTap.up(e);
+    if (!pointers.delete(e.pointerId)) return;
+    if (!pointers.size) {
+      if (gesture && !gesture.multi && gesture.moved < 8 && bounds && map) {
+        const rect = mapBox.getBoundingClientRect();
+        select(constellationAt(bounds, map.pick(e.clientX - rect.left, e.clientY - rect.top)));
+      }
+      gesture = null;
+      interacting(false);
+    }
+  }
+  function mapCancel(e: PointerEvent) {
+    pointers.delete(e.pointerId);
+    if (pointers.size) return;
+    gesture = null;
+    interacting(false);
+  }
+  /** The enlarged map from the keyboard: arrows turn and tilt it, + and − zoom. */
+  function mapKey(e: KeyboardEvent) {
+    if (!expanded) return;
+    const step = 48;
+    const moves: Record<string, [number, number]> = {
+      ArrowLeft: [step, 0],
+      ArrowRight: [-step, 0],
+      ArrowUp: [0, step],
+      ArrowDown: [0, -step],
+    };
+    if (moves[e.key]) panBy(...moves[e.key]!);
+    else if (e.key === "+" || e.key === "=") zoomBy(1.5);
+    else if (e.key === "-") zoomBy(1 / 1.5);
+    else return;
+    e.preventDefault();
   }
 
   /** A tap (not a drag) on a drawing picks the constellation under it. */
@@ -355,12 +522,14 @@
   const mapTap = tapper((x, y) => map?.pick(x, y) ?? null);
 
   let dialog: HTMLElement;
+  let mapBlock: HTMLElement;
   let closeButton: HTMLButtonElement;
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeButton.focus();
     sphere = new LatitudeSphere(sphereCanvas);
     map = new LatitudeMap(mapCanvas);
+    if (perf) (window as unknown as { __latitudeMap: LatitudeMap }).__latitudeMap = map;
     sphere.setPrecession(precession);
     sphere.setStars(skyStars);
     sphere.setTheme(theme);
@@ -372,6 +541,10 @@
     const resize = new ResizeObserver(() => {
       sphere?.resize(sphereBox.clientWidth, sphereBox.clientHeight, dpr());
       map?.resize(mapBox.clientWidth, mapBox.clientHeight, dpr());
+      // In the page the map is the whole sky, 0 h on the right edge.
+      if (!expanded) map?.resetView();
+      if (map) zoom = map.view.zoom;
+      mapH = mapBox.clientHeight;
       sphereDirty = mapDirty = true;
     });
     resize.observe(sphereBox);
@@ -393,6 +566,30 @@
       },
     );
     if (params.get("play") === "1") togglePlay();
+    // Captures: ?map=full opens the enlarged map, ?mapZoom= zooms it.
+    if (params.get("map") === "full")
+      void expandMap().then(() => {
+        const z = Number(params.get("mapZoom"));
+        // Once the boundaries are in, on the constellation picked by ?select=.
+        if (z > 1)
+          setTimeout(() => {
+            zoomBy(z);
+            if (map?.centreOnSelected()) mapDirty = true;
+          }, 1200);
+      });
+    let wheelEnd: ReturnType<typeof setTimeout> | undefined;
+    const wheel = (e: WheelEvent) => {
+      if (!expanded || !map) return;
+      e.preventDefault();
+      interacting(true);
+      clearTimeout(wheelEnd);
+      wheelEnd = setTimeout(() => interacting(false), 160);
+      const rect = mapBox.getBoundingClientRect();
+      map.zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
+      zoom = map.view.zoom;
+      mapDirty = true;
+    };
+    mapBox.addEventListener("wheel", wheel, { passive: false });
     // Captures: ?phase= freezes the sweep at a phase (radians).
     const frozen = Number(params.get("phase"));
 
@@ -413,20 +610,26 @@
       cancelAnimationFrame(frame);
       clearInterval(stepTimer);
       resize.disconnect();
+      mapBox.removeEventListener("wheel", wheel);
       previous?.focus?.();
     };
   });
 
-  /** Escape closes; Tab cycles inside the dialog. */
+  /** Escape reduces the enlarged map, else closes; Tab cycles inside the dialog (or the map). */
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      onclose();
+      if (expanded) void collapseMap();
+      else onclose();
       return;
     }
     if (e.key !== "Tab") return;
-    const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input")];
+    const focusable = [
+      ...(expanded ? mapBlock : dialog).querySelectorAll<HTMLElement>(
+        "button:not(:disabled), input, [tabindex='0']",
+      ),
+    ];
     const first = focusable[0];
     const lastEl = focusable.at(-1);
     if (e.shiftKey && document.activeElement === first) {
@@ -461,7 +664,7 @@
   bind:this={dialog}
   {onkeydown}
 >
-  <header class="head">
+  <header class="head" inert={expanded}>
     <div>
       <h1 id="latitude-title">{$_("latitude.title")}</h1>
       <p class="subtitle">{$_("latitude.subtitle")}</p>
@@ -476,7 +679,7 @@
   </header>
 
   <div class="body">
-    <section class="stage" aria-label={$_("latitude.slider")}>
+    <section class="stage" aria-label={$_("latitude.slider")} inert={expanded}>
       <div
         class="sphere"
         bind:this={sphereBox}
@@ -532,39 +735,7 @@
         </div>
       {/if}
 
-      <div class="controls">
-        <button
-          class="play"
-          aria-pressed={playing}
-          onclick={togglePlay}
-          aria-label={playing ? $_("latitude.pause") : $_("latitude.play")}
-          title={playing ? $_("latitude.pause") : $_("latitude.play")}
-        >
-          <Icon name={playing ? "pause" : "play"} size={16} />
-        </button>
-        <div class="slider">
-          <div class="ticks" aria-hidden="true">
-            {#each [90, POLAR_CIRCLE, TROPIC, 0, -TROPIC, -POLAR_CIRCLE, -90] as t (t)}
-              <i class:major={t === 0 || Math.abs(t) === 90} style:left={at(t)}></i>
-            {/each}
-            <b class="home" style:left={at(home)} title={$_("latitude.home")}></b>
-          </div>
-          <input
-            type="range"
-            dir="rtl"
-            min="-90"
-            max="90"
-            step="0.1"
-            value={lat}
-            oninput={onslider}
-            aria-label={$_("latitude.slider")}
-            aria-valuetext={fmtLatLong(lat)}
-          />
-          <div class="ends" aria-hidden="true">
-            <span>{fmtLat(90)}</span><span>{fmtLat(0)}</span><span>{fmtLat(-90)}</span>
-          </div>
-        </div>
-      </div>
+      {@render latitudeControls()}
       <div class="presets" role="group" aria-label={$_("latitude.presets")}>
         {#each PRESETS as p (p)}
           {@const target = presetLatitude(p, home)}
@@ -578,90 +749,207 @@
     </section>
 
     <div class="scroll">
-      <section class="map-block" aria-labelledby="latitude-map">
-        <h2 class="group-title" id="latitude-map">{$_("latitude.map.title")}</h2>
+      <section
+        class="map-block"
+        class:expanded
+        aria-labelledby="latitude-map"
+        bind:this={mapBlock}
+        role={expanded ? "dialog" : undefined}
+        aria-modal={expanded ? "true" : undefined}
+      >
+        <div class="map-head">
+          <h2 class="group-title" id="latitude-map">{$_("latitude.map.title")}</h2>
+          {#if expanded}
+            <button
+              class="expand"
+              bind:this={collapseButton}
+              onclick={collapseMap}
+              aria-label={$_("latitude.map.collapse")}
+              title={$_("latitude.map.collapse")}
+            >
+              <Icon name="fullscreenExit" size={18} />
+            </button>
+          {:else}
+            <button
+              class="expand"
+              bind:this={expandButton}
+              onclick={expandMap}
+              aria-label={$_("latitude.map.expand")}
+              title={$_("latitude.map.expand")}
+            >
+              <Icon name="fullscreen" size={14} /><span>{$_("latitude.map.expandShort")}</span>
+            </button>
+          {/if}
+        </div>
+        <!-- Focusable only when enlarged, as an application (arrows, + and −): the role is dynamic. -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
           class="map"
           bind:this={mapBox}
-          onpointerdown={mapTap.down}
-          onpointerup={mapTap.up}
-          role="presentation"
+          onpointerdown={mapDown}
+          onpointermove={mapMove}
+          onpointerup={mapUp}
+          onpointercancel={mapCancel}
+          onkeydown={mapKey}
+          role={expanded ? "application" : "presentation"}
+          tabindex={expanded ? 0 : undefined}
+          aria-label={expanded
+            ? $_("latitude.map.expanded", { values: { lat: fmtLatLong(lat) } })
+            : undefined}
         >
           <canvas bind:this={mapCanvas} aria-hidden="true"></canvas>
           <p class="sr-only">{$_("latitude.map.label", { values: { lat: fmtLatLong(lat) } })}</p>
+          <!-- Each zone's count and name on its band: what the numbers are is read on the map. -->
+          <ol class="bands">
+            {#each bands as b, i (b.zone)}
+              <li
+                class={`band ${b.zone}`}
+                style:transform={`translateY(${bandTops[i] ?? 0}px)`}
+                bind:clientHeight={labelH[b.zone]}
+              >
+                <span class={`swatch ${b.zone}`} aria-hidden="true"></span>
+                <strong>{lists[b.zone].length}</strong>
+                <span class="what"
+                  >{$_(`latitude.band.${b.zone}`, { values: { count: lists[b.zone].length } })}
+                  {#if level === "expert"}<small
+                      >{$_("latitude.share", { values: { share: pct(shares[b.zone]) } })}</small
+                    >{/if}</span
+                >
+              </li>
+            {/each}
+          </ol>
         </div>
-      </section>
-
-      <dl class="counts">
-        {#each ZONES as z (z)}
-          <div class="count">
-            <dt>
-              <span class={`swatch ${z}`} aria-hidden="true"></span>{$_(`latitude.zone.short.${z}`)}
-            </dt>
-            <dd>
-              <strong>{lists[z].length}</strong>
-              {#if level === "expert"}<small
-                  >{$_("latitude.share", { values: { share: pct(shares[z]) } })}</small
-                >{/if}
-            </dd>
+        {#if expanded}
+          <!-- Under the map: the latitude and the picked constellation (or how to move the map),
+               the zoom, then the latitude controls, to watch the sweep on the large map. -->
+          <div class="map-bottom">
+            <div class="map-foot">
+              <div class="map-info">
+                <p class="map-readout">
+                  <strong>{fmtLat(lat)}</strong>{#if place}<span>{place}</span>{/if}
+                </p>
+                {#if selected}
+                  <p class="map-picked">
+                    <strong>{names[selected] ?? selected}</strong>
+                    {#if zoneOfSelected}<span>{$_(`latitude.detail.zone.${zoneOfSelected}`)}</span
+                      >{/if}
+                  </p>
+                {:else}
+                  <p class="gestures">{$_("latitude.map.gestures")}</p>
+                {/if}
+              </div>
+              <div class="zoom" role="group" aria-label={$_("latitude.map.titleShort")}>
+                <button
+                  onclick={() => zoomBy(1 / 1.6)}
+                  disabled={zoom <= 1 + 1e-6}
+                  aria-label={$_("latitude.map.zoomOut")}
+                  title={$_("latitude.map.zoomOut")}>−</button
+                >
+                <button
+                  onclick={() => zoomBy(1.6)}
+                  disabled={zoom >= MAP_MAX_ZOOM - 1e-6}
+                  aria-label={$_("latitude.map.zoomIn")}
+                  title={$_("latitude.map.zoomIn")}>+</button
+                >
+              </div>
+            </div>
+            <div class="map-controls">{@render latitudeControls()}</div>
           </div>
-        {/each}
-      </dl>
-
-      <p class="lead">{$_(`latitude.lead.${level}`)}</p>
-
-      {#if failed}
-        <p class="note">{$_("latitude.failed")}</p>
-      {/if}
-
-      <section class="lists" aria-labelledby="latitude-lists">
-        <h2 class="sr-only" id="latitude-lists">{$_("latitude.lists.title")}</h2>
-        {#each ZONES as z (z)}
-          <div class="list">
-            <h3 class="group-title">
-              <span class={`swatch ${z}`} aria-hidden="true"></span>{$_(`latitude.zone.${z}`)}
-              <span class="n">{lists[z].length}</span>
-            </h3>
-            {#if level !== "discovery"}<p class="hint">{$_(`latitude.zone.hint.${z}`)}</p>{/if}
-            {#if lists[z].length}
-              <ul class="chips">
-                {#each lists[z] as c (c.abbr)}
-                  {@render chip(c, z)}
-                {/each}
-              </ul>
-            {:else}
-              <p class="empty">{$_("latitude.zone.empty")}</p>
-            {/if}
-          </div>
-        {/each}
-        {#if level !== "discovery" && lists.sometimes.some((c) => c.partlyAlways || c.partlyHidden)}
-          <p class="legend">
-            <span class="mark always" aria-hidden="true"></span>{$_("latitude.mark.partlyAlways")}
-            <span class="mark never" aria-hidden="true"></span>{$_("latitude.mark.partlyHidden")}
-          </p>
         {/if}
       </section>
 
-      {#if level !== "discovery"}
-        <section class="panel-block definition" aria-labelledby="latitude-def">
-          <h2 class="panel-title" id="latitude-def">{$_("latitude.definition.title")}</h2>
-          <p>{$_("latitude.definition.amateur")}</p>
-          {#if level === "expert"}<p>
-              {$_("latitude.definition.expert", { values: { date: dateText } })}
-            </p>{/if}
-        </section>
-      {/if}
+      <div class="rest" inert={expanded}>
+        <p class="lead">{$_(`latitude.lead.${level}`)}</p>
 
-      <div class="levels" role="group" aria-label={$_("latitude.level")}>
-        {#each LEVELS as l (l)}
-          <button aria-pressed={level === l} onclick={() => chooseLevel(l)}
-            >{$_(`level.${l}`)}</button
-          >
-        {/each}
+        {#if failed}
+          <p class="note">{$_("latitude.failed")}</p>
+        {/if}
+
+        <section class="lists" aria-labelledby="latitude-lists">
+          <h2 class="sr-only" id="latitude-lists">{$_("latitude.lists.title")}</h2>
+          {#each ZONES as z (z)}
+            <div class="list">
+              <h3 class="group-title">
+                <span class={`swatch ${z}`} aria-hidden="true"></span>{$_(`latitude.zone.${z}`)}
+                <span class="n">{lists[z].length}</span>
+              </h3>
+              {#if level !== "discovery"}<p class="hint">{$_(`latitude.zone.hint.${z}`)}</p>{/if}
+              {#if lists[z].length}
+                <ul class="chips">
+                  {#each lists[z] as c (c.abbr)}
+                    {@render chip(c, z)}
+                  {/each}
+                </ul>
+              {:else}
+                <p class="empty">{$_("latitude.zone.empty")}</p>
+              {/if}
+            </div>
+          {/each}
+          {#if level !== "discovery" && lists.sometimes.some((c) => c.partlyAlways || c.partlyHidden)}
+            <p class="legend">
+              <span class="mark always" aria-hidden="true"></span>{$_("latitude.mark.partlyAlways")}
+              <span class="mark never" aria-hidden="true"></span>{$_("latitude.mark.partlyHidden")}
+            </p>
+          {/if}
+        </section>
+
+        {#if level !== "discovery"}
+          <section class="panel-block definition" aria-labelledby="latitude-def">
+            <h2 class="panel-title" id="latitude-def">{$_("latitude.definition.title")}</h2>
+            <p>{$_("latitude.definition.amateur")}</p>
+            {#if level === "expert"}<p>
+                {$_("latitude.definition.expert", { values: { date: dateText } })}
+              </p>{/if}
+          </section>
+        {/if}
+
+        <div class="levels" role="group" aria-label={$_("latitude.level")}>
+          {#each LEVELS as l (l)}
+            <button aria-pressed={level === l} onclick={() => chooseLevel(l)}
+              >{$_(`level.${l}`)}</button
+            >
+          {/each}
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+{#snippet latitudeControls()}
+  <div class="controls">
+    <button
+      class="play"
+      aria-pressed={playing}
+      onclick={togglePlay}
+      aria-label={playing ? $_("latitude.pause") : $_("latitude.play")}
+      title={playing ? $_("latitude.pause") : $_("latitude.play")}
+    >
+      <Icon name={playing ? "pause" : "play"} size={16} />
+    </button>
+    <div class="slider">
+      <div class="ticks" aria-hidden="true">
+        {#each [90, POLAR_CIRCLE, TROPIC, 0, -TROPIC, -POLAR_CIRCLE, -90] as t (t)}
+          <i class:major={t === 0 || Math.abs(t) === 90} style:left={at(t)}></i>
+        {/each}
+        <b class="home" style:left={at(home)} title={$_("latitude.home")}></b>
+      </div>
+      <input
+        type="range"
+        dir="rtl"
+        min="-90"
+        max="90"
+        step="0.1"
+        value={lat}
+        oninput={onslider}
+        aria-label={$_("latitude.slider")}
+        aria-valuetext={fmtLatLong(lat)}
+      />
+      <div class="ends" aria-hidden="true">
+        <span>{fmtLat(90)}</span><span>{fmtLat(0)}</span><span>{fmtLat(-90)}</span>
+      </div>
+    </div>
+  </div>
+{/snippet}
 
 {#snippet chip(c: ListedConstellation, z: SkyZone)}
   <li>
@@ -993,49 +1281,188 @@
     height: 1px;
     background: var(--ast-hairline);
   }
+  .map-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .map-head .group-title {
+    flex: 1;
+    min-width: 0;
+  }
+  .expand {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    margin: 10px 0 0;
+    padding: 0 10px;
+    border: 1px solid var(--ast-hairline);
+  }
   .map {
     aspect-ratio: 2 / 1;
     box-shadow: 0 0 0 1px var(--ast-hairline);
     touch-action: manipulation;
   }
-  .counts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-    margin: 14px 0 0;
-  }
-  .count {
+
+  /* The enlarged map (#197): the whole screen, the map edge to edge between a slim head and
+     the latitude controls, so that the sweep can be watched on it. */
+  .map-block.expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
     display: flex;
-    flex-direction: column-reverse;
-    justify-content: flex-end;
-    gap: 6px;
-    min-width: 0;
+    flex-direction: column;
+    background: var(--ast-bg);
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    animation: fade 160ms var(--ast-ease-out);
   }
-  .count dd {
+  .expanded .map-head,
+  .map-foot,
+  .map-controls {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+  }
+  .expanded .map-head .group-title {
     margin: 0;
+  }
+  .expanded .expand {
+    width: 44px;
+    height: 44px;
+    margin: 0 -10px 0 0;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+  }
+  .map-readout {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
   }
-  .count strong {
-    font: 700 32px/1 var(--ast-font-display);
+  .map-readout strong {
+    font: 700 20px/1 var(--ast-font-display);
     font-variant-numeric: tabular-nums;
   }
-  .count small {
+  .map-readout span {
     font: 500 9px/1 var(--ast-font-mono);
-    color: var(--ast-fg-muted);
-  }
-  .count dt {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    font: 500 9px/1.25 var(--ast-font-mono);
-    letter-spacing: 0.06em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
-  /* Zone swatches: the drawings' patterns (dots: always up; hatching: never up; clear). */
+  .expanded .map {
+    flex: 1;
+    min-height: 0;
+    aspect-ratio: auto;
+    margin-top: 6px;
+    box-shadow:
+      0 1px 0 var(--ast-hairline),
+      0 -1px 0 var(--ast-hairline);
+    touch-action: none;
+    cursor: grab;
+    outline: none;
+  }
+  .expanded .map:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--ast-fg);
+  }
+  .expanded .band {
+    left: max(8px, env(safe-area-inset-left));
+  }
+  .map-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .map-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .zoom {
+    flex: none;
+    display: flex;
+    border: 1px solid var(--ast-hairline);
+  }
+  .zoom button {
+    width: 44px;
+    height: 44px;
+    font: 400 20px/1 var(--ast-font-mono);
+  }
+  .zoom button + button {
+    border-left: 1px solid var(--ast-hairline);
+  }
+  .zoom button:disabled {
+    color: var(--ast-fg-muted);
+    opacity: 0.5;
+    cursor: default;
+  }
+  .gestures,
+  .map-picked {
+    margin: 4px 0 0;
+    font: 400 10px/1.4 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
+  }
+  .map-picked {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+  }
+  .map-picked strong {
+    font: 700 15px/1 var(--ast-font-display);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ast-fg);
+  }
+  .map-controls :global(.controls) {
+    margin-top: 4px;
+  }
+  /* The bands' labels (#197): a count and its zone, on a plate of the sky over the band's
+     left edge, moved with the band; they let the taps through to the map. */
+  .map {
+    position: relative;
+    overflow: hidden;
+  }
+  .bands {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    pointer-events: none;
+  }
+  .band {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 72px);
+    padding: 3px 8px 3px 6px;
+    background: color-mix(in srgb, var(--ast-bg) 86%, transparent);
+    box-shadow: inset 0 0 0 1px var(--ast-hairline);
+    will-change: transform;
+  }
+  .band strong {
+    font: 700 20px/1 var(--ast-font-display);
+    font-variant-numeric: tabular-nums;
+  }
+  .band .what {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font: 500 9px/1.25 var(--ast-font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .band small {
+    font: inherit;
+    color: var(--ast-fg-muted);
+  }
+  /* Zone swatches: the drawings' washes (#197), always with their name next to them. */
   .swatch {
     flex: none;
     width: 11px;
@@ -1045,16 +1472,11 @@
   }
   .swatch.always,
   .mark.always {
-    background: conic-gradient(from 270deg at 1px 1px, var(--ast-fg) 25%, transparent 0) 0 0 / 2px
-      2px;
+    background: var(--ast-zone-always-wash);
   }
   .swatch.never,
   .mark.never {
-    background: repeating-linear-gradient(
-      -45deg,
-      var(--ast-fg) 0 0.75px,
-      transparent 0.75px 2.83px
-    );
+    background: var(--ast-zone-never-wash);
   }
   .lead {
     margin: 16px 0 0;
@@ -1110,16 +1532,8 @@
     height: 7px;
     box-shadow: inset 0 0 0 1px currentColor;
   }
-  .chip[aria-pressed="true"] .mark.always {
-    background: conic-gradient(from 270deg at 1px 1px, var(--ast-bg) 25%, transparent 0) 0 0 / 2px
-      2px;
-  }
-  .chip[aria-pressed="true"] .mark.never {
-    background: repeating-linear-gradient(
-      -45deg,
-      var(--ast-bg) 0 0.75px,
-      transparent 0.75px 2.83px
-    );
+  .chip[aria-pressed="true"] .mark {
+    box-shadow: inset 0 0 0 1px var(--ast-bg);
   }
   .legend {
     display: flex;
@@ -1199,8 +1613,83 @@
       padding-right: 4px;
     }
   }
+  /* A large screen: the enlarged map's labels a size up. */
+  @media (min-width: 880px) and (min-height: 600px) {
+    .expanded .band strong {
+      font-size: 26px;
+    }
+    .expanded .band .what {
+      font-size: 10.5px;
+    }
+    .expanded .swatch {
+      width: 13px;
+      height: 13px;
+    }
+  }
+  /* A phone on its side: the enlarged map takes all the height but one row, where the latitude,
+     its controls and the zoom sit side by side; the reduce button floats over the map. */
+  @media (orientation: landscape) and (max-height: 520px) {
+    .map-block.expanded {
+      padding-top: 0;
+    }
+    .expanded .map-head {
+      position: absolute;
+      top: max(6px, env(safe-area-inset-top));
+      right: 0;
+      z-index: 1;
+      padding-left: 0;
+    }
+    .expanded .map-head .group-title {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .expanded .expand {
+      margin: 0;
+      background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
+      box-shadow: inset 0 0 0 1px var(--ast-hairline);
+    }
+    .expanded .map {
+      margin-top: 0;
+    }
+    .map-bottom {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+    .map-bottom .map-foot,
+    .map-bottom .map-controls {
+      display: contents;
+    }
+    .map-bottom .map-info {
+      flex: 0 1 auto;
+      order: 0;
+      margin-top: 6px;
+    }
+    .map-bottom .gestures {
+      display: none;
+    }
+    .map-bottom .map-picked {
+      margin: 2px 0 0;
+    }
+    .map-bottom :global(.controls) {
+      flex: 1;
+      order: 1;
+      min-width: 0;
+    }
+    .map-bottom .zoom {
+      order: 2;
+      margin-top: 6px;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .latitude {
+    .latitude,
+    .map-block.expanded {
       animation: none;
     }
   }
