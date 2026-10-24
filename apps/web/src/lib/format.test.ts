@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  clockParts,
   decimalMark,
   formatDec,
   formatNumber,
@@ -116,5 +117,12 @@ describe("a place by its coordinates (#198)", () => {
   });
   it("gives no south or west to a value shown as zero", () => {
     expect(placeParts(-0.01, -0.04)).toEqual({ lat: "0,0", ns: "n", lon: "0,0", ew: "e" });
+  });
+});
+
+describe("clock (#198)", () => {
+  it("gives the hour as written and the minutes on two digits", () => {
+    expect(clockParts(new Date(2026, 9, 24, 20, 5))).toEqual({ h: "20", m: "05" });
+    expect(clockParts(new Date(2026, 9, 25, 0, 35))).toEqual({ h: "0", m: "35" });
   });
 });

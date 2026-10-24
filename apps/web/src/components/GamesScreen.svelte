@@ -63,6 +63,7 @@
     upFromLatitude,
     upTonight,
     visibleFromLatitude,
+    tonightWindow,
     visibleTonight,
   } from "../lib/games/visibility";
   import {
@@ -442,7 +443,9 @@
     {date}
     latitude={observer.latitude}
     {placeName}
-    tonight={visible.has(entry.abbr)}
+    tonight={visible.has(entry.abbr)
+      ? tonightWindow(shapes[entry.abbr]!.centre, date, observer)
+      : null}
     initialStar={deck.star}
     sky={deck.sky}
     current={deck.current}

@@ -5,6 +5,7 @@ import { figureStars, type ConstellationShape } from "./geometry";
 import {
   HOME_MIN_ALTITUDE,
   culmination,
+  tonightWindow,
   upFromLatitude,
   upTonight,
   visibleFromLatitude,
@@ -177,5 +178,33 @@ describe.skipIf(!available)("visible from home, the 88 figures (public/data)", (
     const v = visibleFromLatitude(load(), -33.87, DATE);
     for (const a of ["UMi", "Cas", "Cep", "Dra", "Cam"]) expect(v.has(a), a).toBe(false);
     for (const a of ["Cru", "Oct", "Ori", "Leo", "Cyg"]) expect(v.has(a), a).toBe(true);
+  });
+});
+
+describe("tonightWindow (#198)", () => {
+  const paris = { latitude: 48.85, longitude: 2.35 };
+  const evening = new Date("2026-10-24T19:30:00Z"); // 21 h 30 in Paris
+
+  it("exists exactly for the figures up tonight", () => {
+    const v = visibleTonight(SHAPES, evening, paris);
+    for (const s of Object.values(SHAPES))
+      expect(tonightWindow(s.centre, evening, paris) !== null, s.abbr).toBe(v.has(s.abbr));
+  });
+
+  it("puts Orion later, after its stars have risen (no « visible » against « sous l'horizon »)", () => {
+    const w = tonightWindow(SHAPES.Ori!.centre, evening, paris)!;
+    expect(w.now).toBe(false);
+    // Betelgeuse rises at 20:59:52 UT (Skyfield, see horizon.test.ts); the figure's centre
+    // reaches 20° later, and the window closes before the end of the night.
+    expect(w.from.getTime()).toBeGreaterThan(new Date("2026-10-24T22:00:00Z").getTime());
+    expect(w.to.getTime()).toBeLessThan(new Date("2026-10-25T06:00:00Z").getTime());
+    expect(w.to.getTime()).toBeGreaterThan(w.from.getTime());
+  });
+
+  it("says the Swan is up now, until it gets low", () => {
+    const w = tonightWindow(SHAPES.Cyg!.centre, evening, paris)!;
+    expect(w.now).toBe(true);
+    expect(w.from).toEqual(evening);
+    expect(w.to.getTime()).toBeGreaterThan(evening.getTime());
   });
 });

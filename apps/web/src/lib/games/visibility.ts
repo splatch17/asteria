@@ -109,6 +109,48 @@ export function upFromLatitude(
 }
 
 /**
+ * When a figure is up tonight (#198), so that its page can say « visible de 0 h 35 à 6 h 40 »
+ * rather than a bare « visible » that a star sheet under the horizon seems to contradict. Same
+ * rule and same hourly samples as upTonight (a window exists exactly when the figure is in its
+ * set), the edges refined to the minute. `now`: the window has already begun at `date`.
+ */
+export function tonightWindow(
+  direction: Vec3,
+  date: Date,
+  observer: Observer,
+): { from: Date; to: Date; now: boolean } | null {
+  const sinMin = Math.sin((MIN_ALTITUDE * Math.PI) / 180);
+  const t0 = date.getTime();
+  const up = (t: number) => {
+    const d = new Date(t);
+    return (
+      bodyPosition("Sun", d, observer).altitude <= DARK_SUN &&
+      applyMat3(j2000ToHorizontalMatrix(d, observer), direction)[2] >= sinMin
+    );
+  };
+  let first = -1;
+  for (let h = 0; h < 24 && first < 0; h++) if (up(t0 + h * HOUR_MS)) first = h;
+  if (first < 0) return null;
+  let last = first;
+  while (last + 1 < 24 && up(t0 + (last + 1) * HOUR_MS)) last++;
+  /** The instant `up` changes between a and b (it is `upAtB` at b), to a minute. */
+  const edge = (a: number, b: number, upAtB: boolean) => {
+    while (b - a > 60_000) {
+      const mid = (a + b) / 2;
+      if (up(mid) === upAtB) b = mid;
+      else a = mid;
+    }
+    return b;
+  };
+  const from = first === 0 ? t0 : edge(t0 + (first - 1) * HOUR_MS, t0 + first * HOUR_MS, true);
+  const to =
+    last === 23
+      ? t0 + 23 * HOUR_MS
+      : edge(t0 + last * HOUR_MS, t0 + (last + 1) * HOUR_MS, false) - 60_000;
+  return { from: new Date(from), to: new Date(Math.max(from, to)), now: first === 0 };
+}
+
+/**
  * The same for any directions (J2000 unit vectors) by key, e.g. stars by HIP number (#165): the
  * keys of those at least MIN_ALTITUDE high during a dark hour of the coming 24 hours.
  */

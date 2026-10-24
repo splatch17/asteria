@@ -28,6 +28,22 @@ export function placeParts(
   };
 }
 
+/**
+ * Hours and minutes of a local time, for the i18n `time.clock` (« 20 h 05 », #198): the hour
+ * as the language writes it, the minutes on two digits.
+ */
+export function clockParts(d: Date, locale = "fr"): { h: string; m: string } {
+  let f = clockFormats.get(locale);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", hourCycle: "h23" });
+    clockFormats.set(locale, f);
+  }
+  const parts = f.formatToParts(d);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return { h: part("hour"), m: part("minute") };
+}
+const clockFormats = new Map<string, Intl.DateTimeFormat>();
+
 /** Decimal mark of a language: "," in French, "." in English. */
 export function decimalMark(locale = "fr"): string {
   return (

@@ -65,6 +65,7 @@
     type DeepSkyType,
   } from "@asteria/catalog";
   import {
+    clockParts,
     decimalMark,
     formatDec,
     formatNumber,
@@ -110,7 +111,7 @@
   } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
-  import { altitudeOf } from "./lib/horizon";
+  import { altitudeOf, nextRise } from "./lib/horizon";
   import { allowCompass, watchCompass } from "./lib/device-compass";
   import { needsIosInstallHint } from "./lib/install";
   import { network, offline, retryOffline } from "./lib/offline-client.svelte";
@@ -1995,14 +1996,7 @@
     if (nightCache?.key !== key) nightCache = { key, night: nextDarkNight(date, place) };
     return nightCache.night ? nightJump(nightCache.night.date, date) : null;
   });
-  const clockFormat = $derived(
-    new Intl.DateTimeFormat(lang, { hour: "numeric", minute: "2-digit" }),
-  );
-  const clockLabel = (d: Date) => {
-    const parts = clockFormat.formatToParts(d);
-    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-    return $_("time.clock", { values: { h: part("hour"), m: part("minute") } });
-  };
+  const clockLabel = (d: Date) => $_("time.clock", { values: clockParts(d, lang) });
   /** The selected star, Sun, Moon or planet is below the horizon (seen through the Earth, #65). */
   const belowHorizon = $derived.by(() => {
     if (selectedNow) return altitudeOf(selectedNow.ra, selectedNow.dec, date, place) < 0;
@@ -2010,6 +2004,19 @@
       return ((selectedBody === "Sun" ? bodies.sun : bodies.moon)?.altitude ?? 0) < 0;
     if (selectedPlanet) return (planets?.find((q) => q.name === selectedPlanet)?.altitude ?? 0) < 0;
     return false;
+  });
+  /**
+   * When the selected star rises again, for « Sous l'horizon · se lève à 22 h 59 » (#198): the
+   * map's sheet then agrees with the catalogue's « visible de 0 h 35 à 6 h 40 ». Computed when the
+   * selection or the minute shown changes (a root search, about a hundred altitudes).
+   */
+  let riseCache: { key: string; rise: Date | null } | null = null;
+  const starRises = $derived.by(() => {
+    if (!selectedNow || !belowHorizon) return undefined;
+    const key = `${selected?.hip}|${Math.floor(date.getTime() / 60_000)}|${place.latitude}|${place.longitude}`;
+    if (riseCache?.key !== key)
+      riseCache = { key, rise: nextRise(selectedNow.ra, selectedNow.dec, date, place) };
+    return riseCache.rise ? clockLabel(riseCache.rise) : undefined;
   });
   const coords = $derived(
     $_("geo.coords", {
@@ -2223,6 +2230,7 @@
   <InfoPanel
     name={starLabel(selected)}
     {belowHorizon}
+    rises={starRises}
     constellation={{
       name: names[selected.con] ?? selected.con,
       latin: CONSTELLATION_LATIN[selected.con] ?? selected.con,
