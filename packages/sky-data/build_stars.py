@@ -22,6 +22,7 @@ Outputs (not versioned):
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import re
 import sys
@@ -71,9 +72,51 @@ def cached(name: str, url: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+# VizieR mirrors serving the same catalogues (https://vizier.cds.unistra.fr/vizier/doc/mirrors.htx),
+# tried in turn; each query result is cached in raw/ like the other downloads, so a deploy no
+# longer depends on VizieR answering that minute (#202).
+VIZIER_SERVERS = ("vizier.cds.unistra.fr", "vizier.cfa.harvard.edu", "vizier.iucaa.in")
+VIZIER_RETRY_WAITS_S = (30, 120)
+VIZIER_TIMEOUT_S = 180
+
+
 def vizier(catalog: str, columns: list[str], filters: dict[str, str] | None = None):
-    v = Vizier(columns=columns, column_filters=filters or {}, row_limit=-1)
-    return v.get_catalogs(catalog)[0]
+    from astropy.table import Table
+
+    filters = filters or {}
+    key = json.dumps([catalog, columns, sorted(filters.items())], ensure_ascii=False)
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+    path = RAW / f"vizier-{re.sub(r'[^A-Za-z0-9]+', '_', catalog)}-{digest}.ecsv"
+    if path.exists():
+        return Table.read(path, format="ascii.ecsv")
+    errors = []
+    for wait in (*VIZIER_RETRY_WAITS_S, None):
+        for server in VIZIER_SERVERS:
+            v = Vizier(
+                columns=columns,
+                column_filters=filters,
+                row_limit=-1,
+                timeout=VIZIER_TIMEOUT_S,
+                vizier_server=server,
+            )
+            try:
+                result = v.get_catalogs(catalog)
+            except requests.exceptions.RequestException as e:
+                errors.append(f"{server}: {e}")
+                print(f"  VizieR error ({server}): {e}")
+                continue
+            if len(result) == 0:
+                errors.append(f"{server}: empty result")
+                continue
+            table = result[0]
+            RAW.mkdir(parents=True, exist_ok=True)
+            table.write(path, format="ascii.ecsv", overwrite=True)
+            return table
+        if wait is None:
+            break
+        print(f"  all VizieR mirrors failed; retrying in {wait} s")
+        time.sleep(wait)
+    raise RuntimeError(f"VizieR query {catalog} failed on every mirror: {errors}")
 
 
 def parse_bsc_name(name: str) -> tuple[int | None, str | None]:
