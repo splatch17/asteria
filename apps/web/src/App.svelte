@@ -76,7 +76,7 @@
     yearLabel,
   } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
-  import { readSetting, writeSetting } from "./lib/storage";
+  import { appStorage, readSetting, writeSetting } from "./lib/storage";
   import { PlanetPathCache } from "./lib/planet-paths";
   import { SensorPointing } from "./lib/pointing.svelte";
   import { failureMessageKey } from "./lib/sensors";
@@ -101,6 +101,8 @@
   import SearchPanel from "./components/SearchPanel.svelte";
   import IssPanel from "./components/IssPanel.svelte";
   import GestureTip from "./components/GestureTip.svelte";
+  import Welcome, { type WelcomeExample } from "./components/Welcome.svelte";
+  import { welcomeOnLaunch } from "./lib/welcome";
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
   import {
@@ -182,6 +184,14 @@
       glow: "ink" as const,
     },
   };
+
+  // First-launch welcome (#207): decided before this launch stores anything (lib/welcome.ts).
+  const welcomeThisLaunch = welcomeOnLaunch(appStorage(), {
+    param: new URLSearchParams(location.search).get("welcome"),
+    automated: navigator.webdriver === true,
+    now: new Date(),
+  });
+  let welcome = $state<Welcome>();
 
   let canvas: HTMLCanvasElement;
   let overlay: HTMLCanvasElement;
@@ -920,11 +930,13 @@
         onSelect: (s) => {
           onViewTap(s);
           select(s);
+          if (s?.kind === "star") welcome?.starTapped();
         },
         onPointingDrag: (delta) => pointer.drag(delta),
         onViewChange: (v) => {
           viewAzimuth = v.azimuth;
           viewRoll = v.roll ?? 0;
+          if (pointer.state === "off") welcome?.viewChanged(v);
         },
         describeTarget: (t) =>
           t.kind === "body"
@@ -1873,8 +1885,9 @@
     magnitude: number,
     h: { altitude: number; azimuth: number },
     altitudeAt: (t: number) => number,
+    lvl: FigureLevel = userLevel,
   ): string {
-    if (userLevel === "expert") return "";
+    if (lvl === "expert") return "";
     const now = date.getTime();
     const sight = sightOf({
       altitude: h.altitude,
@@ -1894,10 +1907,13 @@
   const selectedNow = $derived(
     selected ? propagateStar(selected, yearsSinceHipparcos(date)) : null,
   );
-  const starInfo = $derived.by(() => {
-    if (!selected || !selectedNow) return null;
+  /**
+   * A star's sheet at a level (#201, lib/sheet-rows), at the date shown: the map's star sheet,
+   * and the example of the first-launch welcome (#207).
+   */
+  function starSheetOf(star: CatalogStar, lvl: FigureLevel) {
     // The map hands back the decoded catalogue records, which carry the reference distance (#75).
-    const record = selected as CatalogRecord;
+    const record = star as CatalogRecord;
     const d = starDistance(record);
     const source = !d
       ? ""
@@ -1907,40 +1923,61 @@
           ? $_(`star.distanceSource.${record.distanceSource}`)
           : $_("star.distanceSource.hipparcos");
     const hint = d?.errorLy != null ? { err: d.errorLy, source } : null;
-    const { ra, dec } = selectedNow;
+    const { ra, dec } = propagateStar(star, yearsSinceHipparcos(date));
     const h = horizontalOf(ra, dec, date, place);
-    const conOf = namesOf[selected.con] ?? selected.con;
+    const conOf = namesOf[star.con] ?? star.con;
     return {
       // A star with neither a proper name nor a Bayer letter: « Étoile de Pégase », its HIP
       // number in the line above (#201).
-      name: selected.name ?? selected.bayer ?? unnamedStarTitle(tr, conOf),
+      name: star.name ?? star.bayer ?? unnamedStarTitle(tr, conOf),
       sheet: starSheet(
-        userLevel,
+        lvl,
         {
           ra,
           dec,
-          v: selected.v,
-          bv: selected.bv,
+          v: star.v,
+          bv: star.bv,
           ...h,
           distance: d,
           distanceTitle: hint
             ? $_(d?.approx ? "star.distanceApprox.hint" : "star.distance.hint", { values: hint })
             : d
               ? source
-              : (selected.plx ?? 0) > 0
+              : (star.plx ?? 0) > 0
                 ? $_("star.unknownDistance.hint")
                 : undefined,
-          rank: rankFact(selected.hip, starRanks()),
+          rank: rankFact(star.hip, starRanks()),
           conOf,
         },
-        sightFor(`star:${selected.hip}`, "star", selected.v, h, (t) =>
-          altitudeOf(ra, dec, new Date(t), place),
+        sightFor(
+          `star:${star.hip}`,
+          "star",
+          star.v,
+          h,
+          (t) => altitudeOf(ra, dec, new Date(t), place),
+          lvl,
         ),
         tr,
         sheetFormat,
       ),
     };
-  });
+  }
+  const starInfo = $derived(selected ? starSheetOf(selected, userLevel) : null);
+
+  /** Betelgeuse (HIP 27989), the example star of the welcome's level step (#207). */
+  const WELCOME_STAR = 27989;
+  function welcomeExample(lvl: FigureLevel): WelcomeExample | null {
+    const star = catalog?.stars.find((s) => s.hip === WELCOME_STAR);
+    if (!star) return null;
+    const info = starSheetOf(star, lvl);
+    return {
+      ...info,
+      hip: hipLabel(star.hip),
+      bayer: star.bayer,
+      constellation: names[star.con] ?? star.con,
+      latin: CONSTELLATION_LATIN[star.con] ?? star.con,
+    };
+  }
 
   const bodyInfo = $derived.by(() => {
     if (!selectedBody) return null;
@@ -2554,6 +2591,29 @@
     </TimeBar>
   </div>
 </nav>
+
+{#if welcomeThisLaunch}
+  <!-- First launch only (#207): stays mounted for the session, empty once over. -->
+  <Welcome
+    bind:this={welcome}
+    ready={status === "ready" &&
+      mode === "sky" &&
+      !flying &&
+      !menuOpen &&
+      !searchOpen &&
+      !gamesOpen &&
+      !creditsOpen &&
+      !latitudeExplorer}
+    when={bodies.sun.altitude >= 0 ? "day" : date.getHours() >= 15 ? "evening" : "night"}
+    {locating}
+    located={place.name === "mine"}
+    onlocate={locate}
+    example={welcomeExample}
+    view={() =>
+      map ? { azimuth: map.view.azimuth, altitude: map.view.altitude, fov: map.view.fov } : null}
+    bottom={aboveControls}
+  />
+{/if}
 
 {#if menuOpen}
   <MenuSheet
