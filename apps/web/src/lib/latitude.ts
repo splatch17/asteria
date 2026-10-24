@@ -187,3 +187,74 @@ export function formatDeclination(dec: number, locale = "fr"): string {
   }).format(Math.abs(rounded));
   return `${rounded < 0 ? "−" : "+"}${value}°`;
 }
+
+// --- The zones on the map (#197) ------------------------------------------------------------
+
+/** A zone of the map as a horizontal band: its screen extent (CSS px). */
+export interface ZoneBand {
+  zone: SkyZone;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * The zones as bands of the map, from top to bottom, clipped to [0, height]: north of
+ * +(90° − |φ|) the sky that never sets (north) or never rises (south), the band that rises and
+ * sets between the limits, the other cap south of them. A zone without sky at this latitude
+ * (the caps at the equator, the middle band at the poles) or out of the view is left out.
+ * `screenY` places a declination (degrees) on the screen.
+ */
+export function zoneBands(
+  lat: number,
+  screenY: (dec: number) => number,
+  height: number,
+): ZoneBand[] {
+  const limit = 90 - Math.abs(lat);
+  const north = lat > 1e-9;
+  const equator = Math.abs(lat) <= 1e-9;
+  const bands: ZoneBand[] = equator
+    ? [{ zone: "sometimes", top: screenY(90), bottom: screenY(-90) }]
+    : [
+        { zone: north ? "always" : "never", top: screenY(90), bottom: screenY(limit) },
+        { zone: "sometimes", top: screenY(limit), bottom: screenY(-limit) },
+        { zone: north ? "never" : "always", top: screenY(-limit), bottom: screenY(-90) },
+      ];
+  return bands
+    .map((b) => ({ ...b, top: Math.max(0, b.top), bottom: Math.min(height, b.bottom) }))
+    .filter((b) => b.bottom - b.top >= 0.5);
+}
+
+/**
+ * Tops (CSS px) of the bands' labels, `sizes[i]` tall: each centred on its band if it can,
+ * otherwise pushed by its neighbours (in band order, `gap` apart) and kept within
+ * [0, height − size]. When they cannot all fit, the first ones overlap at the top.
+ */
+export function placeBandLabels(
+  bands: readonly { top: number; bottom: number }[],
+  sizes: readonly number[],
+  height: number,
+  gap = 4,
+): number[] {
+  const n = bands.length;
+  const size = (i: number) => sizes[i] ?? 0;
+  const ys = bands.map((b, i) =>
+    Math.max(0, Math.min(height - size(i), (b.top + b.bottom) / 2 - size(i) / 2)),
+  );
+  // Down, then up: the smallest moves that keep them apart.
+  for (let i = 1; i < n; i++) ys[i] = Math.max(ys[i]!, ys[i - 1]! + size(i - 1) + gap);
+  for (let i = n - 1; i >= 0; i--) {
+    const below = i === n - 1 ? height : ys[i + 1]! - gap;
+    ys[i] = Math.max(0, Math.min(ys[i]!, below - size(i)));
+  }
+  return ys;
+}
+
+/** A zone's wash read from the tokens (`--ast-zone-<zone>` and `-alpha`), or null if unset. */
+export function washFrom(
+  get: (name: string) => string,
+  zone: "always" | "never",
+): { color: string; alpha: number } | null {
+  const color = get(`--ast-zone-${zone}`).trim();
+  const alpha = Number.parseFloat(get(`--ast-zone-${zone}-alpha`));
+  return color && Number.isFinite(alpha) ? { color, alpha } : null;
+}
