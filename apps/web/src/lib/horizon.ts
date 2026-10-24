@@ -9,8 +9,15 @@ const MINUTE_MS = 60_000;
  * that day (never rises from there, or already up and circumpolar).
  */
 export function nextRise(ra: number, dec: number, date: Date, observer: Observer): Date | null {
-  const t0 = date.getTime();
-  const alt = (t: number) => altitudeOf(ra, dec, new Date(t), observer);
+  const t = nextRiseOf((t) => altitudeOf(ra, dec, new Date(t), observer), date.getTime());
+  return t === null ? null : new Date(t);
+}
+
+/**
+ * Same search for anything whose geometric altitude (degrees) is known at any instant (Unix ms):
+ * a star, or the Sun, Moon and planets through `bodyPosition` (#201). Returns Unix ms.
+ */
+export function nextRiseOf(alt: (t: number) => number, t0: number): number | null {
   const step = 10 * MINUTE_MS; // a star stays more than 10 min below or above, but at the poles
   let before = alt(t0);
   for (let t = t0 + step; t <= t0 + 24 * 60 * MINUTE_MS; t += step) {
@@ -23,11 +30,28 @@ export function nextRise(ra: number, dec: number, date: Date, observer: Observer
         if (alt(mid) >= 0) b = mid;
         else a = mid;
       }
-      return new Date(b);
+      return b;
     }
     before = now;
   }
   return null;
+}
+
+/**
+ * Geometric altitude and azimuth (degrees from north through east) of a J2000 position, for the
+ * sheets' « ↑ 35° vers le sud-est » (#201).
+ */
+export function horizontalOf(
+  ra: number,
+  dec: number,
+  date: Date,
+  observer: Observer,
+): { altitude: number; azimuth: number } {
+  const [n, e, up] = applyMat3(j2000ToHorizontalMatrix(date, observer), unitVector(ra, dec));
+  return {
+    altitude: (Math.asin(Math.max(-1, Math.min(1, up))) * 180) / Math.PI,
+    azimuth: ((((Math.atan2(e, n) * 180) / Math.PI) % 360) + 360) % 360,
+  };
 }
 
 /** Geometric altitude (degrees, no refraction) of a J2000 position (degrees) for an observer. */

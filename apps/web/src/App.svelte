@@ -53,6 +53,7 @@
   import {
     CONSTELLATION_LATIN,
     constellationNames,
+    constellationNamesOf,
     deepSkyNames,
     localizeStarStrings,
   } from "@asteria/content";
@@ -90,7 +91,7 @@
   import Icon from "./components/Icon.svelte";
   import TimeScrubber, { BUBBLE_RISE } from "./components/TimeScrubber.svelte";
   import ConstellationSheet from "./components/ConstellationSheet.svelte";
-  import InfoPanel, { type InfoRow } from "./components/InfoPanel.svelte";
+  import InfoPanel from "./components/InfoPanel.svelte";
   import Designation from "./components/Designation.svelte";
   import SkyHeader from "./components/SkyHeader.svelte";
   import TimeBar from "./components/TimeBar.svelte";
@@ -111,7 +112,20 @@
   } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
-  import { altitudeOf, nextRise } from "./lib/horizon";
+  import { altitudeOf, horizontalOf, nextRise, nextRiseOf } from "./lib/horizon";
+  import { level as levelPref } from "./lib/level-store.svelte";
+  import {
+    bodySheet,
+    deepSkySheet,
+    planetSheet,
+    sightLine,
+    starSheet,
+    unnamedStarTitle,
+    type SheetFormat,
+    type Translate,
+  } from "./lib/sheet-rows";
+  import { RiseMemo, darkBelow, sightOf, type SightKind } from "./lib/sight";
+  import { brightnessRanks, rankFact, type BrightnessRanks } from "./lib/games/name-star";
   import { allowCompass, watchCompass } from "./lib/device-compass";
   import { needsIosInstallHint } from "./lib/install";
   import { network, offline, retryOffline } from "./lib/offline-client.svelte";
@@ -136,9 +150,7 @@
   } from "./lib/deepsky";
   import {
     LAYERS_STORAGE_KEY,
-    LEVEL_STORAGE_KEY,
     graduationFormatter,
-    isLevel,
     isRecord,
     layersFromUrl,
     restoreLayers,
@@ -222,8 +234,8 @@
   // the layers panel and remembered between sessions. `?layers=` (captures) takes precedence and
   // is then not saved.
   const urlLayers = new URLSearchParams(location.search).get("layers");
-  // Public level (chosen in the 3D view): the figures are shown by default in Découverte (#96).
-  const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
+  // Public level (one preference, #201): the figures are shown by default in Découverte (#96).
+  const level = levelPref.value;
   function initialLayers(view: LayerView): SkyLayers {
     const defaults = view === "sky" ? skyDefaults(level) : DEFAULT_SPACE_LAYERS;
     const fromUrl = layersFromUrl(urlLayers, defaults);
@@ -261,7 +273,6 @@
   }
   function closeGames() {
     games = null;
-    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     if (mode === "sky") map?.start();
     else space?.start();
     menuButton?.focus();
@@ -287,7 +298,6 @@
   function closeLatitude() {
     latitudeExplorer = null;
     if (games) return;
-    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     if (mode === "sky") map?.start();
     else space?.start();
     menuButton?.focus();
@@ -319,7 +329,6 @@
   }
   function close3d() {
     view3d = null;
-    if (!isLevel(urlLevel)) userLevel = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
     if (mode === "sky") map?.start();
   }
   let selection = $state<SkySelection | null>(null);
@@ -1362,8 +1371,7 @@
     menuButton?.focus();
     if (!isAvailableFrame(id)) return;
     spaceFrame = id;
-    // Level read now: it may have changed in the 3D view since start-up.
-    const level = readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel);
+    const level = levelPref.value;
     const angle = angleFormat.format(meanObliquity(date));
     frameNote = $_(`frame.${id}.${level}`, { values: { angle, body: targetName(spaceBody) } });
     clearTimeout(frameNoteTimer);
@@ -1784,9 +1792,9 @@
     const o = deepSky?.find((x) => x.id === id);
     return o ? deepSkyLabel(o, deepSkyNamesFr) : id;
   };
-  // Public level (chosen in the 3D view, #8): Découverte shows the Messier objects only (#101).
-  const urlLevel = new URLSearchParams(location.search).get("level");
-  let userLevel = $state<FigureLevel>(isLevel(urlLevel) ? urlLevel : level);
+  // Public level (#201: one preference, set in Réglages and its shortcuts): Découverte shows the
+  // Messier objects only (#101), the sheets read differently at each level.
+  const userLevel = $derived<FigureLevel>(levelPref.value);
   $effect(() => {
     if (status === "ready" && viewLayers.sky.deepSky) void ensureDeepSky();
   });
@@ -1807,60 +1815,87 @@
     const o = id ? deepSky?.find((x) => x.id === id) : undefined;
     if (!o) return null;
     const name = deepSkyLabel(o, deepSkyNamesFr);
-    const rows: InfoRow[] = [];
-    const see = observability(o);
-    if (see)
-      rows.push({
-        label: $_("deepsky.see"),
-        value: $_(`deepsky.see.${see}`),
-        title: $_("deepsky.see.hint"),
-      });
-    const mag = displayMagnitude(o);
-    if (mag) rows.push({ label: magnitudeLabel(mag.band), value: fixed(mag.value, 1) });
     const size = apparentSize(o);
-    if (size)
-      rows.push({
-        label: $_("deepsky.size"),
-        value: $_(`deepsky.size.${size.unit}${size.round ? "Round" : ""}`, {
-          values: { a: size.a, b: size.b },
-        }),
-        title: $_("deepsky.size.hint"),
-      });
-    rows.push(
-      { label: $_("data.ra"), value: ra(o.ra) },
-      { label: $_("data.dec"), value: formatDec(o.dec) },
-    );
+    const h = horizontalOf(o.ra, o.dec, date, place);
+    const altitudeAt = (t: number) => altitudeOf(o.ra, o.dec, new Date(t), place);
     return {
       name,
       type: deepSkyTypeLabel(o.type),
       // No distance: the catalogue has none (#101).
       designations: o.designations.filter((d) => d !== name),
       con: { abbr: o.con, name: names[o.con] ?? o.con, latin: CONSTELLATION_LATIN[o.con] ?? o.con },
-      below: altitudeOf(o.ra, o.dec, date, place) < 0,
-      rows,
+      below: h.altitude < 0,
+      sheet: deepSkySheet(
+        userLevel,
+        {
+          ra: o.ra,
+          dec: o.dec,
+          ...h,
+          see: observability(o),
+          magnitude: displayMagnitude(o),
+          size: size && {
+            value: $_(`deepsky.size.${size.unit}${size.round ? "Round" : ""}`, {
+              values: { a: size.a, b: size.b },
+            }),
+            title: $_("deepsky.size.hint"),
+          },
+        },
+        sightFor(`dso:${o.id}`, "deepsky", o.mag ?? 99, h, altitudeAt),
+        tr,
+        sheetFormat,
+      ),
     };
   });
 
-  // --- Info panels (star, Sun/Moon, planet): rows of label/value, labels from the catalogue.
-  const KM_PER_AU = 149_597_870.7;
-  // Numbers with the language's decimal mark (#198); « Magnitude » in words but in Expert.
+  // --- Info panels (star, Sun/Moon, planet, deep sky): what they say depends on the level
+  // (#201, lib/sheet-rows); numbers with the language's decimal mark (#198).
   const fixed = (x: number, digits: number) => formatNumber(x, digits, lang);
   const ra = (deg: number) => formatRa(deg, decimalMark(lang));
-  const magnitudeLabel = (band: "V" | "B") =>
-    userLevel === "expert" ? $_(band === "V" ? "data.v" : "data.b") : $_("data.magnitude");
-  const positionRows = (b: { altitude: number; azimuth: number; ra: number; dec: number }) => [
-    { label: $_("body.altitude"), value: `${fixed(b.altitude, 1)}°` },
-    { label: $_("body.azimuth"), value: `${fixed(b.azimuth, 1)}°` },
-    { label: $_("data.ra"), value: ra(b.ra) },
-    { label: $_("data.dec"), value: formatDec(b.dec) },
-  ];
+  const tr: Translate = (key, values) => $_(key, values ? { values } : undefined);
+  const sheetFormat: SheetFormat = {
+    num: fixed,
+    ra,
+    dec: formatDec,
+    clock: (ms) => clockLabel(new Date(ms)),
+  };
+  const namesOf = constellationNamesOf("fr");
+  /** Brightness ranks of the catalogue's stars (« Nomme l'étoile », #165), on first use. */
+  let ranks: BrightnessRanks | null = null;
+  const starRanks = () => (ranks ??= brightnessRanks(catalog?.stars ?? []));
+  const riseMemo = new RiseMemo();
+  /**
+   * The sheet's « Visible maintenant · ↑ 35° vers le sud-est » or « Sous l'horizon · se lève à
+   * 22 h 59 » (lib/sight); not needed in Expert, where the altitude and azimuth rows say it.
+   */
+  function sightFor(
+    key: string,
+    kind: SightKind,
+    magnitude: number,
+    h: { altitude: number; azimuth: number },
+    altitudeAt: (t: number) => number,
+  ): string {
+    if (userLevel === "expert") return "";
+    const now = date.getTime();
+    const sight = sightOf({
+      altitude: h.altitude,
+      azimuth: h.azimuth,
+      sunAltitude: bodies.sun.altitude,
+      darkBelow: darkBelow(kind, magnitude),
+      rise: () =>
+        riseMemo.get(`${key}|${place.latitude}|${place.longitude}`, now, (from) =>
+          nextRiseOf(altitudeAt, from),
+        ),
+    });
+    const fixedInSky = kind === "star" || kind === "deepsky";
+    return sightLine(sight, tr, sheetFormat, { now, live, fixed: fixedInSky, sun: kind === "sun" });
+  }
 
   /** The selected star's ICRS position at the displayed date (proper motion since J1991.25, #78). */
   const selectedNow = $derived(
     selected ? propagateStar(selected, yearsSinceHipparcos(date)) : null,
   );
-  const starRows = $derived.by((): InfoRow[] => {
-    if (!selected || !selectedNow) return [];
+  const starInfo = $derived.by(() => {
+    if (!selected || !selectedNow) return null;
     // The map hands back the decoded catalogue records, which carry the reference distance (#75).
     const record = selected as CatalogRecord;
     const d = starDistance(record);
@@ -1872,79 +1907,90 @@
           ? $_(`star.distanceSource.${record.distanceSource}`)
           : $_("star.distanceSource.hipparcos");
     const hint = d?.errorLy != null ? { err: d.errorLy, source } : null;
-    const rows: InfoRow[] = [
-      { label: $_("data.ra"), value: ra(selectedNow.ra) },
-      { label: $_("data.dec"), value: formatDec(selectedNow.dec) },
-      { label: magnitudeLabel("V"), value: fixed(selected.v, 2) },
-    ];
-    if (selected.bv !== undefined)
-      rows.push({ label: $_("data.bv"), value: fixed(selected.bv, 2) });
-    rows.push({
-      label: $_("data.dist"),
-      value: !d
-        ? $_("star.unknownDistance")
-        : d.approx
-          ? $_("star.distanceApprox", { values: { ly: d.ly } })
-          : $_("star.distance", { values: { ly: d.ly } }),
-      title: hint
-        ? $_(d?.approx ? "star.distanceApprox.hint" : "star.distance.hint", { values: hint })
-        : d
-          ? source
-          : (selected.plx ?? 0) > 0
-            ? $_("star.unknownDistance.hint")
-            : undefined,
-    });
-    return rows;
+    const { ra, dec } = selectedNow;
+    const h = horizontalOf(ra, dec, date, place);
+    const conOf = namesOf[selected.con] ?? selected.con;
+    return {
+      // A star with neither a proper name nor a Bayer letter: « Étoile de Pégase », its HIP
+      // number in the line above (#201).
+      name: selected.name ?? selected.bayer ?? unnamedStarTitle(tr, conOf),
+      sheet: starSheet(
+        userLevel,
+        {
+          ra,
+          dec,
+          v: selected.v,
+          bv: selected.bv,
+          ...h,
+          distance: d,
+          distanceTitle: hint
+            ? $_(d?.approx ? "star.distanceApprox.hint" : "star.distance.hint", { values: hint })
+            : d
+              ? source
+              : (selected.plx ?? 0) > 0
+                ? $_("star.unknownDistance.hint")
+                : undefined,
+          rank: rankFact(selected.hip, starRanks()),
+          conOf,
+        },
+        sightFor(`star:${selected.hip}`, "star", selected.v, h, (t) =>
+          altitudeOf(ra, dec, new Date(t), place),
+        ),
+        tr,
+        sheetFormat,
+      ),
+    };
   });
 
   const bodyInfo = $derived.by(() => {
     if (!selectedBody) return null;
     const b = selectedBody === "Sun" ? bodies.sun : bodies.moon;
     if (!b) return null;
+    const body = selectedBody;
     return {
-      name: $_(`body.${selectedBody}` as `body.${BodyName}`),
-      rows: [
-        ...positionRows(b),
-        {
-          label: $_("data.dist"),
-          value:
-            selectedBody === "Sun"
-              ? $_("body.distanceAu", {
-                  values: { au: Math.round((b.distanceKm / KM_PER_AU) * 1000) / 1000 },
-                })
-              : $_("body.distance", { values: { km: Math.round(b.distanceKm) } }),
-        },
-      ],
+      name: $_(`body.${body}` as `body.${BodyName}`),
+      sheet: bodySheet(
+        userLevel,
+        { body, ...b },
+        sightFor(
+          `body:${body}`,
+          body === "Sun" ? "sun" : "moon",
+          b.magnitude,
+          b,
+          (t) => bodyPosition(body, new Date(t), place).altitude,
+        ),
+        tr,
+        sheetFormat,
+      ),
     };
   });
 
-  const LIGHT_KM_PER_MIN = 299_792.458 * 60;
   const planetInfo = $derived.by(() => {
     if (!selectedPlanet) return null;
     const p = planets?.find((q) => q.name === selectedPlanet);
     if (!p) return null;
     const con = constellationOf(p.ra, p.dec);
-    const minutes = Math.round(p.distanceKm / LIGHT_KM_PER_MIN);
-    const light =
-      minutes < 60
-        ? $_("planet.lightTime", { values: { min: minutes } })
-        : $_("planet.lightTimeHours", {
-            values: { h: Math.floor(minutes / 60), min: minutes % 60 },
-          });
+    const name = planetName(p.name);
     return {
-      name: planetName(p.name),
+      name,
       con: { abbr: con, name: names[con] ?? con, latin: CONSTELLATION_LATIN[con] ?? con },
-      rows: [
-        { label: magnitudeLabel("V"), value: fixed(p.magnitude, 1) },
-        ...positionRows(p),
+      sheet: planetSheet(
+        userLevel,
         {
-          label: $_("data.dist"),
-          value: $_("planet.distance", {
-            values: { au: Math.round((p.distanceKm / KM_PER_AU) * 100) / 100 },
-          }),
+          ...p,
+          name,
+          brighterStars: catalog?.stars.filter((s) => s.v < p.magnitude).length ?? 0,
         },
-        { label: "", value: light },
-      ],
+        sightFor(
+          `planet:${p.name}`,
+          "planet",
+          p.magnitude,
+          p,
+          (t) => bodyPosition(p.name, new Date(t), place).altitude,
+        ),
+        tr,
+        sheetFormat,
+      ),
     };
   });
 
@@ -2226,17 +2272,20 @@
   </div>
 {/if}
 
-{#if selected}
+{#if selected && starInfo}
+  {@const info = starInfo}
   <InfoPanel
-    name={starLabel(selected)}
+    name={info.name}
     {belowHorizon}
     rises={starRises}
+    sight={info.sheet.sight}
+    lead={info.sheet.lead}
     constellation={{
       name: names[selected.con] ?? selected.con,
-      latin: CONSTELLATION_LATIN[selected.con] ?? selected.con,
+      latin: info.sheet.latin ? (CONSTELLATION_LATIN[selected.con] ?? selected.con) : undefined,
       onopen: () => (selection = { kind: "constellation", abbr: selected.con }),
     }}
-    rows={starRows}
+    rows={info.sheet.rows}
     bottom={aboveControls}
     oncatalogue={() => openGames({ view: "page", abbr: selected.con, star: selected.hip })}
     onclose={() => (selection = null)}
@@ -2253,7 +2302,9 @@
   <InfoPanel
     name={bodyInfo.name}
     {belowHorizon}
-    rows={bodyInfo.rows}
+    sight={bodyInfo.sheet.sight}
+    lead={bodyInfo.sheet.lead}
+    rows={bodyInfo.sheet.rows}
     bottom={aboveControls}
     onclose={() => (selection = null)}
   >
@@ -2274,12 +2325,14 @@
   <InfoPanel
     name={info.name}
     {belowHorizon}
+    sight={info.sheet.sight}
+    lead={info.sheet.lead}
     constellation={{
       name: info.con.name,
-      latin: info.con.latin,
+      latin: info.sheet.latin ? info.con.latin : undefined,
       onopen: () => (selection = { kind: "constellation", abbr: info.con.abbr }),
     }}
-    rows={info.rows}
+    rows={info.sheet.rows}
     bottom={aboveControls}
     onclose={() => (selection = null)}
   >
@@ -2311,12 +2364,14 @@
   <InfoPanel
     name={info.name}
     belowHorizon={info.below}
+    sight={info.sheet.sight}
+    lead={info.sheet.lead}
     constellation={{
       name: info.con.name,
-      latin: info.con.latin,
+      latin: info.sheet.latin ? info.con.latin : undefined,
       onopen: () => (selection = { kind: "constellation", abbr: info.con.abbr }),
     }}
-    rows={info.rows}
+    rows={info.sheet.rows}
     bottom={aboveControls}
     onclose={() => (selection = null)}
   >

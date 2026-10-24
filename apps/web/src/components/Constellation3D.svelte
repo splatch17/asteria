@@ -14,7 +14,7 @@
     type Star3D,
     type StellarDistance,
   } from "@asteria/sky-renderer/constellation-3d";
-  import { readSetting, writeSetting } from "../lib/storage";
+  import { level as levelPref } from "../lib/level-store.svelte";
   import Designation from "./Designation.svelte";
   import GestureTip from "./GestureTip.svelte";
   import Icon from "./Icon.svelte";
@@ -48,13 +48,9 @@
   } = $props();
 
   const LEVELS: readonly Level3D[] = ["discovery", "amateur", "expert"];
-  const isLevel = (v: unknown): v is Level3D => LEVELS.includes(v as Level3D);
   const params = new URLSearchParams(location.search);
-  // `?level=` and the 3D capture parameters take precedence (and are then not saved).
-  const urlLevel = params.get("level");
-  let level = $state<Level3D>(
-    isLevel(urlLevel) ? urlLevel : readSetting("asteria.level", "amateur", isLevel),
-  );
+  // The app's level (#201): these buttons are a shortcut to the control of Menu › Réglages.
+  const level = $derived<Level3D>(levelPref.value);
 
   // Snapshot at opening: the figure does not move while it is explored.
   const model = untrack(() =>
@@ -205,7 +201,6 @@
   });
   $effect(() => {
     view?.setLevel(level);
-    if (!isLevel(urlLevel)) writeSetting("asteria.level", level);
   });
 
   async function close() {
@@ -294,7 +289,9 @@
     </div>
     <div class="levels" role="group" aria-label={$_("c3d.level")}>
       {#each LEVELS as l (l)}
-        <button aria-pressed={level === l} onclick={() => (level = l)}>{$_(`level.${l}`)}</button>
+        <button aria-pressed={level === l} onclick={() => levelPref.set(l)}
+          >{$_(`level.${l}`)}</button
+        >
       {/each}
     </div>
   </header>

@@ -20,6 +20,8 @@
     tabForKey,
     type MenuPanel,
   } from "../lib/menu";
+  import { LEVELS } from "../lib/level";
+  import { level } from "../lib/level-store.svelte";
   import { offlinePercent, type OfflineState } from "../lib/offline";
   import { readSetting, writeSetting } from "../lib/storage";
   import FramePicto from "./FramePicto.svelte";
@@ -432,6 +434,19 @@
       aria-labelledby="menu-tab-settings"
       hidden={panel !== "settings"}
     >
+      <!-- The app's level (#201), first: what the sheets, the games and the explanations say.
+           Apprendre, « Selon la latitude » and the 3D view keep a shortcut to it. -->
+      <h3 class="first" id="menu-level">{$_("settings.level")}</h3>
+      <div class="levels" role="group" aria-labelledby="menu-level">
+        {#each LEVELS as l (l)}
+          <button aria-pressed={level.value === l} onclick={() => level.set(l)}
+            >{$_(`level.${l}`)}</button
+          >
+        {/each}
+      </div>
+      <p class="note level-note">
+        {$_(`settings.level.${level.value}`)}<br />{$_("settings.level.scope")}
+      </p>
       <div class="grid">
         <MenuTile
           id="realistic"
@@ -712,6 +727,44 @@
   }
   h3.first {
     margin-top: 0;
+  }
+  /* Level (#201): the segmented control of Apprendre, the choice inverted. */
+  .levels {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border: 1px solid var(--ast-control-border);
+  }
+  .levels button {
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ast-fg-muted);
+    font: 500 11px/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+      color 120ms var(--ast-ease-out),
+      background-color 120ms var(--ast-ease-out);
+  }
+  .levels button + button {
+    border-left: 1px solid var(--ast-control-border);
+  }
+  .levels button[aria-pressed="true"] {
+    color: var(--ast-bg);
+    background: var(--ast-fg);
+  }
+  .levels button:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: -4px;
+  }
+  .levels button[aria-pressed="true"]:focus-visible {
+    outline-color: var(--ast-bg);
+  }
+  .note.level-note {
+    margin: 6px 4px 14px;
   }
   /* The tiles: four columns on a phone as on the side panel. */
   .grid {
