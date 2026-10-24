@@ -646,6 +646,7 @@
   "quiz.question": "Quelle est cette constellation ?",
   "quiz.sky": "Constellation à reconnaître",
   "quiz.right": "Exact !",
+  "quiz.hint": "{name} : {hint}",
   "quiz.wrong": "C'est {name}.",
   "quiz.next": "Suivante",
   "quiz.result": "Voir le résultat",

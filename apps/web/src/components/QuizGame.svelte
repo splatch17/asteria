@@ -35,6 +35,7 @@
   import { autoNextDelay, isChallenge, type ChallengeEnd } from "../lib/games/challenge";
   import { ChallengeRun } from "../lib/games/challenge-run.svelte";
   import type { GameMode } from "../lib/games/progress";
+  import { findingHint } from "@asteria/content";
   import GameHeader from "./GameHeader.svelte";
   import GameRecentre from "./GameRecentre.svelte";
   import Icon from "./Icon.svelte";
@@ -98,6 +99,8 @@
   }
   untrack(newRun);
   const question = $derived(series[index]);
+  /** After a wrong answer, how to find the right one in the sky (#198), when a hint is sourced. */
+  const hint = $derived(current && !current.correct ? findingHint("fr", current.answer) : null);
   const score = $derived(run ? run.score(false) : answers.filter((a) => a.correct).length);
   /** The answer just given ends the challenge (a streak's mistake): « Voir le résultat ». */
   const last = $derived((run?.over ?? false) || index + 1 >= series.length);
@@ -324,6 +327,11 @@
           {$_("quiz.wrong", { values: { name: nameOf(current.answer) } })}
         {/if}
       </p>
+      {#if hint && current}
+        <p class="tip">
+          {$_("quiz.hint", { values: { name: nameOf(current.answer), hint: hint.text } })}
+        </p>
+      {/if}
       <!-- Captures (`?seed=`): the answer, for the scripted taps. -->
       <div
         class="choices"
@@ -440,6 +448,12 @@
     font: 700 20px/1.15 var(--ast-font-display);
     letter-spacing: 0.02em;
     text-transform: uppercase;
+  }
+  /* The finding hint (#198): one line under « C'est Pégase. », lighter than the answer. */
+  .tip {
+    margin: -4px 0 10px;
+    font: 400 12px/1.4 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
   }
   .choices {
     display: grid;
