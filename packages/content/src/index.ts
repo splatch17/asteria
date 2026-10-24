@@ -28,4 +28,5 @@ export function constellationNamesOf(locale: ContentLocale): Readonly<Record<str
 export * from "./stories";
 export * from "./star-names";
 export * from "./deepsky-names";
+export * from "./finding-hints";
 // Credits: separate entry point `@asteria/content/credits`, so that they load with their page.

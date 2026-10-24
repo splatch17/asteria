@@ -1,0 +1,137 @@
+{
+  "sources": {
+    "olcott": {
+      "title": "W. T. Olcott, A Field Book of the Stars (éd. 1914), rubriques « Location » de chaque constellation — Project Gutenberg n° 20769 (miroir GITenberg)",
+      "url": "https://github.com/GITenberg/A-Field-Book-of-the-Stars_20769/blob/1a5eca9d24fb369e742f085f14366e41ef7dc0c6/20769-0.txt",
+      "license": "Domaine public (publié avant 1929) ; faits repris, texte français original"
+    },
+    "stellarium": {
+      "title": "Stellarium, culture du ciel « western » : noms des constellations et astérismes (index.json)",
+      "url": "https://github.com/Stellarium/stellarium-skycultures/blob/014fbb5e59233d133c22f9811af96b67d05a95c9/western/index.json",
+      "license": "CC BY-SA 4.0 (données Stellarium, version non précisée)"
+    },
+    "hipparcos": {
+      "title": "Catalogue Hipparcos (ESA 1997, CDS I/239) et noms IAU WGSN, lus dans le catalogue d'étoiles d'Asteria : éclat et positions",
+      "url": "https://cdsarc.cds.unistra.fr/viz-bin/cat/I/239",
+      "license": "CC BY-NC 3.0 IGO (Credit: ESA) ; noms IAU CC BY 4.0"
+    }
+  },
+  "hints": {
+    "Aql": {
+      "text": "trois étoiles alignées dans la Voie lactée, celle du milieu, Altaïr, bien plus brillante.",
+      "sources": ["olcott"]
+    },
+    "Aqr": {
+      "text": "cherche sa cruche, quatre étoiles en « Y », au sud du Carré de Pégase.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Ari": {
+      "text": "trois étoiles principales en triangle très ouvert, Hamal la plus brillante.",
+      "sources": ["olcott"]
+    },
+    "Aur": {
+      "text": "un pentagone d'étoiles avec Capella, très brillante, et ses « Chevreaux » tout près.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Boo": {
+      "text": "un cerf-volant d'étoiles accroché à Arcturus, brillante et jaune doré.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "CMa": {
+      "text": "suis les trois étoiles du baudrier d'Orion vers le sud-est : Sirius.",
+      "sources": ["olcott"]
+    },
+    "CMi": {
+      "text": "Procyon forme un grand triangle presque équilatéral avec Bételgeuse et Sirius.",
+      "sources": ["olcott"]
+    },
+    "Cap": {
+      "text": "trois étoiles principales assez pâles : α et β côte à côte, δ 20° plus à l'est.",
+      "sources": ["olcott"]
+    },
+    "Car": {
+      "text": "Canopus, la deuxième étoile la plus brillante du ciel, au sud de Sirius.",
+      "sources": ["olcott", "hipparcos"]
+    },
+    "Cas": {
+      "text": "cinq étoiles en zigzag qui dessinent un « W », ou un « M » quand il est haut.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Cen": {
+      "text": "deux étoiles très brillantes côte à côte, Rigil Kentaurus et Hadar, près de la Croix du Sud.",
+      "sources": ["hipparcos"]
+    },
+    "Cnc": {
+      "text": "entre les Gémeaux et le Lion, un « Y » renversé de pâles étoiles autour de la Crèche.",
+      "sources": ["olcott"]
+    },
+    "Cru": {
+      "text": "une petite croix de quatre étoiles brillantes, la Croix du Sud.",
+      "sources": ["stellarium", "hipparcos"]
+    },
+    "Cyg": {
+      "text": "une grande croix posée sur la Voie lactée, Deneb à son sommet.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Eri": {
+      "text": "un long fleuve de pâles étoiles qui prend sa source près de Rigel, au pied d'Orion.",
+      "sources": ["olcott"]
+    },
+    "Gem": {
+      "text": "deux longues rangées d'étoiles presque parallèles, et Castor et Pollux côte à côte.",
+      "sources": ["olcott", "hipparcos"]
+    },
+    "Leo": {
+      "text": "une faucille d'étoiles dessine la tête du Lion ; Regulus est dans le manche.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Lib": {
+      "text": "un quadrilatère de quatre étoiles, à l'ouest de la tête du Scorpion.",
+      "sources": ["olcott"]
+    },
+    "Lyr": {
+      "text": "Véga, très brillante, et son petit triangle accroché à un losange d'étoiles.",
+      "sources": ["olcott"]
+    },
+    "Ori": {
+      "text": "cherche le baudrier, trois étoiles alignées au milieu d'un grand quadrilatère.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Peg": {
+      "text": "cherche le Grand Carré, quatre étoiles très espacées (l'une est à Andromède).",
+      "sources": ["olcott", "stellarium"]
+    },
+    "PsA": {
+      "text": "Fomalhaut, brillante, au bout du filet d'eau qui coule de la cruche du Verseau.",
+      "sources": ["olcott"]
+    },
+    "Psc": {
+      "text": "deux poissons de pâles étoiles reliés en « V » ; l'un est un petit anneau sous Pégase.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Sco": {
+      "text": "Antarès, rouge et brillante, au cœur d'une longue figure en hameçon.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Sgr": {
+      "text": "une « théière » d'étoiles, juste à l'est du Scorpion.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Tau": {
+      "text": "un « V » d'étoiles qui part d'Aldébaran, rouge, avec les Pléiades tout près.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "UMa": {
+      "text": "la Grande Casserole, sept étoiles brillantes qu'on ne peut pas manquer.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "UMi": {
+      "text": "les deux étoiles du bord de la Grande Casserole mènent à la Polaire, au bout du manche.",
+      "sources": ["olcott", "stellarium"]
+    },
+    "Vir": {
+      "text": "Spica forme un grand triangle avec Arcturus et Denebola.",
+      "sources": ["olcott"]
+    }
+  }
+}

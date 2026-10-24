@@ -190,6 +190,12 @@
     ),
   );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
+  /** « Ton ciel »: by full name in Découverte, where the cells show it (#198), else by abbreviation. */
+  const skyCells = $derived(
+    level === "discovery"
+      ? [...pool].sort((a, b) => (names[a] ?? a).localeCompare(names[b] ?? b, "fr"))
+      : pool,
+  );
   const starItems = $derived(starPool(level, named, shapes));
   const counts = $derived(
     countMastery(
@@ -688,8 +694,9 @@
               </div>
             {/each}
           </dl>
-          <ul class="sky" class:few={pool.length < 40}>
-            {#each pool as abbr (abbr)}
+          <!-- Découverte (#198): the names in full, on wider cells; abbreviations elsewhere. -->
+          <ul class="sky" class:few={pool.length < 40} class:named={level === "discovery"}>
+            {#each skyCells as abbr (abbr)}
               {@const state = masteryOfItem(progress, itemKey("con", abbr))}
               <li
                 class={`cell ${state}`}
@@ -698,7 +705,9 @@
                   values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
                 })}
               >
-                <span aria-hidden="true">{abbr}</span>
+                <span aria-hidden="true"
+                  >{level === "discovery" ? (names[abbr] ?? abbr) : abbr}</span
+                >
               </li>
             {/each}
           </ul>
@@ -1184,6 +1193,27 @@
   }
   .cell span {
     position: relative;
+  }
+  /* Découverte (#198): three columns of wider cells, the full name on up to two lines at the
+     top, on a plate of the sky colour where a dither could run under the letters. */
+  .sky.named {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sky.named .cell {
+    aspect-ratio: auto;
+    min-height: 52px;
+    padding: 6px 4px 0;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .sky.named .cell span {
+    align-self: flex-start;
+    padding: 0 2px;
+  }
+  .sky.named .cell.learning span,
+  .sky.named .cell.known span {
+    background: var(--ast-bg);
   }
   .cell::before,
   .swatch::before {
