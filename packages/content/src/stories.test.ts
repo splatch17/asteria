@@ -9,6 +9,8 @@ import {
   storyIds,
 } from "./stories";
 import { CONSTELLATION_LATIN } from "./index";
+// The tone rule of the interface (#198, docs/TONE.md), shared without a package dependency.
+import { vouvoiement } from "../../ui/src/i18n/tone";
 
 // Issue #10: zodiac constellations + Orion, Ursa Major, Cassiopeia (sources: Wikipédia + checks).
 // Issue #172: the games' Découverte list, then Ptolemy's other constellations (sources: ancient
@@ -141,6 +143,11 @@ describe.each(IDS)("constellation story %s", (id) => {
   it("has exactly 3 anecdotes", () => {
     expect(story.anecdotes).toHaveLength(3);
     for (const a of story.anecdotes) expect(a).not.toMatch(/^- |\n/);
+  });
+
+  it("says « tu » to the reader (quotations of old texts aside, docs/TONE.md)", () => {
+    const text = [...story.story, ...story.anecdotes].join("\n");
+    expect(vouvoiement(text, { skipQuotes: true })).toEqual([]);
   });
 });
 

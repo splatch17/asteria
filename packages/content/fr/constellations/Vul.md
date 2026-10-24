@@ -30,7 +30,7 @@ Le Petit Renard trotte discrètement entre le Cygne et la Flèche, dans une rég
 
 Hevelius (1611-1687) était un observateur hors du commun. Il dessina des cartes de la Lune et donna leurs noms à des montagnes lunaires comme les Alpes et les Apennins, que l'on utilise encore. Il étudia aussi les comètes, et mesura sans lunette la position d'environ 1 500 étoiles. Pour remplir les espaces vides du ciel entre les grandes figures anciennes, il inventa plusieurs constellations nouvelles, publiées en 1690, après sa mort.
 
-Son renard n'a donc pas de légende antique. Mais regardez bien son étoile principale : elle porte le nom officiel d'Anser, qui signifie « l'oie » en latin. Un renard et une oie, côte à côte : on devine la suite de l'histoire !
+Son renard n'a donc pas de légende antique. Mais regarde bien son étoile principale : elle porte le nom officiel d'Anser, qui signifie « l'oie » en latin. Un renard et une oie, côte à côte : on devine la suite de l'histoire !
 
 ## Anecdotes
 

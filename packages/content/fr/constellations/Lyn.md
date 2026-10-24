@@ -24,7 +24,7 @@ Pourquoi appeler une constellation le Lynx ? La réponse est amusante : ses éto
 
 Cette constellation est l'œuvre de Johannes Hevelius, un astronome de Dantzig (aujourd'hui Gdańsk), qui vécut de 1611 à 1687. Infatigable, il cartographia la Lune, étudia les comètes et dressa un catalogue d'environ 1 500 étoiles, mesurées sans lunette, plus précisément encore que le grand Tycho Brahe. Entre les grandes figures anciennes du ciel nord restaient des espaces vides, peuplés seulement d'étoiles faibles : Hevelius y dessina de nouvelles constellations. Elles parurent en 1690, trois ans après sa mort.
 
-Le Lynx s'étire ainsi entre la Grande Ourse et les Gémeaux, là où les Grecs ne voyaient aucune figure. À vous de jouer : aurez-vous des yeux de lynx ?
+Le Lynx s'étire ainsi entre la Grande Ourse et les Gémeaux, là où les Grecs ne voyaient aucune figure. À toi de jouer : auras-tu des yeux de lynx ?
 
 ## Anecdotes
 

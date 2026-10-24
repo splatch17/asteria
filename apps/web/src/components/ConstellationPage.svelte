@@ -8,7 +8,7 @@
   // The sky is the deck's (lib/deck-sky): live while the card is centred, a still picture or a
   // sketch (lib/card-sketch) otherwise.
   import { onMount, tick, untrack } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import {
     applyMat3,
     j2000ToHorizontalMatrix,
@@ -30,7 +30,7 @@
   import { drawSketch, type SketchStar } from "../lib/card-sketch";
   import { screenFraction } from "../lib/constellation";
   import type { CardSky, DeckSky } from "../lib/deck-sky";
-  import { starDistance, type StarDistanceFields } from "../lib/format";
+  import { clockParts, formatNumber, starDistance, type StarDistanceFields } from "../lib/format";
   import { framingFov, zenithObserver, type ConstellationShape } from "../lib/games/geometry";
   import Designation from "./Designation.svelte";
   import Icon from "./Icon.svelte";
@@ -66,8 +66,12 @@
     /** The user's place: how high the figure climbs there. */
     latitude: number;
     placeName: string;
-    /** Up in the dark hours of tonight (lib/games/visibility). */
-    tonight: boolean;
+    /**
+     * When it is up in the dark hours of tonight (lib/games/visibility tonightWindow), null when
+     * it is not: the hours, so that a star of the figure still under the horizon does not seem
+     * to contradict a bare « visible » (#198).
+     */
+    tonight: { from: Date; to: Date; now: boolean } | null;
     /** HIP of a star to show at once (coming from its sheet on the map). */
     initialStar?: number | null;
     /** The deck's shared sky. */
@@ -80,6 +84,11 @@
   } = $props();
 
   const titleId = $derived(`page-title-${abbr}`);
+  /** « 0 h 35 », rounded to 5 minutes (the hours of a window, not a timetable). */
+  const clock = (d: Date) =>
+    $_("time.clock", {
+      values: clockParts(new Date(Math.round(d.getTime() / 300_000) * 300_000), $locale ?? "fr"),
+    });
   const starLabel = (s: CatalogStar) =>
     s.name ?? s.bayer ?? $_("star.hip", { values: { hip: s.hip } });
   // Fixed for the card's life (it is keyed by constellation): the catalogue does not change.
@@ -277,7 +286,7 @@
         <p class="s-name"><Designation text={starLabel(s)} /></p>
         <dl>
           <dt>{$_("data.v")}</dt>
-          <dd>{s.v.toFixed(2)}</dd>
+          <dd>{formatNumber(s.v, 2, $locale ?? "fr")}</dd>
           <dt>{$_("data.dist")}</dt>
           <dd>{distance}</dd>
         </dl>
@@ -306,7 +315,14 @@
       </dd>
       {#if height.kind !== "never"}
         <dt>{$_("catalogue.tonight")}</dt>
-        <dd>{tonight ? $_("catalogue.tonight.yes") : $_("catalogue.tonight.no")}</dd>
+        <dd>
+          {#if !tonight}{$_("catalogue.tonight.no")}{:else if tonight.now}{$_(
+              "catalogue.tonight.now",
+              { values: { to: clock(tonight.to) } },
+            )}{:else}{$_("catalogue.tonight.window", {
+              values: { from: clock(tonight.from), to: clock(tonight.to) },
+            })}{/if}
+        </dd>
       {/if}
       <dt>{$_("constellation.abbr")}</dt>
       <dd>{abbr}</dd>
@@ -321,7 +337,7 @@
           <button class="s-row" aria-pressed={selected?.hip === s.hip} onclick={() => fromList(s)}>
             <span class="s-label"><Designation text={starLabel(s)} /></span>
             {#if s.name && s.bayer}<span class="s-bayer"><Designation text={s.bayer} /></span>{/if}
-            <span class="s-v">V {s.v.toFixed(1)}</span>
+            <span class="s-v">V {formatNumber(s.v, 1, $locale ?? "fr")}</span>
           </button>
         </li>
       {/each}
@@ -417,7 +433,7 @@
     gap: 6px;
     min-height: 40px;
     padding: 0 10px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
     color: var(--ast-fg-muted);
     font-size: 10px;

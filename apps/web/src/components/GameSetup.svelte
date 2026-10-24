@@ -34,6 +34,8 @@
     placeName,
     latitude,
     onexplain,
+    onlocate,
+    locating = "idle",
     onplay,
     onclose,
   }: {
@@ -57,6 +59,9 @@
     latitude: number;
     /** « Pourquoi ? »: opens the latitude explorer (#188), when there is one. */
     onexplain?: (() => void) | undefined;
+    /** Asks the phone for the player's place (#198), where the app can (the map's « Ma position »). */
+    onlocate?: (() => void) | undefined;
+    locating?: "idle" | "busy" | "error";
     onplay: (settings: GameSettings) => void;
     onclose: () => void;
   } = $props();
@@ -246,7 +251,18 @@
     {/each}
   </div>
   {#if !located}
-    <p class="note">{$_("games.setup.unknownPlace")}</p>
+    <!-- The player's sky needs their place (#198): ask for it here, not on the map. -->
+    <p class="note">{$_(onlocate ? "games.setup.unknownPlace.ask" : "games.setup.unknownPlace")}</p>
+    {#if onlocate}
+      <button class="locate" onclick={onlocate} disabled={locating === "busy"}>
+        <Icon name="locate" size={14} /><span
+          >{locating === "busy" ? $_("place.locating") : $_("place.locate")}</span
+        >
+      </button>
+      {#if locating === "error"}<p class="note" role="status">
+          {$_("games.setup.locateError")}
+        </p>{/if}
+    {/if}
   {/if}
 
   <button class="play" onclick={() => onplay({ mode, scope: enabled(scope) ? scope : "all" })}>
@@ -372,7 +388,7 @@
   .modes {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .mode {
     display: flex;
@@ -553,6 +569,21 @@
     color: var(--ast-fg-muted);
     text-decoration: underline;
     text-underline-offset: 3px;
+  }
+  .locate {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    border: 1px solid var(--ast-control-border);
+    color: var(--ast-fg);
+  }
+  .locate:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .note {
     margin: 8px 0 0;

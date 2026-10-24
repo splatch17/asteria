@@ -63,6 +63,7 @@
     upFromLatitude,
     upTonight,
     visibleFromLatitude,
+    tonightWindow,
     visibleTonight,
   } from "../lib/games/visibility";
   import {
@@ -102,6 +103,8 @@
     start = null,
     onlatitude,
     onexplain,
+    onlocate,
+    locating = "idle",
     onclose,
   }: {
     /** The player's own place is known (else `observer` is the app's default place, #187). */
@@ -111,6 +114,9 @@
      * explorer (#188) when given; no link otherwise.
      */
     onexplain?: (() => void) | undefined;
+    /** « Utiliser ma position » in a game's settings when the place is unknown (#198). */
+    onlocate?: (() => void) | undefined;
+    locating?: "idle" | "busy" | "error";
     stars: CatalogStar[];
     lines: Record<string, number[][]>;
     /** Constellation names (French) and official Latin names, by IAU abbreviation. */
@@ -189,6 +195,12 @@
     ),
   );
   const pool = $derived(constellationPool(level, Object.keys(shapes)));
+  /** « Ton ciel »: by full name in Découverte, where the cells show it (#198), else by abbreviation. */
+  const skyCells = $derived(
+    level === "discovery"
+      ? [...pool].sort((a, b) => (names[a] ?? a).localeCompare(names[b] ?? b, "fr"))
+      : pool,
+  );
   const starItems = $derived(starPool(level, named, shapes));
   const counts = $derived(
     countMastery(
@@ -437,7 +449,9 @@
     {date}
     latitude={observer.latitude}
     {placeName}
-    tonight={visible.has(entry.abbr)}
+    tonight={visible.has(entry.abbr)
+      ? tonightWindow(shapes[entry.abbr]!.centre, date, observer)
+      : null}
     initialStar={deck.star}
     sky={deck.sky}
     current={deck.current}
@@ -679,8 +693,9 @@
               </div>
             {/each}
           </dl>
-          <ul class="sky" class:few={pool.length < 40}>
-            {#each pool as abbr (abbr)}
+          <!-- Découverte (#198): the names in full, on wider cells; abbreviations elsewhere. -->
+          <ul class="sky" class:few={pool.length < 40} class:named={level === "discovery"}>
+            {#each skyCells as abbr (abbr)}
               {@const state = masteryOfItem(progress, itemKey("con", abbr))}
               <li
                 class={`cell ${state}`}
@@ -689,7 +704,9 @@
                   values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
                 })}
               >
-                <span aria-hidden="true">{abbr}</span>
+                <span aria-hidden="true"
+                  >{level === "discovery" ? (names[abbr] ?? abbr) : abbr}</span
+                >
               </li>
             {/each}
           </ul>
@@ -716,6 +733,8 @@
         {placeName}
         latitude={observer.latitude}
         {onexplain}
+        {onlocate}
+        {locating}
         onplay={(chosen) => startGame(g.id, chosen)}
         onclose={closeSetup}
       />
@@ -866,7 +885,7 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-top: 16px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .levels button {
     min-height: 44px;
@@ -1166,6 +1185,27 @@
   }
   .cell span {
     position: relative;
+  }
+  /* Découverte (#198): three columns of wider cells, the full name on up to two lines at the
+     top, on a plate of the sky colour where a dither could run under the letters. */
+  .sky.named {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sky.named .cell {
+    aspect-ratio: auto;
+    min-height: 52px;
+    padding: 6px 4px 0;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .sky.named .cell span {
+    align-self: flex-start;
+    padding: 0 2px;
+  }
+  .sky.named .cell.learning span,
+  .sky.named .cell.known span {
+    background: var(--ast-bg);
   }
   .cell::before,
   .swatch::before {

@@ -174,7 +174,7 @@
     align-items: center;
     gap: 10px;
     padding-left: 12px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg);
   }
   input {
@@ -197,7 +197,7 @@
     width: 44px;
     height: 44px;
     border: 0;
-    border-left: 1px solid var(--ast-hairline);
+    border-left: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);

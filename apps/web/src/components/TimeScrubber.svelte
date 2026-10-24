@@ -131,7 +131,7 @@
   }
   .play {
     width: 48px;
-    border-right: 1px solid var(--ast-hairline);
+    border-right: 1px solid var(--ast-control-border);
   }
   .play[aria-pressed="true"] {
     color: var(--ast-bg);
@@ -141,7 +141,7 @@
     width: 104px;
     padding: 0 6px;
     white-space: nowrap;
-    border-left: 1px solid var(--ast-hairline);
+    border-left: 1px solid var(--ast-control-border);
     color: var(--ast-fg-muted);
   }
   .track {

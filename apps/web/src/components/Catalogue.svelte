@@ -204,7 +204,7 @@
   .filters {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
   }
   .filters button {
     display: flex;

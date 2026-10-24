@@ -34,7 +34,7 @@
     text-transform: uppercase;
     color: var(--ast-fg);
     background: color-mix(in srgb, var(--ast-bg) 82%, transparent);
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;

@@ -140,7 +140,7 @@
     padding: 0;
     color: var(--ast-fg);
     background: color-mix(in srgb, var(--ast-bg) 55%, transparent);
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     border-radius: 50%;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;

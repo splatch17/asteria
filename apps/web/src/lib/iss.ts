@@ -114,6 +114,16 @@ export function refreshDue(
   return !copy || now - copy.fetchedAt > REFRESH_HOURS * MS_PER_HOUR;
 }
 
+/**
+ * When the next request to CelesTrak may be made after a failed one (#198: the « Réessayer »
+ * button of the sheet), in ms; null when it may be made now. Same rule as refreshDue.
+ */
+export function nextAttemptAt(lastAttempt: number | null, now: number): number | null {
+  if (lastAttempt === null) return null;
+  const at = lastAttempt + RETRY_HOURS * MS_PER_HOUR;
+  return at > now ? at : null;
+}
+
 /** Index 0…7 of the compass point (N, NE, E… NW) nearest to an azimuth (degrees from North). */
 export function compassPoint(azimuth: number): number {
   return Math.round((((azimuth % 360) + 360) % 360) / 45) % 8;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { altitudeOf } from "./horizon";
+import { altitudeOf, nextRise } from "./horizon";
 
 // Positions J2000 (SIMBAD): Polaris 37.954561, +89.264109; Achernar 24.428523, −57.236753.
 const PARIS = { latitude: 48.8566, longitude: 2.3522 };
@@ -18,5 +18,24 @@ describe("altitudeOf", () => {
       const date = new Date(Date.UTC(2027, 1, 19, h));
       expect(altitudeOf(24.428523, -57.236753, date, PARIS)).toBeLessThan(-15);
     }
+  });
+});
+
+// Reference: Skyfield 1.55 / JPL DE421, geometric rise at 0° (tools/twilight-reference/
+// star_rise_reference.py), SIMBAD positions. altitudeOf leaves out nutation and aberration
+// (under 30″): the tolerance is 2 minutes.
+describe("nextRise (#198)", () => {
+  const from = new Date("2026-10-24T19:30:00Z");
+  it.each([
+    ["Betelgeuse", 88.792939, 7.407064, "2026-10-24T20:59:52Z"],
+    ["Sirius", 101.287155, -16.716116, "2026-10-24T23:43:57Z"],
+    ["Antares", 247.351915, -26.432003, "2026-10-25T10:25:27Z"],
+  ] as const)("%s rises within 2 min of Skyfield", (_, ra, dec, iso) => {
+    const rise = nextRise(ra, dec, from, PARIS);
+    expect(Math.abs(rise!.getTime() - new Date(iso).getTime())).toBeLessThan(2 * 60_000);
+  });
+  it("is null for a star that never rises, or never sets", () => {
+    expect(nextRise(24.428523, -57.236753, from, PARIS)).toBeNull(); // Achernar
+    expect(nextRise(37.954561, 89.264109, from, PARIS)).toBeNull(); // Polaris
   });
 });

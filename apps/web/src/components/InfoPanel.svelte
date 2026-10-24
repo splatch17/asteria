@@ -18,6 +18,7 @@
     meta,
     name,
     belowHorizon,
+    rises,
     constellation,
     rows,
     bottom,
@@ -28,6 +29,8 @@
     meta: Snippet;
     name: string;
     belowHorizon: boolean;
+    /** When it rises again, shown with « Sous l'horizon » (#198). */
+    rises?: string | undefined;
     /** Link to the constellation sheet. */
     constellation?: { name: string; latin: string; onopen: () => void } | undefined;
     rows: InfoRow[];
@@ -49,7 +52,9 @@
 >
   <p class="meta">{@render meta()}</p>
   <p class="name"><Designation text={name} /></p>
-  {#if belowHorizon}<p class="meta">{$_("sky.belowHorizon")}</p>{/if}
+  {#if belowHorizon}<p class="meta">
+      {rises ? $_("sky.belowHorizon.rises", { values: { time: rises } }) : $_("sky.belowHorizon")}
+    </p>{/if}
   {#if constellation}
     <button
       class="con"
@@ -156,7 +161,7 @@
     min-height: 40px;
     margin-top: 10px;
     padding: 0 12px;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     color: var(--ast-fg);
   }
   .go:focus-visible {

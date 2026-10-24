@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  clockParts,
+  decimalMark,
   formatDec,
+  formatNumber,
   formatRa,
+  placeParts,
   greekRuns,
   parallaxToLightYears,
   starDistance,
@@ -85,5 +89,40 @@ describe("format", () => {
     expect(yearLabel(2026)).toEqual({ key: "time.year", year: 2026 });
     expect(yearLabel(-1974)).toEqual({ key: "time.yearBce", year: 1975 });
     expect(yearLabel(0)).toEqual({ key: "time.yearBce", year: 1 });
+  });
+});
+
+describe("numbers in the reader's language (#198)", () => {
+  it("writes a decimal comma and a true minus sign in French", () => {
+    expect(formatNumber(0.45, 2)).toBe("0,45");
+    expect(formatNumber(-1.456, 2)).toBe("−1,46");
+    expect(formatNumber(1.5, 1, "en")).toBe("1.5");
+    expect(formatNumber(12, 1)).toBe("12,0");
+    expect(formatNumber(-0.001, 2)).toBe("0,00"); // Vega's B−V
+  });
+  it("gives the decimal mark of a language", () => {
+    expect(decimalMark("fr")).toBe(",");
+    expect(decimalMark("en")).toBe(".");
+  });
+  it("puts it in the seconds of a right ascension", () => {
+    expect(formatRa(88.792871, ",")).toBe("05h 55m 10,3s");
+  });
+});
+
+describe("a place by its coordinates (#198)", () => {
+  it("rounds to the tenth of a degree, decimal comma, with its sides", () => {
+    expect(placeParts(48.85, 2.35)).toEqual({ lat: "48,9", ns: "n", lon: "2,4", ew: "e" });
+    expect(placeParts(-33.87, 151.21)).toEqual({ lat: "33,9", ns: "s", lon: "151,2", ew: "e" });
+    expect(placeParts(40.71, -74.01, "en")).toEqual({ lat: "40.7", ns: "n", lon: "74.0", ew: "w" });
+  });
+  it("gives no south or west to a value shown as zero", () => {
+    expect(placeParts(-0.01, -0.04)).toEqual({ lat: "0,0", ns: "n", lon: "0,0", ew: "e" });
+  });
+});
+
+describe("clock (#198)", () => {
+  it("gives the hour as written and the minutes on two digits", () => {
+    expect(clockParts(new Date(2026, 9, 24, 20, 5))).toEqual({ h: "20", m: "05" });
+    expect(clockParts(new Date(2026, 9, 25, 0, 35))).toEqual({ h: "0", m: "35" });
   });
 });

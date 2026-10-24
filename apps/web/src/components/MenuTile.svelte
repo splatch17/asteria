@@ -131,7 +131,7 @@
     text-align: center;
     color: var(--ast-fg-muted);
     background: transparent;
-    border: 1px solid var(--ast-hairline);
+    border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     cursor: pointer;
     user-select: none;

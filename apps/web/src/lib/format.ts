@@ -1,11 +1,83 @@
-/** Sexagesimal formatting used in data panels (scientific notation, not translated). */
-export function formatRa(deg: number): string {
+/**
+ * Decimal number in the reader's language (#198): decimal comma in French, true minus sign
+ * (U+2212, as in formatDec) rather than the hyphen Intl gives. `digits` decimals, always shown.
+ */
+export function formatNumber(x: number, digits: number, locale = "fr"): string {
+  // A value that rounds to zero is written without a sign (Vega's B−V, −0.001: « 0,00 »).
+  const v = Math.abs(x) < 0.5 * 10 ** -digits ? 0 : x;
+  return numberFormat(locale, digits).format(v).replace("-", "−");
+}
+
+/**
+ * A place by its coordinates, to the tenth of a degree (≈ 10 km), when it has no name (#198:
+ * « 48,9° N · 2,4° E » rather than « Ma position »). i18n `geo.place` with `geo.n`… `geo.w`.
+ */
+export function placeParts(
+  latitude: number,
+  longitude: number,
+  locale = "fr",
+): { lat: string; ns: "n" | "s"; lon: string; ew: "e" | "w" } {
+  const lat = formatNumber(Math.abs(latitude), 1, locale);
+  const lon = formatNumber(Math.abs(longitude), 1, locale);
+  // A value shown as 0,0 has no side: north and east, as on a map.
+  return {
+    lat,
+    ns: latitude < 0 && Math.abs(latitude) >= 0.05 ? "s" : "n",
+    lon,
+    ew: longitude < 0 && Math.abs(longitude) >= 0.05 ? "w" : "e",
+  };
+}
+
+/**
+ * Hours and minutes of a local time, for the i18n `time.clock` (« 20 h 05 », #198): the hour
+ * as the language writes it, the minutes on two digits.
+ */
+export function clockParts(d: Date, locale = "fr"): { h: string; m: string } {
+  let f = clockFormats.get(locale);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", hourCycle: "h23" });
+    clockFormats.set(locale, f);
+  }
+  const parts = f.formatToParts(d);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return { h: part("hour"), m: part("minute") };
+}
+const clockFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** Decimal mark of a language: "," in French, "." in English. */
+export function decimalMark(locale = "fr"): string {
+  return (
+    numberFormat(locale, 1)
+      .formatToParts(1.5)
+      .find((p) => p.type === "decimal")?.value ?? "."
+  );
+}
+
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function numberFormat(locale: string, digits: number): Intl.NumberFormat {
+  const key = `${locale}|${digits}`;
+  let f = numberFormats.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    numberFormats.set(key, f);
+  }
+  return f;
+}
+
+/**
+ * Sexagesimal formatting used in data panels (scientific notation, units not translated); the
+ * tenth of a second takes the language's decimal mark (#198).
+ */
+export function formatRa(deg: number, mark = "."): string {
   // Round once, to the displayed tenth of a second, then split: 59.97 s carries into the minute.
   const tenths = Math.round((((deg / 15) % 24) + 24) * 36_000) % (24 * 36_000);
   const h = Math.floor(tenths / 36_000);
   const m = Math.floor((tenths % 36_000) / 600);
   const s = (tenths % 600) / 10;
-  return `${pad(h)}h ${pad(m)}m ${s.toFixed(1).padStart(4, "0")}s`;
+  return `${pad(h)}h ${pad(m)}m ${s.toFixed(1).padStart(4, "0").replace(".", mark)}s`;
 }
 
 export function formatDec(deg: number): string {

@@ -60,7 +60,7 @@ import {
   starFrag,
   starVert,
 } from "./shaders";
-import { LabelLayout, type Rect } from "./labels";
+import { LabelLayout, NAME_ALPHA, NAME_HALO_PX, type Rect } from "./labels";
 import { pickFigure, pickLabel, type FigureShape, type Point } from "./figure-pick";
 import { fillPathBuffers } from "./paths";
 import { limitingMagnitude, planetLimitingMagnitude } from "./limits";
@@ -1635,9 +1635,18 @@ export class SkyMap {
         if (r) ctx.fillText(s.name, r.x, r.y + H / 2);
       }
 
-      // 5. Constellation names (rectangles kept for picking; the selected one is brighter)
+      // 5. Constellation names (rectangles kept for picking; the selected one is brighter).
+      // The figures' lines run through them: each name is first outlined in the sky colour
+      // (#198), at full strength above the horizon (the lines stop under the letters), then
+      // written. Below the horizon the ground is darker than the sky colour: no outline.
       if (this.layers.constellationNames) {
-        this.setLabelFont("500 10px", "0.18em", labelAlpha(this.inkAlpha(0.55, below), below));
+        const alpha = labelAlpha(this.inkAlpha(NAME_ALPHA, below), below);
+        this.setLabelFont("500 10px", "0.18em", alpha);
+        if (!below) {
+          ctx.strokeStyle = this.skyColor;
+          ctx.lineWidth = NAME_HALO_PX;
+          ctx.lineJoin = "round";
+        }
         for (const { abbr, text, dir } of this.labels) {
           if (abbr === this.selectedConstellation || isBelow(dir) !== below) continue;
           const p = this.toScreen(applyMat3(m, dir));
@@ -1650,8 +1659,14 @@ export class SkyMap {
           );
           if (!r) continue;
           this.constellationLabelRects.push({ abbr, rect: r });
+          if (!below) {
+            ctx.globalAlpha = 1 - this.dim;
+            ctx.strokeText(label, r.x, r.y + H / 2);
+            ctx.globalAlpha = alpha * (1 - this.dim);
+          }
           ctx.fillText(label, r.x, r.y + H / 2);
         }
+        ctx.lineJoin = "miter";
       }
       // 5b. Deep-sky objects (#101), after the star and constellation names
       if (deepSky) this.drawDeepSkyLabels(layout, deepSky, below, false);

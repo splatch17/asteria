@@ -24,7 +24,7 @@ Le Petit Cheval est une constellation discrète, coincée entre le grand Pégase
 
 Curieusement, le poète Aratos, qui décrit pourtant presque toutes les figures du ciel grec, n'en parle pas du tout. Et dans les textes anciens que nous avons consultés, aucune légende ne raconte qui est ce cheval.
 
-Ce qui fait son charme, c'est justement sa modestie. Pour le trouver, il faut un ciel bien noir, loin des lumières de la ville, et un peu de patience : cherchez un petit groupe d'étoiles pâles entre le Dauphin et Enif, l'étoile la plus brillante de Pégase.
+Ce qui fait son charme, c'est justement sa modestie. Pour le trouver, il faut un ciel bien noir, loin des lumières de la ville, et un peu de patience : cherche un petit groupe d'étoiles pâles entre le Dauphin et Enif, l'étoile la plus brillante de Pégase.
 
 ## Anecdotes
 
