@@ -14,8 +14,11 @@ import {
   latitudeParts,
   listsByZone,
   nextStep,
+  placeBandLabels,
   presetLatitude,
   tweenLatitude,
+  washFrom,
+  zoneBands,
 } from "./latitude";
 
 describe("latitude as written", () => {
@@ -187,5 +190,56 @@ describe.skipIf(!available)("classes of the 88 figures (public/data)", () => {
     expect(classify(load(), -45).Cru!.zone).toBe("always");
     expect(c.UMi!.zone).toBe("never");
     expect(c.Ori!.zone).toBe("sometimes");
+  });
+});
+
+describe("zones on the map (#197)", () => {
+  // A 2:1 map 328 px wide: 164 px from +90° to −90°.
+  const y = (dec: number) => ((90 - dec) / 180) * 164;
+
+  it("cuts the map into the caps and the band between the limits", () => {
+    const paris = zoneBands(48.85, y, 164);
+    expect(paris.map((b) => b.zone)).toEqual(["always", "sometimes", "never"]);
+    expect(paris[0]!.top).toBe(0);
+    expect(paris[0]!.bottom).toBeCloseTo(y(41.15), 6);
+    expect(paris[2]!.top).toBeCloseTo(y(-41.15), 6);
+    expect(paris[2]!.bottom).toBe(164);
+    // South of the equator the cap that never sets is at the bottom.
+    expect(zoneBands(-33.87, y, 164).map((b) => b.zone)).toEqual(["never", "sometimes", "always"]);
+  });
+
+  it("leaves out the zones without sky: caps at the equator, the middle band at a pole", () => {
+    expect(zoneBands(0, y, 164)).toEqual([{ zone: "sometimes", top: 0, bottom: 164 }]);
+    expect(zoneBands(-90, y, 164).map((b) => b.zone)).toEqual(["never", "always"]);
+  });
+
+  it("clips to the view of an enlarged map and drops the bands out of it", () => {
+    // Zoomed ×3 on the north: the view shows +90° to +30° only.
+    const zoomed = (dec: number) => y(dec) * 3;
+    const bands = zoneBands(48.85, zoomed, 164);
+    expect(bands.map((b) => b.zone)).toEqual(["always", "sometimes"]);
+    expect(bands[1]!.bottom).toBe(164);
+  });
+
+  it("centres each label on its band and pushes apart those that would overlap", () => {
+    const paris = zoneBands(48.85, y, 164);
+    const tops = placeBandLabels(paris, [24, 24, 24], 164);
+    paris.forEach((b, i) => expect(tops[i]! + 12).toBeCloseTo((b.top + b.bottom) / 2, 6));
+    // At 10° N the caps are 9 px thin: labels kept on the map, apart, in band order.
+    const thin = zoneBands(10, y, 164);
+    const t = placeBandLabels(thin, [24, 24, 24], 164);
+    expect(t[0]).toBe(0);
+    expect(t[1]! - t[0]!).toBeGreaterThanOrEqual(28);
+    expect(t[2]).toBe(164 - 24);
+  });
+
+  it("reads a zone's wash from the tokens", () => {
+    const tokens: Record<string, string> = {
+      "--ast-zone-always": " #63c2b0",
+      "--ast-zone-always-alpha": " 0.3",
+    };
+    const get = (n: string) => tokens[n] ?? "";
+    expect(washFrom(get, "always")).toEqual({ color: "#63c2b0", alpha: 0.3 });
+    expect(washFrom(get, "never")).toBeNull();
   });
 });

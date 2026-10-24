@@ -3,13 +3,14 @@
  * outside, an observer standing at its centre on the opaque horizon disc, the celestial axis
  * pointing at the pole at an altitude equal to the latitude, and the sky turning about it.
  *
- * House style (ART_DIRECTION.md): two inks, 1-bit dither in whole CSS pixels.
- *  - Zones, per pixel of the sphere (front surface, then the back one seen through the glass
- *    unless the horizon disc hides it): the cap that never sets in fine dots (25 % in front, 6 %
- *    behind), the cap that never rises in diagonal hatching (25 %, 12 %), the band that rises and
- *    sets left clear; the horizon disc is a Bayer-dithered ground. The caps are symmetric about
- *    the axis, so the dithered image only changes with the latitude, the size or the ink: it is
- *    cached, and a frame of the turning sky only redraws vectors.
+ * House style (ART_DIRECTION.md): two inks, plus the zones' translucent washes (#197).
+ *  - Zones, per CSS pixel of the sphere (front surface over the back one seen through the glass,
+ *    unless the horizon disc hides it): the cap that never sets in a verdigris wash, the cap that
+ *    never rises in a sanguine one (two strengths of red at night), the band that rises and sets
+ *    left clear; behind the glass at less than half the strength. The caps are symmetric about
+ *    the axis, so the image only changes with the latitude, the size or the colours: it is cached
+ *    and drawn smoothed (the crisp limit parallels drawn over it are the zones' edges), and a
+ *    frame of the turning sky only redraws vectors.
  *  - Vectors at device resolution: horizon, celestial equator, the two limit parallels
  *    (solid in front, dashed behind, hidden behind the ground), the axis, the altitude of the
  *    pole, the cardinal points, bright stars as whole-pixel dots (dimmed under the horizon) and
@@ -30,10 +31,29 @@ import {
 
 const RAD = Math.PI / 180;
 
+/** A zone's translucent wash (#197): a colour and its opacity over the sky. */
+export interface ZoneWash {
+  color: string;
+  alpha: number;
+}
+
 export interface LatitudeTheme {
   ink: string;
   sky: string;
+  /** Washes of the sky that never sets and of the sky that never rises (tokens
+   * `--ast-zone-*`); defaults: the day's verdigris and sanguine. */
+  always?: ZoneWash;
+  never?: ZoneWash;
 }
+
+/** The day tokens (packages/ui tokens.css), used when a theme gives no washes. */
+export const DEFAULT_WASHES: { always: ZoneWash; never: ZoneWash } = {
+  always: { color: "#63c2b0", alpha: 0.3 },
+  never: { color: "#f0784e", alpha: 0.32 },
+};
+
+/** Strength of a wash seen through the glass, behind the sphere. */
+const BACK_STRENGTH = 0.42;
 
 /** Texts drawn on the picture (already translated); a missing one is not drawn. */
 export interface LatitudeSphereLabels {
@@ -64,27 +84,46 @@ export interface SphereHighlight {
   segments: [Vec3, Vec3][];
 }
 
-/** Colour string → [r, g, b] (#rgb, #rrggbb). */
-function rgb(color: string): [number, number, number] {
+/** Colour string → [r, g, b] (#rgb, #rrggbb; rgb(…) as computed styles give it). */
+export function rgb(color: string): [number, number, number] {
+  const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(color.trim());
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
   let hex = color.trim().replace(/^#/, "");
   if (hex.length === 3) hex = [...hex].map((c) => c + c).join("");
   const n = Number.parseInt(hex.slice(0, 6), 16);
   return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [240, 230, 210];
 }
 
+/** A wash as a CSS colour, its opacity times `k`. */
+export function washColor(w: ZoneWash, k = 1): string {
+  const [r, g, b] = rgb(w.color);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, w.alpha * k))})`;
+}
+
 /**
- * Ink pattern of a zone at a whole CSS pixel: dots for « always », diagonal hatching for
- * « never », nothing for the band that rises and sets. Three strengths: 0 the sphere's front
- * (25 %), 1 the flat map (11 % dots, 17 % hatching: its figures must read through), 2 the
- * sphere's back seen through the glass (6 %, 12 %).
+ * Packed pixels (ImageData order, straight alpha) of every pair of zones at a pixel of the
+ * sphere: the front surface's wash over the back one's, seen through the glass at
+ * `BACK_STRENGTH`. Index front * 3 + back, zones 0 rises and sets (clear), 1 always, 2 never.
  */
-export function zoneInk(zone: 0 | 1 | 2, x: number, y: number, strength: 0 | 1 | 2 = 0): boolean {
-  if (zone === 1) {
-    const k = strength === 0 ? 2 : strength === 1 ? 3 : 4;
-    return x % k === 0 && y % k === 0;
-  }
-  if (zone === 2) return (x + y) % (strength === 0 ? 4 : strength === 1 ? 6 : 8) === 0;
-  return false;
+export function zonePixels(always: ZoneWash, never: ZoneWash): Uint32Array {
+  const washes = [null, always, never] as const;
+  const out = new Uint32Array(9);
+  for (let f = 0; f < 3; f++)
+    for (let b = 0; b < 3; b++) {
+      const wf = washes[f];
+      const wb = washes[b];
+      const af = wf ? Math.max(0, Math.min(1, wf.alpha)) : 0;
+      const ab = wb ? Math.max(0, Math.min(1, wb.alpha * BACK_STRENGTH)) : 0;
+      const a = af + ab * (1 - af);
+      if (a <= 0) continue;
+      const cf = wf ? rgb(wf.color) : [0, 0, 0];
+      const cb = wb ? rgb(wb.color) : [0, 0, 0];
+      const [r, g, bl] = [0, 1, 2].map((i) =>
+        Math.round((cf[i]! * af + cb[i]! * ab * (1 - af)) / a),
+      ) as [number, number, number];
+      out[f * 3 + b] = ((Math.round(a * 255) << 24) | (bl << 16) | (g << 8) | r) >>> 0;
+    }
+  return out;
 }
 
 /** Zone of a direction from its sin(declination): 0 rises and sets, 1 always up, 2 never up. */
@@ -110,7 +149,7 @@ export class LatitudeSphere {
   private highlight: SphereHighlight | null = null;
   private labels: LatitudeSphereLabels = { north: "N", south: "S", east: "E", west: "W" };
   private readonly cam: SphereCamera;
-  /** Key of the cached dither (latitude, size, ink): redrawn when it changes. */
+  /** Key of the cached washes (latitude, size, colours): redrawn when it changes. */
   private shadedKey = "";
 
   constructor(canvas: HTMLCanvasElement, camera: SphereCamera = sphereCamera(228, 20)) {
@@ -193,7 +232,9 @@ export class LatitudeSphere {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     const { cx, cy, radius } = this.layout();
     this.shade(cx, cy, radius);
-    ctx.imageSmoothingEnabled = false;
+    // Smoothed: soft edges a CSS pixel wide, under the crisp parallels and silhouette.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "low";
     ctx.drawImage(
       this.buffer,
       Math.round((cx - radius - 1) * dpr),
@@ -206,18 +247,25 @@ export class LatitudeSphere {
     return performance.now() - t0;
   }
 
-  /** The dithered zones and ground, at one dot per CSS pixel, cached. */
+  /** The zones' washes, one pixel per CSS pixel, cached. */
   private shade(cx: number, cy: number, radius: number): void {
     const size = Math.ceil(radius * 2) + 2;
-    const key = `${this.lat.toFixed(3)}|${size}|${this.theme.ink}`;
+    const always = this.theme.always ?? DEFAULT_WASHES.always;
+    const never = this.theme.never ?? DEFAULT_WASHES.never;
+    const key = `${this.lat.toFixed(3)}|${size}|${always.color}/${always.alpha}|${never.color}/${never.alpha}`;
     if (key === this.shadedKey) return;
     this.shadedKey = key;
     this.buffer.width = size;
     this.buffer.height = size;
     const image = this.bufferCtx.createImageData(size, size);
+    const visiblePole = this.lat > 1e-9 ? 1 : this.lat < -1e-9 ? -1 : 0;
+    if (!visiblePole) {
+      // At the equator nothing is always up or never up: all clear.
+      this.bufferCtx.putImageData(image, 0, 0);
+      return;
+    }
     const px = new Uint32Array(image.data.buffer);
-    const [ir, ig, ib] = rgb(this.theme.ink);
-    const ink = ((255 << 24) | (ib << 16) | (ig << 8) | ir) >>> 0;
+    const colours = zonePixels(always, never);
     const { r, s, c } = this.cam;
     const pole = celestialPole(this.lat);
     const [rp, sp, cpole] = [
@@ -225,13 +273,9 @@ export class LatitudeSphere {
       s[0] * pole[0] + s[1] * pole[1] + s[2] * pole[2],
       c[0] * pole[0] + c[1] * pole[1] + c[2] * pole[2],
     ];
-    const visiblePole = this.lat > 1e-9 ? 1 : this.lat < -1e-9 ? -1 : 0;
     const sinLimit = Math.sin((90 - Math.abs(this.lat)) * RAD);
-    // Screen position of the buffer's origin in sphere units; whole CSS pixels for the patterns.
     const ox = cx - radius - 1;
     const oy = cy - radius - 1;
-    const gx = Math.round(ox);
-    const gy = Math.round(oy);
     for (let j = 0; j < size; j++) {
       const sy = (cy - (oy + j + 0.5)) / radius;
       for (let i = 0; i < size; i++) {
@@ -240,17 +284,13 @@ export class LatitudeSphere {
         if (r2 > 1) continue;
         const w = Math.sqrt(1 - r2);
         const base = sx * rp + sy * sp;
-        const X = gx + i;
-        const Y = gy + j;
-        let on = zoneInk(zoneOfSin(base + w * cpole, visiblePole, sinLimit), X, Y, 0);
-        if (!on) {
-          // The horizon plane u = 0 along the ray (t from the front, w, to the back, −w).
-          const t = c[2] !== 0 ? -(sx * r[2] + sy * s[2]) / c[2] : Infinity;
-          // Behind the horizon disc: its engraving is drawn as vectors (drawVectors).
-          if (Math.abs(t) <= w) on = false;
-          else on = zoneInk(zoneOfSin(base - w * cpole, visiblePole, sinLimit), X, Y, 2);
-        }
-        if (on) px[j * size + i] = ink;
+        const front = zoneOfSin(base + w * cpole, visiblePole, sinLimit);
+        // The horizon plane u = 0 along the ray (t from the front, w, to the back, −w): behind
+        // the horizon disc the back is hidden (the disc's engraving is drawn as vectors).
+        const t = c[2] !== 0 ? -(sx * r[2] + sy * s[2]) / c[2] : Infinity;
+        const back = Math.abs(t) <= w ? 0 : zoneOfSin(base - w * cpole, visiblePole, sinLimit);
+        const colour = colours[front * 3 + back]!;
+        if (colour) px[j * size + i] = colour;
       }
     }
     this.bufferCtx.putImageData(image, 0, 0);
@@ -315,7 +355,7 @@ export class LatitudeSphere {
     for (const star of this.stars) {
       const p = applyMat3(m, star.dir);
       const vis = visibilityOf(cam, p);
-      // Behind the glass, only the brightest: the caps' dither must stay readable.
+      // Behind the glass, only the brightest: the picture must stay readable.
       if (vis === "hidden" || (vis === "back" ? star.v > 2.5 : star.v > 4)) continue;
       const [x, y] = at(p);
       const up = p[2] >= 0;
@@ -484,7 +524,7 @@ export class LatitudeSphere {
       const left = align === "left" ? x : align === "right" ? x - w : x - w / 2;
       x = Math.min(this.width - 2 - w, Math.max(2, left));
       ctx.textAlign = "left";
-      // A clear halo of the sky so that the text reads over the dither.
+      // A clear halo of the sky so that the text reads over the washes and lines.
       ctx.lineWidth = 3;
       ctx.strokeStyle = this.theme.sky;
       ctx.strokeText(s, x, y);

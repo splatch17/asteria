@@ -14,6 +14,24 @@
   --ast-panel-border: var(--ast-hairline);
   --ast-panel-pad: 14px;
   --ast-panel-gap: 12px;
+  /* Visibility zones (« Selon la latitude », #197): translucent washes over the sky, the only
+     colours of the interface besides the two inks (ART_DIRECTION.md, scoped exception).
+     Verdigris for the sky that never sets, sanguine for the sky that never rises, the band that
+     rises and sets left clear. The drawings read the colour and the alpha separately. */
+  --ast-zone-always: #63c2b0;
+  --ast-zone-always-alpha: 0.3;
+  --ast-zone-never: #f0784e;
+  --ast-zone-never-alpha: 0.32;
+  --ast-zone-always-wash: color-mix(
+    in srgb,
+    var(--ast-zone-always) calc(var(--ast-zone-always-alpha) * 100%),
+    transparent
+  );
+  --ast-zone-never-wash: color-mix(
+    in srgb,
+    var(--ast-zone-never) calc(var(--ast-zone-never-alpha) * 100%),
+    transparent
+  );
 
   --ast-font-display: "Big Shoulders Display", "Oswald", sans-serif;
   --ast-font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -29,4 +47,9 @@
   --ast-night: #000;
   --ast-night-deep: #000;
   --ast-parchment: #ff2a1a;
+  /* Red only: the two zones are two strengths of the red ink (brighter: always up). */
+  --ast-zone-always: var(--ast-parchment);
+  --ast-zone-always-alpha: 0.4;
+  --ast-zone-never: var(--ast-parchment);
+  --ast-zone-never-alpha: 0.16;
 }
