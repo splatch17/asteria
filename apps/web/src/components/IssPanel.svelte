@@ -49,6 +49,7 @@
     passes,
     shownPass,
     bottom,
+    retry,
     onpass,
     onclose,
   }: {
@@ -63,6 +64,11 @@
     /** `rise` of the pass whose track is drawn. */
     shownPass: number | null;
     bottom: string;
+    /**
+     * No orbit could be downloaded (#198): whether the phone is online, when CelesTrak may be
+     * asked again (null: now; at most once every 2 h, as it asks), a request under way.
+     */
+    retry: { online: boolean; nextAt: Date | null; busy: boolean; onretry: () => void };
     onpass: (rise: number) => void;
     onclose: () => void;
   } = $props();
@@ -189,7 +195,20 @@
   {#if status === "loading"}
     <p class="text">{$_("iss.loading")}</p>
   {:else if status === "failed" || !orbit}
-    <p class="text">{$_("iss.unavailable")}</p>
+    <!-- What went wrong and what to do (#198): wait for the network, try again, or when. -->
+    {#if !retry.online}
+      <p class="text">{$_("iss.error.offline")}</p>
+    {:else}
+      <p class="text">{$_("iss.error.failed")}</p>
+      <!-- Always there; until CelesTrak may be asked again, it says when. -->
+      <button class="retry" onclick={retry.onretry} disabled={retry.busy || retry.nextAt !== null}>
+        {retry.busy
+          ? $_("iss.error.retrying")
+          : retry.nextAt
+            ? $_("iss.error.retryAt", { values: { time: time(retry.nextAt) } })
+            : $_("iss.error.retry")}
+      </button>
+    {/if}
   {:else if orbit.freshness === "stale"}
     <p class="text">{$_("iss.stale", { values: { date: dateTime.format(orbit.epoch) } })}</p>
   {:else}
@@ -271,6 +290,24 @@
     margin: 0 0 8px;
     font: 400 15px/1.35 var(--ast-font-serif);
     color: var(--ast-fg);
+  }
+  .retry {
+    width: 100%;
+    min-height: 44px;
+    margin: 4px 0 2px;
+    border: 1px solid var(--ast-control-border, var(--ast-hairline));
+    border-radius: var(--ast-radius);
+    background: transparent;
+    font: 500 11px/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg);
+    cursor: pointer;
+  }
+  .retry:disabled {
+    border-color: var(--ast-hairline);
+    color: var(--ast-fg-muted);
+    cursor: default;
   }
   .text,
   .state {

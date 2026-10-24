@@ -4,6 +4,7 @@ import {
   formatDec,
   formatNumber,
   formatRa,
+  placeParts,
   greekRuns,
   parallaxToLightYears,
   starDistance,
@@ -104,5 +105,16 @@ describe("numbers in the reader's language (#198)", () => {
   });
   it("puts it in the seconds of a right ascension", () => {
     expect(formatRa(88.792871, ",")).toBe("05h 55m 10,3s");
+  });
+});
+
+describe("a place by its coordinates (#198)", () => {
+  it("rounds to the tenth of a degree, decimal comma, with its sides", () => {
+    expect(placeParts(48.85, 2.35)).toEqual({ lat: "48,9", ns: "n", lon: "2,4", ew: "e" });
+    expect(placeParts(-33.87, 151.21)).toEqual({ lat: "33,9", ns: "s", lon: "151,2", ew: "e" });
+    expect(placeParts(40.71, -74.01, "en")).toEqual({ lat: "40.7", ns: "n", lon: "74.0", ew: "w" });
+  });
+  it("gives no south or west to a value shown as zero", () => {
+    expect(placeParts(-0.01, -0.04)).toEqual({ lat: "0,0", ns: "n", lon: "0,0", ew: "e" });
   });
 });

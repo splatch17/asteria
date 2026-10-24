@@ -13,6 +13,7 @@ import {
   passWhen,
   passWindow,
   pickIss,
+  nextAttemptAt,
   refreshDue,
   trackInstants,
   type StoredElements,
@@ -90,6 +91,21 @@ describe("freshness", () => {
     expect(freshness(epoch, epoch + 5 * DAY)).toBe("aging");
     expect(freshness(epoch, epoch + 7.1 * DAY)).toBe("stale");
     expect(freshness(epoch, epoch - 30 * DAY)).toBe("stale");
+  });
+});
+
+describe("nextAttemptAt (#198)", () => {
+  const now = epoch + DAY;
+  it("lets the sheet try again 2 hours after the last request, not before", () => {
+    expect(nextAttemptAt(null, now)).toBe(null);
+    expect(nextAttemptAt(now - 1.5 * HOUR, now)).toBe(now + 0.5 * HOUR);
+    expect(nextAttemptAt(now - 2 * HOUR, now)).toBe(null);
+  });
+  it("agrees with refreshDue when there is no copy", () => {
+    for (const ago of [0.5, 1.99, 2, 3]) {
+      const last = now - ago * HOUR;
+      expect(nextAttemptAt(last, now) === null).toBe(refreshDue(null, last, now, true));
+    }
   });
 });
 

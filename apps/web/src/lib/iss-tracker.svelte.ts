@@ -29,6 +29,10 @@ export class IssTracker {
   stored = $state.raw<StoredElements | null>(null);
   /** No elements at all (never downloaded: offline, CORS, CelesTrak unreachable). */
   failed = $state(false);
+  /** Last request to CelesTrak (ms), failures included: when the sheet may try again (#198). */
+  lastAttempt = $state<number | null>(null);
+  /** A request is under way (the sheet's « Réessayer »). */
+  busy = $state(false);
   private started = false;
 
   /** Loads the module and the device's copy (once); downloads from CelesTrak when due. */
@@ -75,8 +79,11 @@ export class IssTracker {
     const last = readSetting<number | null>(ATTEMPT_KEY, null, (v): v is number | null =>
       isNumber(v),
     );
+    this.lastAttempt = last;
     if (!refreshDue(this.stored, last, now, online)) return;
     writeSetting(ATTEMPT_KEY, now);
+    this.lastAttempt = now;
+    this.busy = true;
     try {
       const omm = pickIss(await fetchJson(CELESTRAK_ISS_URL));
       if (!omm) throw new Error("No ISS record in CelesTrak's answer");
@@ -89,6 +96,8 @@ export class IssTracker {
       // CORS, network, CelesTrak's rate limit (403): the copy in hand stays; the sheet says
       // « orbite indisponible » or « trop ancienne ».
       console.warn("CelesTrak unreachable", e);
+    } finally {
+      this.busy = false;
     }
   }
 }

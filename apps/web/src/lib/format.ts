@@ -8,6 +8,26 @@ export function formatNumber(x: number, digits: number, locale = "fr"): string {
   return numberFormat(locale, digits).format(v).replace("-", "−");
 }
 
+/**
+ * A place by its coordinates, to the tenth of a degree (≈ 10 km), when it has no name (#198:
+ * « 48,9° N · 2,4° E » rather than « Ma position »). i18n `geo.place` with `geo.n`… `geo.w`.
+ */
+export function placeParts(
+  latitude: number,
+  longitude: number,
+  locale = "fr",
+): { lat: string; ns: "n" | "s"; lon: string; ew: "e" | "w" } {
+  const lat = formatNumber(Math.abs(latitude), 1, locale);
+  const lon = formatNumber(Math.abs(longitude), 1, locale);
+  // A value shown as 0,0 has no side: north and east, as on a map.
+  return {
+    lat,
+    ns: latitude < 0 && Math.abs(latitude) >= 0.05 ? "s" : "n",
+    lon,
+    ew: longitude < 0 && Math.abs(longitude) >= 0.05 ? "w" : "e",
+  };
+}
+
 /** Decimal mark of a language: "," in French, "." in English. */
 export function decimalMark(locale = "fr"): string {
   return (

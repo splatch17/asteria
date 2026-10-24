@@ -69,6 +69,7 @@
     formatDec,
     formatNumber,
     formatRa,
+    placeParts,
     starDistance,
     yearLabel,
   } from "./lib/format";
@@ -114,7 +115,15 @@
   import { needsIosInstallHint } from "./lib/install";
   import { network, offline, retryOffline } from "./lib/offline-client.svelte";
   import { IssTracker } from "./lib/iss-tracker.svelte";
-  import { ISS_ID, freshness, minuteTicks, passToShow, passWindow, trackInstants } from "./lib/iss";
+  import {
+    ISS_ID,
+    freshness,
+    minuteTicks,
+    nextAttemptAt,
+    passToShow,
+    passWindow,
+    trackInstants,
+  } from "./lib/iss";
   import type { SatellitePass } from "@asteria/astro-core/satellites";
   import {
     apparentSize,
@@ -1679,6 +1688,12 @@
       shownPass: issShown === null ? null : (issPassTimes[issShown]?.rise ?? null),
     };
   });
+  /** When CelesTrak may be asked again after a failure (#198), on the real clock. */
+  const issRetryAt = $derived.by(() => {
+    void date; // re-read as the clock ticks
+    const t = nextAttemptAt(issTracker.lastAttempt, Date.now());
+    return t === null ? null : new Date(t);
+  });
   const elementsAgeDaysOf = (epochMs: number, d: Date) => (d.getTime() - epochMs) / 86_400_000;
   /**
    * J2000 directions framing the ISS: itself while it is up, else the pass shown (its visible
@@ -2006,7 +2021,19 @@
       },
     }),
   );
-  const placeName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
+  /**
+   * The place in the header, the games and the latitude explorer: its coordinates when it is the
+   * player's own (#198, no offline gazetteer with a verified licence yet), else « Paris ». The
+   * menu keeps « Ma position » above the precise coordinates.
+   */
+  const placeName = $derived.by(() => {
+    if (place.name !== "mine") return $_("place.paris");
+    const p = placeParts(place.latitude, place.longitude, lang);
+    return $_("geo.place", {
+      values: { lat: p.lat, ns: $_(`geo.${p.ns}`), lon: p.lon, ew: $_(`geo.${p.ew}`) },
+    });
+  });
+  const menuPlaceName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
   /** « ← Système solaire » under the header during a visit (#134); toasts go below it. */
   const showVisitBack = $derived(
     mode === "space" && spaceFrame === "body" && !flying && !immersive && !!space,
@@ -2261,6 +2288,12 @@
     passes={issPanel.passes}
     shownPass={issPanel.shownPass}
     bottom={aboveControls}
+    retry={{
+      online: network.online,
+      nextAt: issRetryAt,
+      busy: issTracker.busy,
+      onretry: () => void issTracker.ensure(network.online),
+    }}
     onpass={showIssPass}
     onclose={() => (selection = null)}
   />
@@ -2353,6 +2386,8 @@
       start={learnStart}
       onlatitude={openLatitude}
       onexplain={() => openLatitude(place.latitude)}
+      onlocate={locate}
+      {locating}
       onclose={closeGames}
     />
   {/await}
@@ -2477,7 +2512,7 @@
     layers={viewLayers[mode]}
     onlayer={setLayer}
     unavailable={mode === "sky" ? unavailableLayers : []}
-    {placeName}
+    placeName={menuPlaceName}
     {coords}
     {locating}
     onlocate={locate}

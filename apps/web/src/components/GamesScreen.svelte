@@ -102,6 +102,8 @@
     start = null,
     onlatitude,
     onexplain,
+    onlocate,
+    locating = "idle",
     onclose,
   }: {
     /** The player's own place is known (else `observer` is the app's default place, #187). */
@@ -111,6 +113,9 @@
      * explorer (#188) when given; no link otherwise.
      */
     onexplain?: (() => void) | undefined;
+    /** « Utiliser ma position » in a game's settings when the place is unknown (#198). */
+    onlocate?: (() => void) | undefined;
+    locating?: "idle" | "busy" | "error";
     stars: CatalogStar[];
     lines: Record<string, number[][]>;
     /** Constellation names (French) and official Latin names, by IAU abbreviation. */
@@ -716,6 +721,8 @@
         {placeName}
         latitude={observer.latitude}
         {onexplain}
+        {onlocate}
+        {locating}
         onplay={(chosen) => startGame(g.id, chosen)}
         onclose={closeSetup}
       />
