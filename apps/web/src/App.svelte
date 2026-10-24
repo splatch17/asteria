@@ -62,7 +62,14 @@
     type DeepSkyObject,
     type DeepSkyType,
   } from "@asteria/catalog";
-  import { formatDec, formatRa, starDistance, yearLabel } from "./lib/format";
+  import {
+    decimalMark,
+    formatDec,
+    formatNumber,
+    formatRa,
+    starDistance,
+    yearLabel,
+  } from "./lib/format";
   import { MIN_DIM, nightInk } from "./lib/night";
   import { readSetting, writeSetting } from "./lib/storage";
   import { PlanetPathCache } from "./lib/planet-paths";
@@ -1782,8 +1789,7 @@
         title: $_("deepsky.see.hint"),
       });
     const mag = displayMagnitude(o);
-    if (mag)
-      rows.push({ label: $_(mag.band === "V" ? "data.v" : "data.b"), value: fixed(mag.value, 1) });
+    if (mag) rows.push({ label: magnitudeLabel(mag.band), value: fixed(mag.value, 1) });
     const size = apparentSize(o);
     if (size)
       rows.push({
@@ -1794,7 +1800,7 @@
         title: $_("deepsky.size.hint"),
       });
     rows.push(
-      { label: $_("data.ra"), value: formatRa(o.ra) },
+      { label: $_("data.ra"), value: ra(o.ra) },
       { label: $_("data.dec"), value: formatDec(o.dec) },
     );
     return {
@@ -1810,11 +1816,15 @@
 
   // --- Info panels (star, Sun/Moon, planet): rows of label/value, labels from the catalogue.
   const KM_PER_AU = 149_597_870.7;
-  const fixed = (x: number, digits: number) => x.toFixed(digits);
+  // Numbers with the language's decimal mark (#198); « Magnitude » in words but in Expert.
+  const fixed = (x: number, digits: number) => formatNumber(x, digits, lang);
+  const ra = (deg: number) => formatRa(deg, decimalMark(lang));
+  const magnitudeLabel = (band: "V" | "B") =>
+    userLevel === "expert" ? $_(band === "V" ? "data.v" : "data.b") : $_("data.magnitude");
   const positionRows = (b: { altitude: number; azimuth: number; ra: number; dec: number }) => [
     { label: $_("body.altitude"), value: `${fixed(b.altitude, 1)}°` },
     { label: $_("body.azimuth"), value: `${fixed(b.azimuth, 1)}°` },
-    { label: $_("data.ra"), value: formatRa(b.ra) },
+    { label: $_("data.ra"), value: ra(b.ra) },
     { label: $_("data.dec"), value: formatDec(b.dec) },
   ];
 
@@ -1836,9 +1846,9 @@
           : $_("star.distanceSource.hipparcos");
     const hint = d?.errorLy != null ? { err: d.errorLy, source } : null;
     const rows: InfoRow[] = [
-      { label: $_("data.ra"), value: formatRa(selectedNow.ra) },
+      { label: $_("data.ra"), value: ra(selectedNow.ra) },
       { label: $_("data.dec"), value: formatDec(selectedNow.dec) },
-      { label: $_("data.v"), value: fixed(selected.v, 2) },
+      { label: magnitudeLabel("V"), value: fixed(selected.v, 2) },
     ];
     if (selected.bv !== undefined)
       rows.push({ label: $_("data.bv"), value: fixed(selected.bv, 2) });
@@ -1898,7 +1908,7 @@
       name: planetName(p.name),
       con: { abbr: con, name: names[con] ?? con, latin: CONSTELLATION_LATIN[con] ?? con },
       rows: [
-        { label: $_("planet.magnitude"), value: fixed(p.magnitude, 1) },
+        { label: magnitudeLabel("V"), value: fixed(p.magnitude, 1) },
         ...positionRows(p),
         {
           label: $_("data.dist"),

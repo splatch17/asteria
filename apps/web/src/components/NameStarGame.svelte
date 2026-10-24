@@ -10,7 +10,7 @@
   // Challenges (#187): « Série » until the first mistake, « Chrono » for 60 s; the next star
   // comes by itself after a short look at its sheet, without « Voir dans le catalogue ».
   import { onDestroy, onMount, tick, untrack } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import type {
     CatalogStar,
     FigureLevel,
@@ -18,7 +18,7 @@
     SkyTheme,
     ViewState,
   } from "@asteria/sky-renderer";
-  import { starDistance, type StarDistanceFields } from "../lib/format";
+  import { formatNumber, starDistance, type StarDistanceFields } from "../lib/format";
   import {
     createGameSky,
     gameTheme,
@@ -391,8 +391,8 @@
             </p>
             <p class="s-name">{star.name}</p>
             <dl class="s-data">
-              <dt>{$_("data.v")}</dt>
-              <dd>{star.v.toFixed(2).replace("-", "−")}</dd>
+              <dt>{$_(level === "expert" ? "data.v" : "data.magnitude")}</dt>
+              <dd>{formatNumber(star.v, 2, $locale ?? "fr")}</dd>
               {#if distance}
                 <dt>{$_("data.dist")}</dt>
                 <dd>{distance}</dd>

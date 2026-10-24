@@ -1,11 +1,47 @@
-/** Sexagesimal formatting used in data panels (scientific notation, not translated). */
-export function formatRa(deg: number): string {
+/**
+ * Decimal number in the reader's language (#198): decimal comma in French, true minus sign
+ * (U+2212, as in formatDec) rather than the hyphen Intl gives. `digits` decimals, always shown.
+ */
+export function formatNumber(x: number, digits: number, locale = "fr"): string {
+  // A value that rounds to zero is written without a sign (Vega's B−V, −0.001: « 0,00 »).
+  const v = Math.abs(x) < 0.5 * 10 ** -digits ? 0 : x;
+  return numberFormat(locale, digits).format(v).replace("-", "−");
+}
+
+/** Decimal mark of a language: "," in French, "." in English. */
+export function decimalMark(locale = "fr"): string {
+  return (
+    numberFormat(locale, 1)
+      .formatToParts(1.5)
+      .find((p) => p.type === "decimal")?.value ?? "."
+  );
+}
+
+const numberFormats = new Map<string, Intl.NumberFormat>();
+function numberFormat(locale: string, digits: number): Intl.NumberFormat {
+  const key = `${locale}|${digits}`;
+  let f = numberFormats.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    numberFormats.set(key, f);
+  }
+  return f;
+}
+
+/**
+ * Sexagesimal formatting used in data panels (scientific notation, units not translated); the
+ * tenth of a second takes the language's decimal mark (#198).
+ */
+export function formatRa(deg: number, mark = "."): string {
   // Round once, to the displayed tenth of a second, then split: 59.97 s carries into the minute.
   const tenths = Math.round((((deg / 15) % 24) + 24) * 36_000) % (24 * 36_000);
   const h = Math.floor(tenths / 36_000);
   const m = Math.floor((tenths % 36_000) / 600);
   const s = (tenths % 600) / 10;
-  return `${pad(h)}h ${pad(m)}m ${s.toFixed(1).padStart(4, "0")}s`;
+  return `${pad(h)}h ${pad(m)}m ${s.toFixed(1).padStart(4, "0").replace(".", mark)}s`;
 }
 
 export function formatDec(deg: number): string {

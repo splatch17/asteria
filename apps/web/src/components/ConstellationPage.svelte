@@ -8,7 +8,7 @@
   // The sky is the deck's (lib/deck-sky): live while the card is centred, a still picture or a
   // sketch (lib/card-sketch) otherwise.
   import { onMount, tick, untrack } from "svelte";
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
   import {
     applyMat3,
     j2000ToHorizontalMatrix,
@@ -30,7 +30,7 @@
   import { drawSketch, type SketchStar } from "../lib/card-sketch";
   import { screenFraction } from "../lib/constellation";
   import type { CardSky, DeckSky } from "../lib/deck-sky";
-  import { starDistance, type StarDistanceFields } from "../lib/format";
+  import { formatNumber, starDistance, type StarDistanceFields } from "../lib/format";
   import { framingFov, zenithObserver, type ConstellationShape } from "../lib/games/geometry";
   import Designation from "./Designation.svelte";
   import Icon from "./Icon.svelte";
@@ -277,7 +277,7 @@
         <p class="s-name"><Designation text={starLabel(s)} /></p>
         <dl>
           <dt>{$_("data.v")}</dt>
-          <dd>{s.v.toFixed(2)}</dd>
+          <dd>{formatNumber(s.v, 2, $locale ?? "fr")}</dd>
           <dt>{$_("data.dist")}</dt>
           <dd>{distance}</dd>
         </dl>
@@ -321,7 +321,7 @@
           <button class="s-row" aria-pressed={selected?.hip === s.hip} onclick={() => fromList(s)}>
             <span class="s-label"><Designation text={starLabel(s)} /></span>
             {#if s.name && s.bayer}<span class="s-bayer"><Designation text={s.bayer} /></span>{/if}
-            <span class="s-v">V {s.v.toFixed(1)}</span>
+            <span class="s-v">V {formatNumber(s.v, 1, $locale ?? "fr")}</span>
           </button>
         </li>
       {/each}

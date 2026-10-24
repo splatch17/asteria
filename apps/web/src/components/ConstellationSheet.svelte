@@ -1,7 +1,8 @@
 <script lang="ts">
   // Constellation sheet (#61): names, brightest star, visibility, and — for the constellations
   // that have one — the Découverte story, three anecdotes and their sources (CC BY-SA).
-  import { _ } from "@asteria/ui";
+  import { _, locale } from "@asteria/ui";
+  import { formatNumber } from "../lib/format";
   import {
     hasConstellationStory,
     inlineSegments,
@@ -91,7 +92,7 @@
           {:else}
             {brightest.label}
           {/if}
-          <span class="muted">V {brightest.v.toFixed(2)}</span>
+          <span class="muted">V {formatNumber(brightest.v, 2, $locale ?? "fr")}</span>
         </dd>
       {/if}
       {#if visibility}
