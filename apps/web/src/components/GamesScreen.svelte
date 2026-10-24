@@ -75,7 +75,7 @@
   } from "../lib/games/which-constellation";
   import { GAME_ID as WHERE_ID, MAX_POINTS, buildWhereSeries } from "../lib/games/where-is-it";
   import type { Grade } from "../lib/games/srs";
-  import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
+  import { level as levelPref } from "../lib/level-store.svelte";
   import { readSetting, writeSetting } from "../lib/storage";
   import Catalogue from "./Catalogue.svelte";
   import CatalogueDeck, { type DeckCardProps } from "./CatalogueDeck.svelte";
@@ -158,14 +158,9 @@
     onclick: (() => void) | null;
   }
   const params = new URLSearchParams(location.search);
-  const urlLevel = params.get("level");
-  let level = $state<FigureLevel>(
-    isLevel(urlLevel) ? urlLevel : readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel),
-  );
-  function chooseLevel(l: FigureLevel) {
-    level = l;
-    if (!isLevel(urlLevel)) writeSetting(LEVEL_STORAGE_KEY, l);
-  }
+  // The app's level (#201): this control is a shortcut to the one of Menu › Réglages.
+  const level = $derived<FigureLevel>(levelPref.value);
+  const chooseLevel = (l: FigureLevel) => levelPref.set(l);
 
   // Older records (one per game, #163) become the training records of the level chosen.
   let progress = $state.raw<Progress>(
@@ -583,7 +578,13 @@
     />
   {:else}
     <header class="head" inert={setup !== null}>
-      <h1 id="games-title">{$_("learn.title")}</h1>
+      <div>
+        <h1 id="games-title">{$_("learn.title")}</h1>
+        <!-- The level in force (#201), still in sight once the control below scrolls away. -->
+        <p class="head-level">
+          {$_("learn.level", { values: { level: $_(`level.${level}`) } })}
+        </p>
+      </div>
       <button
         class="close"
         bind:this={closeButton}
@@ -841,6 +842,13 @@
     font: 700 30px/1 var(--ast-font-display);
     letter-spacing: 0.02em;
     text-transform: uppercase;
+  }
+  .head-level {
+    margin: 6px 0 0;
+    font: 500 11px/1.2 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
   }
   button {
     font: 500 11px/1 var(--ast-font-mono);

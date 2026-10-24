@@ -67,8 +67,7 @@
   } from "../lib/latitude";
   import { figureStars } from "../lib/games/geometry";
   import { HOME_MIN_ALTITUDE, HOME_MIN_SHARE, visibleFromLatitude } from "../lib/games/visibility";
-  import { LEVEL_STORAGE_KEY, isLevel } from "../lib/layers";
-  import { readSetting, writeSetting } from "../lib/storage";
+  import { level as levelPref } from "../lib/level-store.svelte";
   import Icon from "./Icon.svelte";
 
   let {
@@ -98,14 +97,9 @@
 
   const LEVELS: readonly FigureLevel[] = ["discovery", "amateur", "expert"];
   const params = new URLSearchParams(location.search);
-  const urlLevel = params.get("level");
-  let level = $state<FigureLevel>(
-    isLevel(urlLevel) ? urlLevel : readSetting(LEVEL_STORAGE_KEY, "amateur", isLevel),
-  );
-  function chooseLevel(l: FigureLevel) {
-    level = l;
-    if (!isLevel(urlLevel)) writeSetting(LEVEL_STORAGE_KEY, l);
-  }
+  // The app's level (#201): this control is a shortcut to the one of Menu › Réglages.
+  const level = $derived<FigureLevel>(levelPref.value);
+  const chooseLevel = (l: FigureLevel) => levelPref.set(l);
 
   const home = untrack(() => observer.latitude);
   // Captures: ?lat= opens at a latitude.

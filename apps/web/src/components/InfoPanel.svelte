@@ -19,6 +19,8 @@
     name,
     belowHorizon,
     rises,
+    sight,
+    lead = [],
     constellation,
     rows,
     bottom,
@@ -31,8 +33,15 @@
     belowHorizon: boolean;
     /** When it rises again, shown with « Sous l'horizon » (#198). */
     rises?: string | undefined;
-    /** Link to the constellation sheet. */
-    constellation?: { name: string; latin: string; onopen: () => void } | undefined;
+    /**
+     * Can it be seen now and where, or when it rises (#201, Découverte and Amateur): replaces the
+     * « Sous l'horizon » line.
+     */
+    sight?: string | null | undefined;
+    /** Short sentences under the name (#201, lib/sheet-rows). */
+    lead?: readonly string[];
+    /** Link to the constellation sheet; the Latin name is left out in Découverte (#201). */
+    constellation?: { name: string; latin?: string | undefined; onopen: () => void } | undefined;
     rows: InfoRow[];
     /** CSS length from the bottom of the screen. */
     bottom: string;
@@ -52,15 +61,20 @@
 >
   <p class="meta">{@render meta()}</p>
   <p class="name"><Designation text={name} /></p>
-  {#if belowHorizon}<p class="meta">
+  {#if sight}<p class="sight">{sight}</p>
+  {:else if belowHorizon}<p class="meta">
       {rises ? $_("sky.belowHorizon.rises", { values: { time: rises } }) : $_("sky.belowHorizon")}
     </p>{/if}
+  {#if lead.length}<p class="lead">{lead.join(" ")}</p>{/if}
   {#if constellation}
     <button
       class="con"
       onclick={constellation.onopen}
       aria-label={$_("constellation.open", { values: { name: constellation.name } })}
-      >{constellation.name} · <i>{constellation.latin}</i> ›</button
+      >{constellation.name}{constellation.latin ? " · " : ""}{#if constellation.latin}<i
+          >{constellation.latin}</i
+        >{/if}
+      ›</button
     >
   {/if}
   <dl class="data">
@@ -112,6 +126,24 @@
     font-size: 30px;
     line-height: 1;
     text-transform: uppercase;
+  }
+  .sight {
+    margin: 0 0 6px;
+    padding-right: 32px;
+    font: 500 11px/1.5 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    color: var(--ast-fg);
+  }
+  /* The Découverte / Amateur sentences: the ISS sheet's lead (#12). */
+  .lead {
+    margin: 0 0 6px;
+    font: 400 15px/1.35 var(--ast-font-serif);
+    font-variant-numeric: lining-nums;
+    color: var(--ast-fg);
+  }
+  .lead + .con {
+    margin-top: 2px;
   }
   button {
     font: 500 11px/1 var(--ast-font-mono);

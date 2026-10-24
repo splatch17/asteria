@@ -80,10 +80,8 @@ export function sectionsFor(view: LayerView): LayerSection[] {
   })).filter((s) => s.entries.length > 0);
 }
 
-/** Public level, shared with the 3D view (setting `asteria.level`). */
-export const LEVEL_STORAGE_KEY = "asteria.level";
-export const isLevel = (v: unknown): v is FigureLevel =>
-  v === "discovery" || v === "amateur" || v === "expert";
+/** Public level: one preference for the whole app (#201, lib/level). */
+export { isLevel } from "./level";
 
 /**
  * Sky-map defaults for a level: the illustrated figures (#96) are on by default in Découverte

@@ -72,6 +72,7 @@ Principe : **deux tons**, comme une gravure imprimée à l'encre parchemin sur p
 
 ### Grand public ↔ professionnels
 - Même langage visuel pour tous. Le niveau **Découverte** montre davantage les figures et moins les données ; le niveau **Expert** fait l'inverse (panneaux de données denses, figures en retrait ou désactivées).
+- **Un seul niveau pour toute l'appli** (#201), réglé dans Menu › Réglages (commande segmentée, le choix inversé) ; Apprendre, « Selon la latitude » et la vue 3D gardent un raccourci qui règle le même. Les fiches de la carte suivent le niveau : en **Découverte**, une ligne « où regarder » en capitales mono à l'encre pleine (« Visible maintenant · ↑ 35° vers le sud-est », « Sous l'horizon · se lève à 23 h 00 »), une ou deux phrases courtes en serif (rang d'éclat, couleur en mots, temps de trajet de la lumière), la distance en mots, aucune coordonnée, pas de nom latin ; en **Amateur**, les mêmes plus magnitude, couleur et distance en lignes de données ; en **Expert**, le bloc de données complet plus hauteur et azimut, sans phrase. Une étoile sans nom ni lettre de Bayer s'appelle « Étoile de Pégase », son HIP dans la ligne du dessus. Captures `docs/design/ux-201/`.
 
 ## 4. Pipeline des figures (artiste + IA)
 1. Source : gravure d'atlas ancien du domaine public (Bayer, Hevelius, Flamsteed/Fortin, *Urania's Mirror*) **ou** création originale.
