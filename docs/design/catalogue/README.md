@@ -19,16 +19,19 @@ d'une étoile affiche aussi « α Ori » et la distance.
 | `mobile-carte-etoile.jpg` | Carte : fiche étoile avec « Voir dans le catalogue » |
 | `mobile-carte-vers-catalogue.jpg` | Après ce toucher : la page d'Orion, Bételgeuse marquée ; « ← » ou Échap rend la carte telle qu'elle était |
 
-## Passer d'une constellation à l'autre (#186)
+## Le catalogue en paquet de cartes (#196, remplace le balayage de #186)
 
-Même réglage de capture. Balayage simulé au doigt (événements tactiles Chromium), doigt encore posé.
+Même réglage de capture (Chromium SwiftShader, 360×780 @3x, tactile). Doigt simulé par des
+événements tactiles Chromium horodatés : le défilement, l'inertie et l'aimantation sont ceux du
+navigateur (CSS scroll-snap), pas une animation de l'application.
 
 | Capture | Ce qu'elle montre |
 |---|---|
-| `mobile-page-voisines.jpg` | Orion ouverte depuis la liste « Toutes » : en bas, les voisines (‹ Ophiuchus · 58 / 88 · Paon ›) |
-| `mobile-page-balayage-court.jpg` | Balayage trop court : la page suit le doigt, « Paon › » encore pâle ; au relâcher, la page revient |
-| `mobile-page-balayage.jpg` | Balayage au-delà du seuil (30 % de la largeur) : « Paon › » à l'encre pleine, la page tournera au relâcher |
-| `mobile-page-arrivee.jpg` | Arrivée sur Paon (marquée consultée) ; voisines mises à jour (‹ Orion · 59 / 88 · Pégase ›) |
-| `mobile-page-depuis-carte.jpg` | Ouverte depuis la carte en Découverte : ordre de la liste par défaut (Essentielles, 19 / 29) |
-| `mobile-page-balayage-reduit.jpg` | Mouvement réduit : la page ne bouge pas, le nom de la voisine apparaît en fondu sur le côté |
-| `mobile-page-balayage-nuit.jpg` | Vision nocturne, Scorpion vers Sculpteur |
+| `mobile-deck-repos.jpg` | Orion ouverte depuis la carte (liste « Toutes » en Amateur) : la carte au centre (filet d'encre, épaisseur tramée 1-bit en bas à droite, index « ORI » dans le coin, ciel bord à bord), les voisines dépassent sur les côtés avec leur ciel ; en bas ‹ Ophiuchus · 58 / 88 · Paon › |
+| `mobile-deck-balayage.jpg` | En plein balayage, doigt posé : les cartes suivent le doigt, Paon arrive avec l'image figée de son ciel (préparée pendant le repos) |
+| `mobile-deck-arrivee.jpg` | Un coup de doigt : le paquet se pose sur Paon (consultée, annoncée « Paon, 59 sur 88 »), ciel vivant |
+| `mobile-deck-lancer-vol.jpg` | Un lancer rapide : le paquet file sur plusieurs cartes ; les cartes jamais posées montrent leur croquis (champ d'étoiles et figure en 2D) |
+| `mobile-deck-lancer.jpg` | Fin du lancer, sept cartes plus loin (Petit Lion, 65 / 88) : ciel vivant |
+| `mobile-deck-etoile.jpg` | Toucher d'une étoile sur la carte (Rigel) : réticule et panneau ; le défilement vertical de la carte reste le sien |
+| `mobile-deck-nuit.jpg` | Vision nocturne, Scorpion |
+| `desktop-deck.jpg` | Bureau 1280×800 : le même paquet, les voisines plus visibles (cartes de 560 px au plus) ; ← → au clavier, un clic sur une voisine l'amène au centre |

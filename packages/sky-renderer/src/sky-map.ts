@@ -1186,6 +1186,26 @@ export class SkyMap {
     cancelAnimationFrame(this.raf);
   }
 
+  /**
+   * Draws the current state at once, synchronously, as it will look once settled: a view
+   * animation jumps to its end and the figures' reveal is complete. A caller copying the canvases
+   * right after (drawImage) gets this very frame, without preserveDrawingBuffer: the catalogue
+   * deck (#196) shares one map between its cards this way and keeps still pictures of the others.
+   */
+  renderNow(): void {
+    if (this.contextLost) return;
+    if (this.animation) {
+      Object.assign(this.view, this.animation.to);
+      this.animation = null;
+    }
+    this.velocity = { az: 0, alt: 0 };
+    this.resize();
+    this.clampView();
+    this.figureLayer.finishReveal();
+    this.render();
+    this.dirty = false;
+  }
+
   /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
   dispose(): void {
     this.stop();
