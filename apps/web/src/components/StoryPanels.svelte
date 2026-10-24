@@ -60,8 +60,12 @@
   .panel-block {
     margin-top: 12px;
     --ast-panel-pad: 12px;
-    font-size: 13px;
-    line-height: 1.6;
+  }
+  /* Reading text (#208); the panel titles keep their mono capitals. */
+  .panel-block p,
+  .panel-block li {
+    max-width: var(--ast-text-measure);
+    font: 400 var(--ast-text-size) / var(--ast-text-leading) var(--ast-font-text);
   }
   p {
     margin: 0 0 10px;
