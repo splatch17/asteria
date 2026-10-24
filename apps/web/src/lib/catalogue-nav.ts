@@ -1,9 +1,8 @@
 /**
- * Going from one constellation's page to the next in the catalogue (#186): the order the pages
- * follow (the list as filtered and searched, or the catalogue's default list when the page was
- * opened from the map), a page's neighbours, and the horizontal swipe that turns the pages —
- * when it takes over from scrolling and from taps, how far the page follows the finger and
- * whether, on release, it turns or springs back.
+ * Going from one constellation's card to the next in the catalogue (#186, #196): the order the
+ * cards follow (the list as filtered and searched, or the catalogue's default list when the page
+ * was opened from the map), a card's neighbours, which card a scroll offset centres, the cards
+ * kept in the page around it and the arrow keys. The swipe itself is the browser's (scroll-snap).
  */
 import {
   defaultFilter,
@@ -60,81 +59,36 @@ export function neighbours<E extends { abbr: string }>(
 
 export type Direction = "previous" | "next";
 
-/** Movement (CSS px) before a gesture is read as a swipe or a scroll; below it, still a tap. */
-export const SLOP = 10;
-/** Strip along each side of the screen (CSS px) left to the system's back gesture (Android). */
-export const EDGE = 28;
+/**
+ * The card centred in the deck (#196) for a horizontal scroll offset, `pitch` being the distance
+ * between two cards (a card's width and the gap): the nearest, clamped to the deck.
+ */
+export function cardAt(scrollLeft: number, pitch: number, count: number): number {
+  if (!(pitch > 0) || count < 1) return 0;
+  return Math.min(count - 1, Math.max(0, Math.round(scrollLeft / pitch)));
+}
 
-export type GestureKind = "pending" | "horizontal" | "vertical";
+/** Cards kept in the page on each side of the centred one; the others are empty slots. */
+export const DECK_RADIUS = 2;
+
+/** First and last index of the cards kept in the page around `index`. */
+export function deckWindow(
+  index: number,
+  count: number,
+  radius = DECK_RADIUS,
+): { from: number; to: number } {
+  return { from: Math.max(0, index - radius), to: Math.min(count - 1, index + radius) };
+}
 
 /**
- * What a gesture is, from its movement since it started: undecided within SLOP, then decided once
- * by its initial direction — sideways turns the page, anything steeper is the page's scroll (the
- * browser, which only pans vertically here, makes the same call).
+ * The cards whose still picture of the sky is prepared once the deck has settled on `index`:
+ * the nearest first, the next before the previous (the way a deck is mostly read).
  */
-export function classifyGesture(dx: number, dy: number, slop = SLOP): GestureKind {
-  if (Math.hypot(dx, dy) < slop) return "pending";
-  return Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
-}
-
-/** A touch starting this close to a side of the screen belongs to the system's back gesture. */
-export function inEdgeZone(x: number, screenWidth: number, edge = EDGE): boolean {
-  return x < edge || x > screenWidth - edge;
-}
-
-/** The page a swipe of `dx` CSS px goes towards: right to left turns to the next page. */
-export const directionOf = (dx: number): Direction => (dx < 0 ? "next" : "previous");
-
-/** Share of a movement kept when there is no page on that side: the page resists, then returns. */
-export const RESISTANCE = 0.2;
-
-/** How far the page follows the finger: all the way towards a neighbour, a little past an end. */
-export function dragOffset(dx: number, has: Readonly<Record<Direction, boolean>>): number {
-  return has[directionOf(dx)] ? dx : dx * RESISTANCE;
-}
-
-/** A release past this share of the page's width turns it. */
-export const DISTANCE = 0.3;
-/** …or a flick this fast (CSS px per ms) and this long (CSS px). */
-export const FLICK_SPEED = 0.45;
-export const FLICK_DISTANCE = 32;
-
-/**
- * On release, the page a swipe turns to, or null to spring back: far enough (DISTANCE of the
- * width) or a quick flick, not thrown back the other way, with a page on that side.
- */
-export function swipeOutcome(
-  dx: number,
-  velocity: number,
-  width: number,
-  has: Readonly<Record<Direction, boolean>>,
-): Direction | null {
-  if (dx === 0) return null;
-  const dir = directionOf(dx);
-  if (!has[dir]) return null;
-  const againstMovement = velocity !== 0 && Math.sign(velocity) !== Math.sign(dx);
-  if (againstMovement && Math.abs(velocity) > FLICK_SPEED / 3) return null;
-  const far = Math.abs(dx) >= DISTANCE * width;
-  const flick =
-    Math.abs(dx) >= FLICK_DISTANCE && Math.abs(velocity) >= FLICK_SPEED && !againstMovement;
-  return far || flick ? dir : null;
-}
-
-/** Recent positions of a moving finger, for its speed at release. */
-export interface Sample {
-  x: number;
-  t: number;
-}
-/** Window of the speed at release (ms): the last movement only, not the whole swipe. */
-export const SPEED_WINDOW = 80;
-
-/** Horizontal speed (CSS px per ms) over the last SPEED_WINDOW ms of the samples, 0 if unknown. */
-export function releaseVelocity(samples: readonly Sample[], window = SPEED_WINDOW): number {
-  const last = samples.at(-1);
-  if (!last) return 0;
-  const first = samples.find((s) => last.t - s.t <= window) ?? last;
-  const dt = last.t - first.t;
-  return dt > 0 ? (last.x - first.x) / dt : 0;
+export function stillOrder(index: number, count: number, radius = DECK_RADIUS): number[] {
+  const order: number[] = [];
+  for (let d = 1; d <= radius; d++)
+    for (const i of [index + d, index - d]) if (i >= 0 && i < count) order.push(i);
+  return order;
 }
 
 /**

@@ -2,18 +2,12 @@ import { describe, expect, it } from "vitest";
 import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
 import type { CatalogueEntry } from "./catalogue";
 import {
-  EDGE,
-  FLICK_SPEED,
-  RESISTANCE,
   arrowDirection,
-  classifyGesture,
-  directionOf,
-  dragOffset,
-  inEdgeZone,
+  cardAt,
+  deckWindow,
   neighbours,
   pageSequence,
-  releaseVelocity,
-  swipeOutcome,
+  stillOrder,
 } from "./catalogue-nav";
 
 const fr = constellationNames("fr");
@@ -23,7 +17,6 @@ const ENTRIES: CatalogueEntry[] = Object.keys(CONSTELLATION_LATIN).map((abbr) =>
   latin: CONSTELLATION_LATIN[abbr]!,
 }));
 const abbrs = (list: readonly CatalogueEntry[]) => list.map((e) => e.abbr);
-const BOTH = { previous: true, next: true };
 
 describe("page sequence", () => {
   it("follows the catalogue list as filtered and searched", () => {
@@ -110,75 +103,31 @@ describe("neighbours", () => {
   });
 });
 
-describe("gesture", () => {
-  it("stays a tap within the slop", () => {
-    expect(classifyGesture(0, 0)).toBe("pending");
-    expect(classifyGesture(6, -6)).toBe("pending");
+describe("deck", () => {
+  const PITCH = 328; // a 320 px card and an 8 px gap
+  it("centres the nearest card", () => {
+    expect(cardAt(0, PITCH, 88)).toBe(0);
+    expect(cardAt(PITCH * 57, PITCH, 88)).toBe(57);
+    expect(cardAt(PITCH * 57 + 150, PITCH, 88)).toBe(57); // less than half way
+    expect(cardAt(PITCH * 57 + 170, PITCH, 88)).toBe(58);
   });
-  it("is decided by its initial direction", () => {
-    expect(classifyGesture(14, 3)).toBe("horizontal");
-    expect(classifyGesture(-14, 9)).toBe("horizontal");
-    expect(classifyGesture(4, 14)).toBe("vertical");
-    expect(classifyGesture(-10, -10)).toBe("vertical"); // 45°: the scroll wins
+  it("stays in the deck (overscroll, rounding, no layout yet)", () => {
+    expect(cardAt(-40, PITCH, 88)).toBe(0);
+    expect(cardAt(PITCH * 120, PITCH, 88)).toBe(87);
+    expect(cardAt(500, 0, 88)).toBe(0);
+    expect(cardAt(500, PITCH, 0)).toBe(0);
   });
-  it("leaves the sides of the screen to the system's back gesture", () => {
-    expect(inEdgeZone(5, 360)).toBe(true);
-    expect(inEdgeZone(EDGE - 1, 360)).toBe(true);
-    expect(inEdgeZone(EDGE, 360)).toBe(false);
-    expect(inEdgeZone(180, 360)).toBe(false);
-    expect(inEdgeZone(360 - EDGE + 1, 360)).toBe(true);
+  it("keeps two cards on each side in the page", () => {
+    expect(deckWindow(10, 88)).toEqual({ from: 8, to: 12 });
+    expect(deckWindow(0, 88)).toEqual({ from: 0, to: 2 });
+    expect(deckWindow(87, 88)).toEqual({ from: 85, to: 87 });
+    expect(deckWindow(0, 1)).toEqual({ from: 0, to: 0 });
   });
-  it("turns to the next page right to left", () => {
-    expect(directionOf(-40)).toBe("next");
-    expect(directionOf(40)).toBe("previous");
-  });
-});
-
-describe("drag offset", () => {
-  it("follows the finger towards a neighbour", () => {
-    expect(dragOffset(-120, BOTH)).toBe(-120);
-    expect(dragOffset(80, BOTH)).toBe(80);
-  });
-  it("resists past an end", () => {
-    expect(dragOffset(-100, { previous: true, next: false })).toBeCloseTo(-100 * RESISTANCE);
-    expect(dragOffset(100, { previous: false, next: true })).toBeCloseTo(100 * RESISTANCE);
-  });
-});
-
-describe("swipe outcome", () => {
-  const W = 360;
-  it("turns past 30 % of the width, springs back before", () => {
-    expect(swipeOutcome(-120, 0, W, BOTH)).toBe("next");
-    expect(swipeOutcome(120, 0, W, BOTH)).toBe("previous");
-    expect(swipeOutcome(-90, 0, W, BOTH)).toBeNull();
-    expect(swipeOutcome(0, 0, W, BOTH)).toBeNull();
-  });
-  it("turns on a quick flick, even short", () => {
-    expect(swipeOutcome(-40, -FLICK_SPEED - 0.1, W, BOTH)).toBe("next");
-    expect(swipeOutcome(20, FLICK_SPEED + 0.5, W, BOTH)).toBeNull(); // too short: a jitter
-  });
-  it("springs back when thrown back the other way", () => {
-    expect(swipeOutcome(-150, 0.6, W, BOTH)).toBeNull();
-  });
-  it("never turns past an end", () => {
-    expect(swipeOutcome(-300, -2, W, { previous: true, next: false })).toBeNull();
-    expect(swipeOutcome(300, 2, W, { previous: false, next: true })).toBeNull();
-  });
-});
-
-describe("release velocity", () => {
-  it("measures the last movement only", () => {
-    const samples = [
-      { x: 300, t: 0 },
-      { x: 290, t: 100 }, // slow start
-      { x: 250, t: 140 },
-      { x: 200, t: 180 },
-    ];
-    expect(releaseVelocity(samples)).toBeCloseTo((200 - 290) / 80);
-  });
-  it("is zero without movement", () => {
-    expect(releaseVelocity([])).toBe(0);
-    expect(releaseVelocity([{ x: 10, t: 5 }])).toBe(0);
+  it("prepares the nearest still pictures first, the next before the previous", () => {
+    expect(stillOrder(10, 88)).toEqual([11, 9, 12, 8]);
+    expect(stillOrder(0, 88)).toEqual([1, 2]);
+    expect(stillOrder(87, 88)).toEqual([86, 85]);
+    expect(stillOrder(0, 1)).toEqual([]);
   });
 });
 

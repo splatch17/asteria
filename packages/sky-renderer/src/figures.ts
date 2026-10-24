@@ -372,6 +372,11 @@ export class FigureLayer {
     return this.state === "ready";
   }
 
+  /** The set is being fetched: a picture taken now would lack the figures. */
+  get loading(): boolean {
+    return this.state === "loading";
+  }
+
   /** Switches the layer; the first time, loads the set (failure: layer silently unavailable). */
   setEnabled(on: boolean): void {
     if (on === this.enabled) return;
@@ -415,6 +420,12 @@ export class FigureLayer {
     u.uReveal!.value = easeOut(reveal);
     u.uSelReveal!.value = easeOut(sel);
     return reveal < 1 || (sel < 1 && this.selected !== null);
+  }
+
+  /** Ends the reveals under way: the next frame draws the figures fully revealed. */
+  finishReveal(): void {
+    this.revealStart = -Infinity;
+    this.selStart = -Infinity;
   }
 
   /** Stops a pending load; GPU resources are freed with the scene (disposeObjects). */
