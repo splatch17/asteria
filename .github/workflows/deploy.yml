@@ -46,6 +46,9 @@ jobs:
       - id: stars
         run: python packages/sky-data/build_stars.py
         continue-on-error: true
+        # Each VizieR query may retry for ~30 min; past this, fall back below (queries that
+        # answered are still cached for the next run).
+        timeout-minutes: 25
         env:
           PYTHONIOENCODING: utf-8
       # VizieR down (#212): ship the star catalogue already online rather than block the app. The
