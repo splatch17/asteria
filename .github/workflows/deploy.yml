@@ -43,9 +43,23 @@ jobs:
             sky-raw-
       - id: raw-before
         run: echo "files=$(find packages/sky-data/raw -type f -printf '%P %s\n' 2>/dev/null | sort | sha1sum)" >> "$GITHUB_OUTPUT"
-      - run: python packages/sky-data/build_stars.py
+      - id: stars
+        run: python packages/sky-data/build_stars.py
+        continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
+      # VizieR down (#212): ship the star catalogue already online rather than block the app. The
+      # catalogue only changes with build_stars.py or its sources, so the previous build is the same
+      # data; the scheduled runs keep querying VizieR and refresh it once it answers.
+      - if: steps.stars.outcome == 'failure'
+        env:
+          SITE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+        run: |
+          echo "::warning::build_stars.py failed (VizieR?): reusing the star catalogue from $SITE"
+          mkdir -p packages/sky-data/out
+          for f in stars.bin star-strings.json constellation-lines.json; do
+            curl -fsS --retry 3 -o "packages/sky-data/out/$f" "$SITE/data/$f"
+          done
       # Deep-sky objects (OpenNGC pinned release, #100); -I: the downloaded tables are untrusted data.
       - run: python -I packages/sky-data/build_deepsky.py
         env:
