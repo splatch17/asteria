@@ -24,3 +24,13 @@ export const GAMES: readonly GameEntry[] = [
   { id: "whereIsIt", items: "con", available: true, length: 10, points: true },
   { id: "nameStar", items: "star", available: true, length: 10 },
 ];
+
+/**
+ * The game played last (#176), for the « Reprendre » card that leads the Apprendre screen: it plays
+ * that game again with its remembered settings (`settingsKey`), in one tap.
+ */
+export const LAST_GAME_KEY = "asteria.games.last";
+
+/** The last game played, if it is still offered. */
+export const isResumable = (v: unknown): v is string =>
+  typeof v === "string" && GAMES.some((g) => g.id === v && g.available);

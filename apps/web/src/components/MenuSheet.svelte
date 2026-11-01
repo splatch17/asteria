@@ -910,9 +910,6 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
   }
-  .group {
-    display: contents;
-  }
   /* Place and time: two readout lines. */
   .line {
     display: flex;

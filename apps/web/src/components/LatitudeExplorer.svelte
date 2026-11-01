@@ -69,6 +69,7 @@
   import { HOME_MIN_ALTITUDE, HOME_MIN_SHARE, visibleFromLatitude } from "../lib/games/visibility";
   import { level as levelPref } from "../lib/level-store.svelte";
   import Icon from "./Icon.svelte";
+  import { historyLayer } from "../lib/back.svelte";
 
   let {
     stars,
@@ -385,6 +386,8 @@
   // --- The enlarged map (#197): the whole screen, turned by a drag, zoomed by a pinch.
   let expanded = $state(false);
   let zoom = $state(1);
+  // Android back reduces the enlarged map first (#176), then closes the explorer (App.svelte).
+  historyLayer("latitude-map", () => expanded, () => void collapseMap());
   let expandButton = $state<HTMLButtonElement>();
   let collapseButton = $state<HTMLButtonElement>();
   async function expandMap() {

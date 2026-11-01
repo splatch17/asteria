@@ -1,20 +1,17 @@
 <script lang="ts">
-  // Instruments of the sky map, top right (#138): the search, the mini-globe (#38) and a small
+  // Instruments of the sky map, top right (#138): the mini-globe (#38) and a small
   // engraved compass, stacked on one axis under the safe area. With a phone compass, it is a real
   // one (#144): the needle points to true north as the phone turns; otherwise it follows the
-  // view's heading. Either way a tap turns the view to face north. Only on the sky map; faded out in immersive
-  // mode like the rest of the interface. The mini-globe is passed in (it keeps its own state).
+  // view's heading. Either way a tap turns the view to face north. Only on the sky map, and only
+  // while the sky moves (a drag, a pinch, Viser; #176): it fades out 2 s after, and stays out in
+  // immersive mode. The mini-globe is passed in (it keeps its own state).
   import type { Snippet } from "svelte";
   import { _ } from "@asteria/ui";
   import { compassHeading, compassPoint, needleRotation } from "../lib/hud";
-  import Icon from "./Icon.svelte";
 
   let {
     shown,
     hidden = false,
-    searchOpen,
-    onsearch,
-    searchButton = $bindable(),
     azimuth,
     roll,
     phoneHeading = null,
@@ -25,11 +22,8 @@
   }: {
     /** Sky map at rest (not the Earth view, not flying). */
     shown: boolean;
-    /** Immersive mode: faded out and out of the way. */
+    /** At rest or in immersive mode: faded out and out of the way. */
     hidden?: boolean;
-    searchOpen: boolean;
-    onsearch: () => void;
-    searchButton?: HTMLButtonElement | undefined;
     /** View heading, degrees from north through east, and roll (sensor pointing). */
     azimuth: number;
     roll: number;
@@ -52,17 +46,6 @@
 </script>
 
 <div class="tools" class:hidden class:off={!shown} bind:this={element}>
-  <button
-    class="round"
-    bind:this={searchButton}
-    onclick={onsearch}
-    aria-haspopup="dialog"
-    aria-expanded={searchOpen}
-    aria-label={$_("search.open")}
-    title={$_("search.open")}
-  >
-    <Icon name="search" size={18} />
-  </button>
   {@render globe?.()}
   <button
     class="round compass"
@@ -151,10 +134,6 @@
   .round:focus-visible {
     outline: 1px solid var(--ast-fg);
     outline-offset: 2px;
-  }
-  .round[aria-expanded="true"] {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
   }
   /* The compass has its own ring: the button's border stays off. */
   .compass {

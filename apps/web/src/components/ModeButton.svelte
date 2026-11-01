@@ -42,6 +42,7 @@
     aria-label={$_("modes.button", { values: { mode } })}
     title={$_("menu.open")}
     data-corner="button"
+    data-hud
   >
     <Icon name="menu" size={22} />
     <span class="label" aria-hidden="true">{mode}</span>
@@ -49,7 +50,7 @@
   {#if date || pointing}
     <div class="chips">
       {#if date}
-        <div class="chip frame" data-chip="date">
+        <div class="chip frame" data-chip="date" data-hud>
           <button class="chip-main" onclick={date.ontime} aria-label={$_("chip.date", { values: { time: date.time } })}>
             <span class="chip-text">{date.time}</span>
           </button>
@@ -65,6 +66,7 @@
         <button
           class="chip frame chip-main on"
           data-chip="pointing"
+          data-hud
           onclick={pointing.onstop}
           aria-label={$_("chip.pointing.stop")}
           title={$_("chip.pointing.stop")}
@@ -79,11 +81,14 @@
 </div>
 
 <style>
+  /* Only the button and the chips take taps: the sky stays touchable around them. */
   .corner {
+    flex: 1;
     display: flex;
     align-items: flex-end;
     gap: 8px;
     min-width: 0;
+    pointer-events: none;
   }
   .corner.floating {
     position: fixed;
@@ -91,9 +96,9 @@
     left: max(var(--ast-corner-inset), env(safe-area-inset-left));
     right: max(var(--ast-corner-inset), env(safe-area-inset-right));
     bottom: max(var(--ast-corner-inset), env(safe-area-inset-bottom));
-    pointer-events: none;
   }
-  .corner > * {
+  .mode-button,
+  .chip {
     pointer-events: auto;
   }
   .mode-button {
