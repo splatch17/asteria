@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { GAMES } from "./games/catalog";
 import { DITHER_RES, DITHER_STEPS, VIGNETTE_SIZE, vignette } from "./vignettes";
 
+/** The mode tiles of the sheet (#176). */
+const MODE_IDS = ["mode-observe", "mode-orbits", "mode-learn"];
+
 /** Pixel rectangles of a path made of `M x y h w v h h -w z` runs. */
 function runs(d: string): { x: number; y: number; w: number; h: number }[] {
   return [...d.matchAll(/M([\d.]+) ([\d.]+)h([\d.]+)v([\d.]+)h-[\d.]+z/g)].map((m) => ({
@@ -13,7 +16,7 @@ function runs(d: string): { x: number; y: number; w: number; h: number }[] {
 }
 
 describe("Apprendre vignettes (#185)", () => {
-  const ids = ["catalogue", ...GAMES.map((g) => g.id), "someFutureGame"];
+  const ids = ["catalogue", ...GAMES.map((g) => g.id), "someFutureGame", ...MODE_IDS];
 
   it("draws every card, and a starry sky for a game without its own scene", () => {
     for (const id of ids) {

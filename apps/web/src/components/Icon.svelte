@@ -171,9 +171,13 @@
     <path d="M8 1 V4.5 M8 11.5 V15 M1 8 H4.5 M11.5 8 H15" />
     <circle cx="8" cy="8" r="1.2" class="fill" />
   {:else if name === "menu"}
-    <!-- Three engraved rules, the last one shorter, and a star: the menu (#130). -->
-    <path d="M2 4 H14 M2 8 H14 M2 12 H9" />
-    <path d={sparkle(12.6, 12, 2.1)} class="fill" />
+    <!-- Three engraved rules of one length: the single button (#176, the owner's choice). -->
+    <path d="M2 4 H14 M2 8 H14 M2 12 H14" />
+  {:else if name === "toNow"}
+    <!-- An arrow turning back round a dot: back to now (#176, the ↺ of the date chip). -->
+    <path d="M3.2 6.2 A5.2 5.2 0 1 1 3.6 10.6" />
+    <path d="M1.4 3.6 L3.2 6.4 L6 4.8" />
+    <circle cx="8.4" cy="8.4" r="1.3" class="fill" />
   {:else if name === "help"}
     <!-- A question mark in a ring: help (#130). -->
     <circle cx="8" cy="8" r="6.2" />
