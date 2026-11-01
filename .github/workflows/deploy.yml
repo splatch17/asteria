@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # GitHub evicts a cache unused for 7 days; without it the next deploy re-queries VizieR,
+  # whose three mirrors can all be down at once (#212). Two runs a week keep it alive.
+  schedule:
+    - cron: "41 4 * * 1,4"
 
 permissions:
   contents: read
@@ -28,13 +32,17 @@ jobs:
       - run: pip install -r packages/sky-data/requirements.txt pillow
 
       # Downloaded catalogues are cached; the pipeline re-validates its output every run.
-      - uses: actions/cache@v4
+      # A new key (any data script changed) still starts from the last downloads: re-querying
+      # Gaia takes long and its archive can fail (#115). Raw files are named after their source.
+      - uses: actions/cache/restore@v4
         with:
           path: packages/sky-data/raw
-          key: sky-raw-${{ hashFiles('packages/sky-data/build_stars.py', 'packages/sky-data/build_deepsky.py', 'packages/sky-data/build_earth.py', 'packages/sky-data/build_space.py', 'packages/sky-data/build_figures.py', 'packages/sky-data/build_milkyway.py') }}
-          # A new key (any data script changed) still starts from the last downloads: re-querying
-          # Gaia takes long and its archive can fail (#115). Raw files are named after their source.
-          restore-keys: sky-raw-
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_*.py') }}-${{ github.run_id }}
+          restore-keys: |
+            sky-raw-${{ hashFiles('packages/sky-data/build_*.py') }}-
+            sky-raw-
+      - id: raw-before
+        run: echo "files=$(find packages/sky-data/raw -type f -printf '%P %s\n' 2>/dev/null | sort | sha1sum)" >> "$GITHUB_OUTPUT"
       - run: python packages/sky-data/build_stars.py
         env:
           PYTHONIOENCODING: utf-8
@@ -62,6 +70,17 @@ jobs:
         continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
+      # Saved even when a download failed, so the sources that did answer are not asked again on
+      # the next attempt (#212), and only when raw/ changed. A run-specific key: GitHub never
+      # overwrites an existing cache entry.
+      - id: raw-after
+        if: always() && steps.raw-before.outcome == 'success'
+        run: echo "files=$(find packages/sky-data/raw -type f -printf '%P %s\n' 2>/dev/null | sort | sha1sum)" >> "$GITHUB_OUTPUT"
+      - if: always() && steps.raw-after.outcome == 'success' && steps.raw-after.outputs.files != steps.raw-before.outputs.files
+        uses: actions/cache/save@v4
+        with:
+          path: packages/sky-data/raw
+          key: sky-raw-${{ hashFiles('packages/sky-data/build_*.py') }}-${{ github.run_id }}
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
