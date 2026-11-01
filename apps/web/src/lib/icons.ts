@@ -34,6 +34,7 @@ export type IconName =
   | "recentre"
   | "frame"
   | "menu"
+  | "toNow"
   | "help"
   | "north"
   | "hide"
