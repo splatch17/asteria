@@ -102,12 +102,13 @@
   .tools.off {
     display: none;
   }
+  /* At rest the instruments leave slowly (#176): they fade, they do not blink away. */
   .tools.hidden {
     opacity: 0;
     visibility: hidden;
     transition:
-      opacity 220ms var(--ast-ease-out),
-      visibility 0s 220ms;
+      opacity 600ms var(--ast-ease-out),
+      visibility 0s 600ms;
   }
   @media (prefers-reduced-motion: reduce) {
     .tools,
