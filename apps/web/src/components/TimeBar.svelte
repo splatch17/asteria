@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Bottom line of the interface (#130): play/pause and the displayed date (a tap unfolds the
-  // time slider above it), then sensor pointing where it works in the field, then the menu.
-  // The search is at the top right of the sky map (#138); everything else is in the menu.
+  // The time line (#130), unfolded from the single button (#176): opened from the sheet's
+  // « Heure » row or the date chip, it rises from the button's corner, and its first cell is the
+  // button itself, now a × that folds it. Then play/pause and the date shown; the slider, the range
+  // and « Maintenant » unfold above it.
   import type { Snippet } from "svelte";
   import { _ } from "@asteria/ui";
   import Icon from "./Icon.svelte";
@@ -12,13 +13,8 @@
     time,
     live,
     relative,
-    timeOpen,
-    ontime,
-    pointing,
-    onpoint,
-    menuOpen,
-    onmenu,
-    menuButton = $bindable(),
+    onfold,
+    foldButton = $bindable(),
     lineElement = $bindable(),
     expanded,
   }: {
@@ -29,102 +25,85 @@
     live: boolean;
     /** Signed offset from now, when not live. */
     relative: string;
-    timeOpen: boolean;
-    /** Unfolds or folds the time controls. */
-    ontime: () => void;
-    /** Direct sensor pointing button: null when not offered here (it stays in the menu). */
-    pointing: boolean | null;
-    onpoint: () => void;
-    menuOpen: boolean;
-    onmenu: () => void;
-    menuButton?: HTMLButtonElement | undefined;
+    /** Folds the time line (the button's place). */
+    onfold: () => void;
+    foldButton?: HTMLButtonElement | undefined;
     lineElement?: HTMLElement | undefined;
-    /** Time controls shown above the line when unfolded. */
+    /** Time controls shown above the line. */
     expanded: Snippet;
   } = $props();
 </script>
 
-{#if timeOpen}
-  <div class="expanded" id="time-controls">{@render expanded()}</div>
-{/if}
-<div class="line frame" bind:this={lineElement}>
-  <button
-    class="icon"
-    onclick={ontoggle}
-    aria-label={playing ? $_("time.pause") : $_("time.play")}
-    title={playing ? $_("time.pause") : $_("time.play")}
-    aria-pressed={playing}
-  >
-    <Icon name={playing ? "pause" : "play"} />
-  </button>
-  <button
-    class="when"
-    onclick={ontime}
-    aria-expanded={timeOpen}
-    aria-controls="time-controls"
-    title={timeOpen ? $_("time.collapse") : $_("time.expand")}
-  >
-    <span class="date">{time}</span>
-    <span class="state" class:live>{live ? `● ${$_("time.live")}` : relative}</span>
-    <span class="sr-only">{timeOpen ? $_("time.collapse") : $_("time.expand")}</span>
-  </button>
-  {#if pointing !== null}
+<div class="timeline" id="time-controls">
+  <div class="expanded">{@render expanded()}</div>
+  <div class="line frame" bind:this={lineElement}>
+    <button
+      class="fold"
+      bind:this={foldButton}
+      onclick={onfold}
+      aria-expanded="true"
+      aria-controls="time-controls"
+      aria-label={$_("modes.fold")}
+      title={$_("modes.fold")}
+    >
+      <span aria-hidden="true">×</span>
+    </button>
     <button
       class="icon"
-      onclick={onpoint}
-      aria-pressed={pointing}
-      aria-label={$_("pointing.toggle")}
-      title={$_("pointing.toggle")}
+      onclick={ontoggle}
+      aria-label={playing ? $_("time.pause") : $_("time.play")}
+      title={playing ? $_("time.pause") : $_("time.play")}
+      aria-pressed={playing}
     >
-      <Icon name="aim" size={18} />
+      <Icon name={playing ? "pause" : "play"} />
     </button>
-  {/if}
-  <button
-    class="icon"
-    bind:this={menuButton}
-    onclick={onmenu}
-    aria-haspopup="dialog"
-    aria-expanded={menuOpen}
-    aria-controls="main-menu"
-    aria-label={$_("menu.open")}
-    title={$_("menu.open")}
-  >
-    <Icon name="menu" size={18} />
-  </button>
+    <p class="when" aria-live="off">
+      <span class="date">{time}</span>
+      <span class="state" class:live>{live ? `● ${$_("time.live")}` : relative}</span>
+    </p>
+  </div>
 </div>
 
 <style>
+  .timeline {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    max-width: 420px;
+    transform-origin: bottom left;
+    animation: unfold 180ms var(--ast-ease-out);
+  }
+  /* From the button: the line grows to the right, the controls rise above it. */
+  @keyframes unfold {
+    from {
+      opacity: 0;
+      clip-path: inset(0 85% 0 0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .timeline {
+      animation: none;
+    }
+  }
   .expanded {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    width: 100%;
-    animation: unfold 160ms var(--ast-ease-out);
-  }
-  @keyframes unfold {
-    from {
-      opacity: 0;
-      transform: translateY(6px);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .expanded {
-      animation: none;
-    }
   }
   .line {
     display: flex;
     align-items: stretch;
     width: 100%;
-    max-width: 420px;
-    height: 44px;
+    height: var(--ast-corner-size);
+    box-sizing: border-box;
   }
   button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 44px;
     border: 0;
     border-radius: var(--ast-radius);
     background: transparent;
@@ -136,29 +115,33 @@
     outline: 1px solid var(--ast-fg);
     outline-offset: -3px;
   }
-  button + button {
-    border-left: 1px solid var(--ast-hairline);
+  .fold {
+    flex: none;
+    width: calc(var(--ast-corner-size) - 2px);
+    border-right: 1px solid var(--ast-control-border);
+    font: 400 22px/1 var(--ast-font-mono);
   }
   .icon {
     flex: none;
-    width: 44px;
+    width: 52px;
+    border-right: 1px solid var(--ast-hairline);
   }
   button[aria-pressed="true"] {
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
-  /* Date and live state, stacked: the whole line is the target that unfolds the slider. */
+  /* Date and live state, stacked. */
   .when {
     flex: 1;
     min-width: 0;
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    padding: 0 8px 0 10px;
-    text-align: left;
-  }
-  .when[aria-expanded="true"] {
-    background: color-mix(in srgb, var(--ast-fg) 10%, transparent);
+    justify-content: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0 8px 0 12px;
+    font: 500 11px/1 var(--ast-font-mono);
+    color: var(--ast-fg);
   }
   .date,
   .state {

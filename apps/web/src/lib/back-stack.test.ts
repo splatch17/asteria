@@ -96,6 +96,20 @@ describe("Android back closes the layer on top (#176)", () => {
     expect(s.ids).toEqual([]);
   });
 
+  it("takes back two layers closed in a row with one traversal at a time", () => {
+    const h = new FakeHistory();
+    const s = new BackStack(h);
+    const closed: string[] = [];
+    s.open("orbits", () => closed.push("orbits"));
+    s.open("sheet", () => closed.push("sheet"));
+    // « Observer » in the sheet: the sheet closes, then the Earth view.
+    s.closed("sheet");
+    s.closed("orbits");
+    h.run(s);
+    expect(h.index).toBe(0);
+    expect(closed).toEqual([]);
+  });
+
   it("steps back over the entries of a reload, without closing anything", () => {
     const h = new FakeHistory();
     h.pushState({});

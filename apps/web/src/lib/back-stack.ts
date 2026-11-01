@@ -21,9 +21,14 @@ export const BACK_STATE = "asteria-layer";
 
 export class BackStack {
   private stack: Entry[] = [];
-  /** Traversals asked by `closed` whose popstate has not arrived yet. */
-  private pending = 0;
-  /** Pushes waiting for those traversals (a push before them would be undone). */
+  /** A traversal asked by `closed` or `rewind` whose popstate has not arrived yet. */
+  private pending = false;
+  /**
+   * Entries to take back once it has: one traversal at a time, since a second `history.go`
+   * issued before the first is done may be dropped by the browser.
+   */
+  private deferred = 0;
+  /** Pushes waiting for the traversals (a push before them would be undone). */
   private queued = 0;
 
   constructor(private readonly history: HistoryLike) {}
@@ -37,7 +42,7 @@ export class BackStack {
   open(id: string, close: () => void): void {
     if (this.stack.some((e) => e.id === id)) return;
     this.stack.push({ id, close });
-    if (this.pending > 0) this.queued++;
+    if (this.pending) this.queued++;
     else this.history.pushState({ [BACK_STATE]: this.stack.length }, "");
   }
 
@@ -50,26 +55,35 @@ export class BackStack {
     if (i < 0) return; // already closed by back
     const n = this.stack.length - i;
     this.stack.splice(i);
-    // Entries still waiting to be pushed are simply dropped.
+    // The layers on top whose entries still wait to be pushed are simply dropped.
     const dropped = Math.min(n, this.queued);
     this.queued -= dropped;
-    if (n > dropped) {
-      this.pending++;
-      this.history.go(-(n - dropped));
-    }
+    this.goBack(n - dropped);
   }
 
   /** Steps back over `n` entries left by an earlier page (a reload with layers open). */
   rewind(n: number): void {
-    this.pending++;
+    this.goBack(n);
+  }
+
+  private goBack(n: number): void {
+    if (n <= 0) return;
+    if (this.pending) {
+      this.deferred += n;
+      return;
+    }
+    this.pending = true;
     this.history.go(-n);
   }
 
   /** The browser went back (popstate). */
   onPop(): void {
-    if (this.pending > 0) {
-      this.pending--;
-      if (this.pending === 0) this.flush();
+    if (this.pending) {
+      this.pending = false;
+      const more = this.deferred;
+      this.deferred = 0;
+      if (more > 0) this.goBack(more);
+      else this.flush();
       return;
     }
     const top = this.stack.pop();
