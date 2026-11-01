@@ -92,8 +92,7 @@ export class BackStack {
 
   private flush(): void {
     const base = this.stack.length - this.queued;
-    for (let k = 1; k <= this.queued; k++)
-      this.history.pushState({ [BACK_STATE]: base + k }, "");
+    for (let k = 1; k <= this.queued; k++) this.history.pushState({ [BACK_STATE]: base + k }, "");
     this.queued = 0;
   }
 }

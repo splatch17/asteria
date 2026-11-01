@@ -51,7 +51,11 @@
     <div class="chips">
       {#if date}
         <div class="chip frame" data-chip="date" data-hud>
-          <button class="chip-main" onclick={date.ontime} aria-label={$_("chip.date", { values: { time: date.time } })}>
+          <button
+            class="chip-main"
+            onclick={date.ontime}
+            aria-label={$_("chip.date", { values: { time: date.time } })}
+          >
             <span class="chip-text">{date.time}</span>
           </button>
           <button

@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { BASE, back, buttonRole, buttonShown, chips, modeOf, tap, tapsTo, type NavState } from "./modes";
+import {
+  BASE,
+  back,
+  buttonRole,
+  buttonShown,
+  chips,
+  modeOf,
+  tap,
+  tapsTo,
+  type NavState,
+} from "./modes";
 
 describe("modes and the single button (#176, A′1)", () => {
   it("reaches Apprendre in 2 taps from the sky: the button, then the mode", () => {

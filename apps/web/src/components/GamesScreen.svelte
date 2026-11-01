@@ -354,7 +354,9 @@
    * « Reprendre » (#176): the game played last, with its last settings, first on the screen; a
    * tap plays it (the third tap from the sky: button, Apprendre, Reprendre).
    */
-  let lastGame = $state<string | null>(readSetting<string | null>(LAST_GAME_KEY, null, isResumable));
+  let lastGame = $state<string | null>(
+    readSetting<string | null>(LAST_GAME_KEY, null, isResumable),
+  );
   const resume = $derived(GAMES.find((g) => g.id === lastGame) ?? null);
   /** « Rejouer »: the same settings, the record to beat updated. */
   const replay = () => playing && play(playing.game, playing.settings);
@@ -405,11 +407,31 @@
 
   // Android back (#176) closes what is on top: a page opened from a game, the game, its settings,
   // a constellation's page, the catalogue; then the screen itself (App.svelte).
-  historyLayer("learn-catalogue", () => catalogueOpen, () => void closeCatalogue());
-  historyLayer("learn-page", () => page !== null, () => void closePage());
-  historyLayer("learn-setup", () => setup !== null, () => void closeSetup());
-  historyLayer("learn-game", () => playing !== null, () => void leave());
-  historyLayer("learn-game-page", () => gamePage !== null, () => void closeGamePage());
+  historyLayer(
+    "learn-catalogue",
+    () => catalogueOpen,
+    () => void closeCatalogue(),
+  );
+  historyLayer(
+    "learn-page",
+    () => page !== null,
+    () => void closePage(),
+  );
+  historyLayer(
+    "learn-setup",
+    () => setup !== null,
+    () => void closeSetup(),
+  );
+  historyLayer(
+    "learn-game",
+    () => playing !== null,
+    () => void leave(),
+  );
+  historyLayer(
+    "learn-game-page",
+    () => gamePage !== null,
+    () => void closeGamePage(),
+  );
 
   let dialog: HTMLElement;
   onMount(() => {

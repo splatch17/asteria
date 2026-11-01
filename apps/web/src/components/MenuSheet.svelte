@@ -236,287 +236,287 @@
   </div>
 
   {#if tabbed}
-  <div class="panels">
-    <!-- Vue: what is used under the sky. -->
-    <div
-      class="panel"
-      role="tabpanel"
-      id="menu-panel-view"
-      aria-labelledby="menu-tab-view"
-      hidden={panel !== "view"}
-    >
-      {#if mode === "observe"}
-        <!-- Looks like a field; the search itself opens over the sky (SearchPanel). -->
-        <button class="field" onclick={onsearch} aria-haspopup="dialog">
-          <Icon name="search" size={16} />
-          <span class="field-text">{$_("menu.search.field")}</span>
-          <span class="sr-only">{$_("search.open")}</span>
-        </button>
-      {/if}
-      <button class="row" onclick={ontime} aria-label={`${$_("menu.time.row")} · ${time}`}>
-        <span class="row-label">{$_("menu.time.row")}</span>
-        <span class="data">
-          <span class="main">{time}</span>
-          <span class="sub" class:live>{live ? `● ${$_("time.live")}` : relative}</span>
-        </span>
-        <span class="chev" aria-hidden="true">›</span>
-      </button>
-      <div class="grid">
+    <div class="panels">
+      <!-- Vue: what is used under the sky. -->
+      <div
+        class="panel"
+        role="tabpanel"
+        id="menu-panel-view"
+        aria-labelledby="menu-tab-view"
+        hidden={panel !== "view"}
+      >
         {#if mode === "observe"}
-          <MenuTile
-            id="pointing"
-            icon="aim"
-            label={$_("menu.pointing.short")}
-            detail={$_("pointing.toggle")}
-            pressed={pointing}
-            onclick={onpoint}
-            {oninfo}
-          />
+          <!-- Looks like a field; the search itself opens over the sky (SearchPanel). -->
+          <button class="field" onclick={onsearch} aria-haspopup="dialog">
+            <Icon name="search" size={16} />
+            <span class="field-text">{$_("menu.search.field")}</span>
+            <span class="sr-only">{$_("search.open")}</span>
+          </button>
         {/if}
-        <MenuTile
-          id="night"
-          icon="night"
-          label={$_("night.short")}
-          detail={$_("night.toggle")}
-          pressed={night}
-          onclick={onnight}
-          {oninfo}
-        />
-        <MenuTile
-          id="recentre"
-          icon={mode === "observe" ? "north" : "recentre"}
-          label={$_("menu.recentre.short")}
-          detail={mode === "observe" ? $_("menu.recentre.north") : $_("gestures.recentre")}
-          onclick={onrecentre}
-          {oninfo}
-        />
-        <MenuTile
-          id="hide"
-          icon="hide"
-          label={$_("menu.hide.short")}
-          detail={$_("hud.hide")}
-          hint={$_("hud.hide.hint")}
-          onclick={onhide}
-          {oninfo}
-        />
-      </div>
-      {#if night}
-        <label class="dim">
-          <span>{$_("night.brightness")}</span>
-          <input
-            class="slider"
-            type="range"
-            min={minBrightness}
-            max="1"
-            step="0.05"
-            bind:value={brightness}
-          />
-        </label>
-      {/if}
-      {#if mode === "orbits"}
-        <h3 id="menu-pov">{$_("menu.section.pov")}</h3>
-        <div class="grid" role="radiogroup" aria-labelledby="menu-pov">
-          {#each REFERENCE_FRAMES as entry (entry.id)}
-            {#snippet picto()}<FramePicto frame={entry.id} size={28} />{/snippet}
+        <button class="row" onclick={ontime} aria-label={`${$_("menu.time.row")} · ${time}`}>
+          <span class="row-label">{$_("menu.time.row")}</span>
+          <span class="data">
+            <span class="main">{time}</span>
+            <span class="sub" class:live>{live ? `● ${$_("time.live")}` : relative}</span>
+          </span>
+          <span class="chev" aria-hidden="true">›</span>
+        </button>
+        <div class="grid">
+          {#if mode === "observe"}
             <MenuTile
-              id={`pov-${entry.id}`}
-              glyph={picto}
-              large
-              label={$_(`frame.${entry.id}`)}
-              detail={entry.id === "body" && visiting
-                ? $_("frame.body.header", { values: { body: visiting } })
-                : undefined}
-              hint={$_(`frame.${entry.id}.hint`)}
-              checked={frame === entry.id}
-              disabled={!entry.available}
-              haspopup={entry.id === "body"}
-              onclick={() => (entry.id === "body" ? onvisit() : onframe(entry.id))}
+              id="pointing"
+              icon="aim"
+              label={$_("menu.pointing.short")}
+              detail={$_("pointing.toggle")}
+              pressed={pointing}
+              onclick={onpoint}
               {oninfo}
             />
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Affichage: every layer of the view, by section (Ciel, Système solaire, Repères). -->
-    <div
-      class="panel"
-      role="tabpanel"
-      id="menu-panel-display"
-      aria-labelledby="menu-tab-display"
-      hidden={panel !== "display"}
-    >
-      {#each sectionsFor(view) as section, i (section.id)}
-        <h3 id={`menu-layers-${section.id}`} class:first={i === 0}>
-          {$_(`layers.section.${section.id}`)}
-        </h3>
-        <div class="grid" role="group" aria-labelledby={`menu-layers-${section.id}`}>
-          <LayersPanel
-            entries={section.entries}
-            {layers}
-            onchange={onlayer}
-            {unavailable}
+          {/if}
+          <MenuTile
+            id="night"
+            icon="night"
+            label={$_("night.short")}
+            detail={$_("night.toggle")}
+            pressed={night}
+            onclick={onnight}
+            {oninfo}
+          />
+          <MenuTile
+            id="recentre"
+            icon={mode === "observe" ? "north" : "recentre"}
+            label={$_("menu.recentre.short")}
+            detail={mode === "observe" ? $_("menu.recentre.north") : $_("gestures.recentre")}
+            onclick={onrecentre}
+            {oninfo}
+          />
+          <MenuTile
+            id="hide"
+            icon="hide"
+            label={$_("menu.hide.short")}
+            detail={$_("hud.hide")}
+            hint={$_("hud.hide.hint")}
+            onclick={onhide}
             {oninfo}
           />
         </div>
-      {/each}
-    </div>
-
-    <!-- Lieu et temps: two readout lines, data in monospace, actions as engraved icon buttons. -->
-    <div
-      class="panel"
-      role="tabpanel"
-      id="menu-panel-place"
-      aria-labelledby="menu-tab-place"
-      hidden={panel !== "place"}
-    >
-      <div class="line">
-        <span class="data">
-          <span class="main">{placeName}</span>
-          {#if locating === "idle"}
-            <span class="sub">{coords}</span>
-          {:else}
-            <span class="sub" role="status"
-              >{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</span
-            >
-          {/if}
-        </span>
-        <button
-          class="icon"
-          onclick={onlocate}
-          aria-busy={locating === "busy"}
-          aria-label={$_("place.locate")}
-          title={$_("place.locate")}><Icon name="locate" size={16} /></button
-        >
+        {#if night}
+          <label class="dim">
+            <span>{$_("night.brightness")}</span>
+            <input
+              class="slider"
+              type="range"
+              min={minBrightness}
+              max="1"
+              step="0.05"
+              bind:value={brightness}
+            />
+          </label>
+        {/if}
+        {#if mode === "orbits"}
+          <h3 id="menu-pov">{$_("menu.section.pov")}</h3>
+          <div class="grid" role="radiogroup" aria-labelledby="menu-pov">
+            {#each REFERENCE_FRAMES as entry (entry.id)}
+              {#snippet picto()}<FramePicto frame={entry.id} size={28} />{/snippet}
+              <MenuTile
+                id={`pov-${entry.id}`}
+                glyph={picto}
+                large
+                label={$_(`frame.${entry.id}`)}
+                detail={entry.id === "body" && visiting
+                  ? $_("frame.body.header", { values: { body: visiting } })
+                  : undefined}
+                hint={$_(`frame.${entry.id}.hint`)}
+                checked={frame === entry.id}
+                disabled={!entry.available}
+                haspopup={entry.id === "body"}
+                onclick={() => (entry.id === "body" ? onvisit() : onframe(entry.id))}
+                {oninfo}
+              />
+            {/each}
+          </div>
+        {/if}
       </div>
-      <div class="line">
-        <span class="data">
-          <span class="main">{time}</span>
-          <span class="sub">{live ? `● ${$_("time.live")}` : relative}</span>
-        </span>
-        <button
-          class="icon"
-          onclick={ontime}
-          aria-label={$_("menu.setDate")}
-          title={$_("menu.setDate")}><Icon name="range" size={16} /></button
-        >
-        <button
-          class="icon"
-          onclick={onnow}
-          disabled={live}
-          aria-label={$_("time.backToNow")}
-          title={$_("time.backToNow")}><Icon name="now" size={16} /></button
-        >
-      </div>
-      <p class="note">{$_("menu.help.time")}</p>
-    </div>
 
-    <!-- Réglages: the rarer settings, the credits and a short help. -->
-    <div
-      class="panel"
-      role="tabpanel"
-      id="menu-panel-settings"
-      aria-labelledby="menu-tab-settings"
-      hidden={panel !== "settings"}
-    >
-      <!-- The app's level (#201), first: what the sheets, the games and the explanations say.
-           Apprendre, « Selon la latitude » and the 3D view keep a shortcut to it. -->
-      <h3 class="first" id="menu-level">{$_("settings.level")}</h3>
-      <div class="levels" role="group" aria-labelledby="menu-level">
-        {#each LEVELS as l (l)}
-          <button aria-pressed={level.value === l} onclick={() => level.set(l)}
-            >{$_(`level.${l}`)}</button
-          >
+      <!-- Affichage: every layer of the view, by section (Ciel, Système solaire, Repères). -->
+      <div
+        class="panel"
+        role="tabpanel"
+        id="menu-panel-display"
+        aria-labelledby="menu-tab-display"
+        hidden={panel !== "display"}
+      >
+        {#each sectionsFor(view) as section, i (section.id)}
+          <h3 id={`menu-layers-${section.id}`} class:first={i === 0}>
+            {$_(`layers.section.${section.id}`)}
+          </h3>
+          <div class="grid" role="group" aria-labelledby={`menu-layers-${section.id}`}>
+            <LayersPanel
+              entries={section.entries}
+              {layers}
+              onchange={onlayer}
+              {unavailable}
+              {oninfo}
+            />
+          </div>
         {/each}
       </div>
-      <p class="note level-note">
-        {$_(`settings.level.${level.value}`)}<br />{$_("settings.level.scope")}
-      </p>
-      <div class="grid">
-        <MenuTile
-          id="realistic"
-          icon="realistic"
-          label={$_("menu.realistic.short")}
-          detail={$_("space.realistic")}
-          pressed={realistic}
-          onclick={onrealistic}
-          {oninfo}
-        />
-        {#if fullscreen !== null}
+
+      <!-- Lieu et temps: two readout lines, data in monospace, actions as engraved icon buttons. -->
+      <div
+        class="panel"
+        role="tabpanel"
+        id="menu-panel-place"
+        aria-labelledby="menu-tab-place"
+        hidden={panel !== "place"}
+      >
+        <div class="line">
+          <span class="data">
+            <span class="main">{placeName}</span>
+            {#if locating === "idle"}
+              <span class="sub">{coords}</span>
+            {:else}
+              <span class="sub" role="status"
+                >{locating === "busy" ? $_("place.locating") : $_("place.locateError")}</span
+              >
+            {/if}
+          </span>
+          <button
+            class="icon"
+            onclick={onlocate}
+            aria-busy={locating === "busy"}
+            aria-label={$_("place.locate")}
+            title={$_("place.locate")}><Icon name="locate" size={16} /></button
+          >
+        </div>
+        <div class="line">
+          <span class="data">
+            <span class="main">{time}</span>
+            <span class="sub">{live ? `● ${$_("time.live")}` : relative}</span>
+          </span>
+          <button
+            class="icon"
+            onclick={ontime}
+            aria-label={$_("menu.setDate")}
+            title={$_("menu.setDate")}><Icon name="range" size={16} /></button
+          >
+          <button
+            class="icon"
+            onclick={onnow}
+            disabled={live}
+            aria-label={$_("time.backToNow")}
+            title={$_("time.backToNow")}><Icon name="now" size={16} /></button
+          >
+        </div>
+        <p class="note">{$_("menu.help.time")}</p>
+      </div>
+
+      <!-- Réglages: the rarer settings, the credits and a short help. -->
+      <div
+        class="panel"
+        role="tabpanel"
+        id="menu-panel-settings"
+        aria-labelledby="menu-tab-settings"
+        hidden={panel !== "settings"}
+      >
+        <!-- The app's level (#201), first: what the sheets, the games and the explanations say.
+           Apprendre, « Selon la latitude » and the 3D view keep a shortcut to it. -->
+        <h3 class="first" id="menu-level">{$_("settings.level")}</h3>
+        <div class="levels" role="group" aria-labelledby="menu-level">
+          {#each LEVELS as l (l)}
+            <button aria-pressed={level.value === l} onclick={() => level.set(l)}
+              >{$_(`level.${l}`)}</button
+            >
+          {/each}
+        </div>
+        <p class="note level-note">
+          {$_(`settings.level.${level.value}`)}<br />{$_("settings.level.scope")}
+        </p>
+        <div class="grid">
           <MenuTile
-            id="fullscreen"
-            icon="fullscreen"
-            label={$_("menu.fullscreen.short")}
-            detail={$_("fullscreen.enter")}
-            pressed={fullscreen}
-            onclick={onfullscreen}
+            id="realistic"
+            icon="realistic"
+            label={$_("menu.realistic.short")}
+            detail={$_("space.realistic")}
+            pressed={realistic}
+            onclick={onrealistic}
             {oninfo}
           />
-        {/if}
-        <MenuTile
-          id="credits"
-          icon="help"
-          label={$_("menu.credits.short")}
-          detail={$_("credits.open")}
-          haspopup
-          onclick={oncredits}
-          {oninfo}
-        />
-      </div>
-      <div class="line network">
-        <span class="data">
-          <span class="main">{$_("network.title")}</span>
-          <span class="sub" role="status">
-            <span class="light" class:on={online} aria-hidden="true"></span>
-            {online ? $_("network.online") : $_("network.offline")}
-          </span>
-        </span>
-      </div>
-      {#if iosInstall}
-        <div class="line install">
-          <span class="data">
-            <span class="main">{$_("install.title")}</span>
-            <span class="sub">{$_("install.ios")}</span>
-          </span>
+          {#if fullscreen !== null}
+            <MenuTile
+              id="fullscreen"
+              icon="fullscreen"
+              label={$_("menu.fullscreen.short")}
+              detail={$_("fullscreen.enter")}
+              pressed={fullscreen}
+              onclick={onfullscreen}
+              {oninfo}
+            />
+          {/if}
+          <MenuTile
+            id="credits"
+            icon="help"
+            label={$_("menu.credits.short")}
+            detail={$_("credits.open")}
+            haspopup
+            onclick={oncredits}
+            {oninfo}
+          />
         </div>
-      {/if}
-      {#if offline.state !== "unsupported"}
-        <div class="line offline">
+        <div class="line network">
           <span class="data">
-            <span class="main">{$_("offline.title")}</span>
-            <span class="sub" role="status" class:ok={offline.state === "ready"}>
-              {#if offline.state === "ready"}
-                {$_("offline.ready", { values: { size: Math.round(offline.bytes / 1e6) } })}
-              {:else if offline.state === "downloading" && offline.total > 0}
-                {$_("offline.downloading", {
-                  values: { percent: offlinePercent(offline.done, offline.total) },
-                })}
-              {:else if offline.state === "error"}
-                {$_("offline.error")}
-              {:else}
-                {$_("offline.idle")}
-              {/if}
+            <span class="main">{$_("network.title")}</span>
+            <span class="sub" role="status">
+              <span class="light" class:on={online} aria-hidden="true"></span>
+              {online ? $_("network.online") : $_("network.offline")}
             </span>
           </span>
-          {#if offline.state === "error"}
-            <button
-              class="icon"
-              onclick={onofflineretry}
-              aria-label={$_("offline.retry")}
-              title={$_("offline.retry")}><Icon name="now" size={16} /></button
-            >
-          {/if}
         </div>
-        <p class="note">{$_("offline.note")}</p>
-      {/if}
-      <h3 id="menu-help">{$_("menu.section.help")}</h3>
-      <ul class="help" aria-labelledby="menu-help">
-        <li>{$_("menu.help.tapSky")}</li>
-        <li>{$_("menu.help.tapObject")}</li>
-        {#if view === "sky"}<li>{$_("menu.help.compass")}</li>{/if}
-      </ul>
+        {#if iosInstall}
+          <div class="line install">
+            <span class="data">
+              <span class="main">{$_("install.title")}</span>
+              <span class="sub">{$_("install.ios")}</span>
+            </span>
+          </div>
+        {/if}
+        {#if offline.state !== "unsupported"}
+          <div class="line offline">
+            <span class="data">
+              <span class="main">{$_("offline.title")}</span>
+              <span class="sub" role="status" class:ok={offline.state === "ready"}>
+                {#if offline.state === "ready"}
+                  {$_("offline.ready", { values: { size: Math.round(offline.bytes / 1e6) } })}
+                {:else if offline.state === "downloading" && offline.total > 0}
+                  {$_("offline.downloading", {
+                    values: { percent: offlinePercent(offline.done, offline.total) },
+                  })}
+                {:else if offline.state === "error"}
+                  {$_("offline.error")}
+                {:else}
+                  {$_("offline.idle")}
+                {/if}
+              </span>
+            </span>
+            {#if offline.state === "error"}
+              <button
+                class="icon"
+                onclick={onofflineretry}
+                aria-label={$_("offline.retry")}
+                title={$_("offline.retry")}><Icon name="now" size={16} /></button
+              >
+            {/if}
+          </div>
+          <p class="note">{$_("offline.note")}</p>
+        {/if}
+        <h3 id="menu-help">{$_("menu.section.help")}</h3>
+        <ul class="help" aria-labelledby="menu-help">
+          <li>{$_("menu.help.tapSky")}</li>
+          <li>{$_("menu.help.tapObject")}</li>
+          {#if view === "sky"}<li>{$_("menu.help.compass")}</li>{/if}
+        </ul>
+      </div>
     </div>
-  </div>
   {/if}
 
   <!-- Visual only: screen readers get the same text as each tile's description. Shown under the

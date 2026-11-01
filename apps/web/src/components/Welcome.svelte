@@ -63,7 +63,7 @@
     example: (level: FigureLevel) => WelcomeExample | null;
     /** The map's current view, for the drag and pinch hints. */
     view: () => ViewSample | null;
-    /** CSS `bottom` of the hints: above the time line, whatever its layout. */
+    /** CSS `bottom` of the hints: above the single button and its chips (#176), whatever their height. */
     bottom: string;
     onend?: (outcome: WelcomeOutcome) => void;
   } = $props();

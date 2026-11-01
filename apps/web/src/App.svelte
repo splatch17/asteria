@@ -108,12 +108,7 @@
   import { welcomeOnLaunch } from "./lib/welcome";
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
-  import {
-    HIDDEN_TIP_KEY,
-    HIDDEN_TIP_MS,
-    hiddenTipDue,
-    immersiveAfterTap,
-  } from "./lib/hud";
+  import { HIDDEN_TIP_KEY, HIDDEN_TIP_MS, hiddenTipDue, immersiveAfterTap } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf, horizontalOf, nextRise, nextRiseOf } from "./lib/horizon";
@@ -628,23 +623,65 @@
   // Android and browser back (#176): each layer over the sky has a history entry; back closes the
   // one on top, then Orbites goes back to the sky. Apprendre and the latitude explorer register
   // their own inner layers (a game, its settings, the enlarged map).
-  historyLayer("orbits", () => mode === "space" && !flying, () => flyToSky());
-  historyLayer("selection", () => selection !== null, () => (selection = null));
-  historyLayer("sheet", () => menuOpen, () => closeMenu());
-  historyLayer("time", () => timeOpen, () => void foldTime());
-  historyLayer("search", () => searchOpen, () => closeSearch());
-  historyLayer("frame", () => frameOpen, () => (frameOpen = false));
-  historyLayer("learn", () => gamesOpen, () => closeGames());
-  historyLayer("latitude", () => latitudeExplorer !== null, () => closeLatitude());
-  historyLayer("credits", () => creditsOpen, () => (creditsOpen = false));
-  historyLayer("view3d", () => view3d !== null, () => close3d());
+  historyLayer(
+    "orbits",
+    () => mode === "space" && !flying,
+    () => flyToSky(),
+  );
+  historyLayer(
+    "selection",
+    () => selection !== null,
+    () => (selection = null),
+  );
+  historyLayer(
+    "sheet",
+    () => menuOpen,
+    () => closeMenu(),
+  );
+  historyLayer(
+    "time",
+    () => timeOpen,
+    () => void foldTime(),
+  );
+  historyLayer(
+    "search",
+    () => searchOpen,
+    () => closeSearch(),
+  );
+  historyLayer(
+    "frame",
+    () => frameOpen,
+    () => (frameOpen = false),
+  );
+  historyLayer(
+    "learn",
+    () => gamesOpen,
+    () => closeGames(),
+  );
+  historyLayer(
+    "latitude",
+    () => latitudeExplorer !== null,
+    () => closeLatitude(),
+  );
+  historyLayer(
+    "credits",
+    () => creditsOpen,
+    () => (creditsOpen = false),
+  );
+  historyLayer(
+    "view3d",
+    () => view3d !== null,
+    () => close3d(),
+  );
 
   // --- Compass and mini-globe (#176): only while the sky moves under the fingers (a drag, a
   // pinch, the wheel) or the phone drives it (Viser), fading out 2 s after.
   const INSTRUMENTS_MS = 2000;
   let moving = $state(false);
   let instrumentsTimer: ReturnType<typeof setTimeout> | undefined;
-  const pointers = new Map<number, { x: number; y: number }>();
+  /** Where each finger went down (not reactive: read by the handlers only). */
+  const pointers: Record<number, { x: number; y: number }> = {};
+  const fingers = () => Object.keys(pointers).length;
   function showInstruments() {
     moving = true;
     clearTimeout(instrumentsTimer);
@@ -654,17 +691,17 @@
     instrumentsTimer = setTimeout(() => (moving = false), INSTRUMENTS_MS);
   }
   function onSkyPointerDown(e: PointerEvent) {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size > 1) showInstruments();
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (fingers() > 1) showInstruments();
   }
   function onSkyPointerMove(e: PointerEvent) {
-    const start = pointers.get(e.pointerId);
+    const start = pointers[e.pointerId];
     if (!start || moving) return;
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) showInstruments();
   }
   function onSkyPointerUp(e: PointerEvent) {
-    pointers.delete(e.pointerId);
-    if (pointers.size === 0 && moving) settleInstruments();
+    delete pointers[e.pointerId];
+    if (fingers() === 0 && moving) settleInstruments();
   }
   function onSkyWheel() {
     showInstruments();
@@ -674,17 +711,18 @@
   // Listened on the map's view, passively: the map's own gestures are untouched.
   $effect(() => {
     const el = skyView;
-    const events = [
-      ["pointerdown", onSkyPointerDown],
-      ["pointermove", onSkyPointerMove],
-      ["pointerup", onSkyPointerUp],
-      ["pointercancel", onSkyPointerUp],
-      ["wheel", onSkyWheel],
-    ] as const;
-    for (const [type, fn] of events)
-      el.addEventListener(type, fn as EventListener, { passive: true });
+    const passive = { passive: true };
+    el.addEventListener("pointerdown", onSkyPointerDown, passive);
+    el.addEventListener("pointermove", onSkyPointerMove, passive);
+    el.addEventListener("pointerup", onSkyPointerUp, passive);
+    el.addEventListener("pointercancel", onSkyPointerUp, passive);
+    el.addEventListener("wheel", onSkyWheel, passive);
     return () => {
-      for (const [type, fn] of events) el.removeEventListener(type, fn as EventListener);
+      el.removeEventListener("pointerdown", onSkyPointerDown);
+      el.removeEventListener("pointermove", onSkyPointerMove);
+      el.removeEventListener("pointerup", onSkyPointerUp);
+      el.removeEventListener("pointercancel", onSkyPointerUp);
+      el.removeEventListener("wheel", onSkyWheel);
       clearTimeout(instrumentsTimer);
     };
   });
@@ -725,10 +763,8 @@
       latitudeExplorer
     )
       return;
-    if (timeOpen) {
-      timeOpen = false;
-      lineElement?.querySelector<HTMLElement>("[aria-controls='time-controls']")?.focus();
-    } else if (captionOpen) captionOpen = false;
+    if (timeOpen) void foldTime();
+    else if (captionOpen) captionOpen = false;
     else if (immersive) immersive = false;
   }
   addEventListener("keydown", onHudKey);
@@ -1293,9 +1329,9 @@
   // immersive mode only the mark that brings the interface back is in the way (#130, #198).
   let header = $state<HTMLElement>();
   let bottomNav: HTMLElement;
-  /** The time line itself (folded): what the Earth view's framing keeps clear (#130). */
+  /** The time line, while unfolded from the button (#176). */
   let lineElement = $state<HTMLElement>();
-  /** Search, mini-globe and compass, top right (#138): resized as the mini-globe comes and goes. */
+  /** Mini-globe and compass, top right (#138): resized as the mini-globe comes and goes. */
   let skyTools = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
   /** « ← Système solaire » during a visit (#134): kept free of labels while shown. */
@@ -1352,7 +1388,8 @@
   function spaceSafeArea() {
     const h = innerHeight;
     const top = (header?.getBoundingClientRect().bottom ?? 36) + 10;
-    const lineTop = lineElement?.getBoundingClientRect().top ?? h - 60;
+    // The button (#176), or the time line unfolded from it: the same top edge.
+    const lineTop = (menuButton ?? lineElement)?.getBoundingClientRect().top ?? h - 72;
     const bottom = h - lineTop + captionReserve();
     return { top, right: 16, bottom, left: 16 };
   }
@@ -2832,7 +2869,9 @@
     z-index: 3;
     left: max(16px, env(safe-area-inset-left));
     right: max(16px, env(safe-area-inset-right));
-    bottom: calc(max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + var(--ast-corner-size) + 12px);
+    bottom: calc(
+      max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + var(--ast-corner-size) + 12px
+    );
     width: fit-content;
     max-width: 320px;
     margin: 0 auto;

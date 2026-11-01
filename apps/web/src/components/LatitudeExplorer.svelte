@@ -387,7 +387,11 @@
   let expanded = $state(false);
   let zoom = $state(1);
   // Android back reduces the enlarged map first (#176), then closes the explorer (App.svelte).
-  historyLayer("latitude-map", () => expanded, () => void collapseMap());
+  historyLayer(
+    "latitude-map",
+    () => expanded,
+    () => void collapseMap(),
+  );
   let expandButton = $state<HTMLButtonElement>();
   let collapseButton = $state<HTMLButtonElement>();
   async function expandMap() {
