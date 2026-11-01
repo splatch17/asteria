@@ -64,7 +64,7 @@
       {/if}
       {#if pointing}
         <button
-          class="chip frame chip-main on"
+          class="chip chip-main on"
           data-chip="pointing"
           data-hud
           onclick={pointing.onstop}
@@ -113,7 +113,7 @@
     padding: 0;
     border-color: var(--ast-control-border);
     border-radius: var(--ast-radius);
-    background: color-mix(in srgb, var(--ast-bg) 78%, transparent);
+    background: color-mix(in srgb, var(--ast-bg) 90%, transparent);
     color: var(--ast-fg);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;

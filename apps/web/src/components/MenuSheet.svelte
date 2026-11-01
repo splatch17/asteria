@@ -562,6 +562,9 @@
           </button>
         {/each}
       </div>
+    {:else}
+      <!-- Apprendre has its settings on its own screen: the foot says the way back instead. -->
+      <p class="foot-note">{$_("modes.learn.back")}</p>
     {/if}
   </div>
 </div>
@@ -756,8 +759,15 @@
     border-top: 1px solid var(--ast-hairline);
   }
   .compact .foot {
-    border-top: 0;
-    margin-top: 8px;
+    margin-top: 10px;
+  }
+  .foot-note {
+    flex: 1;
+    align-self: center;
+    margin: 0;
+    padding: 0 12px;
+    font: 400 10px/1.4 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
   }
   .close {
     flex: none;
@@ -775,9 +785,6 @@
     color: var(--ast-fg);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-  }
-  .compact .close {
-    border-top: 1px solid var(--ast-hairline);
   }
   .x {
     font: 400 22px/1 var(--ast-font-mono);
