@@ -52,6 +52,10 @@
   --ast-text-measure: 32em;
   --ast-tracking-meta: 0.1em;
   --ast-radius: 0;
+  /* The single button (#176): its side, and its distance to the screen's edges (safe areas
+     aside). The sheet, the time line and the chips start from that corner. */
+  --ast-corner-size: 60px;
+  --ast-corner-inset: 12px;
 
   --ast-ease-out: cubic-bezier(0, 0, 0.2, 1);
 }

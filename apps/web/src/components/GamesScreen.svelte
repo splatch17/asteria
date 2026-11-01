@@ -86,6 +86,9 @@
   import QuizGame from "./QuizGame.svelte";
   import WhereGame from "./WhereGame.svelte";
   import Vignette from "./Vignette.svelte";
+  import ModeButton from "./ModeButton.svelte";
+  import { historyLayer } from "../lib/back.svelte";
+  import { LAST_GAME_KEY, isResumable } from "../lib/games/catalog";
   import type { IconName } from "../lib/icons";
   import type { Mastery } from "../lib/games/srs";
 
@@ -106,7 +109,17 @@
     onlocate,
     locating = "idle",
     onclose,
+    onmenu,
+    menuOpen = false,
+    menuButton = $bindable(),
   }: {
+    /**
+     * The single button (#176), bottom left of this screen's home as on the sky: it opens the
+     * sheet of the modes (« Observer » goes back to the sky).
+     */
+    onmenu: () => void;
+    menuOpen?: boolean;
+    menuButton?: HTMLButtonElement | undefined;
     /** The player's own place is known (else `observer` is the app's default place, #187). */
     located?: boolean;
     /**
@@ -143,6 +156,8 @@
   interface Card {
     /** Vignette and element ids: `catalogue` or the game id. */
     id: string;
+    /** Element ids when the same vignette shows twice (« Reprendre », #176). */
+    key?: string;
     title: string;
     pitch: string;
     /** Record or progress line; empty for a game to come. */
@@ -332,7 +347,17 @@
         series: buildStarSeries({ ...common, pool: starItems, visible: starsTonight }),
         ...meta,
       };
+    lastGame = game;
+    writeSetting(LAST_GAME_KEY, game);
   }
+  /**
+   * « Reprendre » (#176): the game played last, with its last settings, first on the screen; a
+   * tap plays it (the third tap from the sky: button, Apprendre, Reprendre).
+   */
+  let lastGame = $state<string | null>(
+    readSetting<string | null>(LAST_GAME_KEY, null, isResumable),
+  );
+  const resume = $derived(GAMES.find((g) => g.id === lastGame) ?? null);
   /** « Rejouer »: the same settings, the record to beat updated. */
   const replay = () => playing && play(playing.game, playing.settings);
   function namedAnswer(hip: number, correct: boolean): ItemResult {
@@ -380,11 +405,38 @@
     dialog.querySelector<HTMLElement>(`[data-game='${game}']`)?.focus();
   }
 
+  // Android back (#176) closes what is on top: a page opened from a game, the game, its settings,
+  // a constellation's page, the catalogue; then the screen itself (App.svelte).
+  historyLayer(
+    "learn-catalogue",
+    () => catalogueOpen,
+    () => void closeCatalogue(),
+  );
+  historyLayer(
+    "learn-page",
+    () => page !== null,
+    () => void closePage(),
+  );
+  historyLayer(
+    "learn-setup",
+    () => setup !== null,
+    () => void closeSetup(),
+  );
+  historyLayer(
+    "learn-game",
+    () => playing !== null,
+    () => void leave(),
+  );
+  historyLayer(
+    "learn-game-page",
+    () => gamePage !== null,
+    () => void closeGamePage(),
+  );
+
   let dialog: HTMLElement;
-  let closeButton = $state<HTMLButtonElement>();
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
-    closeButton?.focus();
+    menuButton?.focus({ preventScroll: true });
     // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Où est-elle ? »), 3 (« Nomme
     // l'étoile »), with its remembered settings or ?mode= and ?scope=; ?setup=N opens a game's
     // settings.
@@ -585,16 +637,31 @@
           {$_("learn.level", { values: { level: $_(`level.${level}`) } })}
         </p>
       </div>
-      <button
-        class="close"
-        bind:this={closeButton}
-        onclick={onclose}
-        aria-label={$_("learn.close")}
-        title={$_("learn.close")}>×</button
-      >
     </header>
 
     <div class="scroll" inert={setup !== null}>
+      {#if resume}
+        {@const g = resume}
+        {@const s = settings[g.id] ?? defaultSettings(located)}
+        <!-- Reprendre (#176): the last game, its last settings, in one tap. -->
+        <section class="group resume" aria-labelledby="learn-resume">
+          <h2 class="group-title" id="learn-resume">{$_("learn.resume.title")}</h2>
+          <ul class="cards">
+            {@render card({
+              id: g.id,
+              key: "resume",
+              title: $_(`games.${g.id}.title`),
+              pitch: $_(`games.mode.${s.mode}.label`) + " · " + $_(`games.scope.${s.scope}.label`),
+              meta: "",
+              value: 0,
+              total: 0,
+              icon: "play",
+              action: $_("learn.resume.play"),
+              onclick: () => play(g.id, s),
+            })}
+          </ul>
+        </section>
+      {/if}
       <div class="levels" role="group" aria-label={$_("games.level")}>
         {#each LEVELS as l (l)}
           <button aria-pressed={level === l} onclick={() => chooseLevel(l)}
@@ -714,6 +781,15 @@
         </div>
       </section>
     </div>
+    <!-- The single button (#176), as on the sky: the modes; « Observer » goes back to the sky. -->
+    <div class="corner" inert={setup !== null}>
+      <ModeButton
+        mode={$_("modes.learn")}
+        open={menuOpen}
+        onopen={onmenu}
+        bind:button={menuButton}
+      />
+    </div>
     {#if setupGame}
       {@const g = setupGame}
       {@const scope = askable(g)}
@@ -749,7 +825,7 @@
   <li class="card" class:soon={!c.onclick}>
     <div class="art"><Vignette id={c.id} /></div>
     <div class="text">
-      <h3 id={`card-${c.id}`}>{c.title}</h3>
+      <h3 id={`card-${c.key ?? c.id}`}>{c.title}</h3>
       <p class="pitch">{c.pitch}</p>
       {#if c.meta}
         <p class="meta">
@@ -771,11 +847,11 @@
       {#if c.onclick}
         <button
           class="go"
-          id={`go-${c.id}`}
-          aria-labelledby={`go-${c.id} card-${c.id}`}
+          id={`go-${c.key ?? c.id}`}
+          aria-labelledby={`go-${c.key ?? c.id} card-${c.key ?? c.id}`}
           onclick={c.onclick}
-          data-learn={c.id === "catalogue" ? "catalogue" : undefined}
-          data-game={c.id === "catalogue" ? undefined : c.id}
+          data-learn={c.key ?? (c.id === "catalogue" ? "catalogue" : undefined)}
+          data-game={c.id === "catalogue" || c.key ? undefined : c.id}
         >
           <Icon name={c.icon} size={12} /><span>{c.action}</span>
         </button>
@@ -865,22 +941,18 @@
     outline: 1px solid var(--ast-fg);
     outline-offset: 2px;
   }
-  .close {
-    flex: none;
-    width: 44px;
-    height: 44px;
-    margin: -6px -10px 0 0;
-    font: 400 24px/1 var(--ast-font-mono);
-  }
-  .close:focus-visible {
-    outline-offset: -6px;
+  .corner {
+    display: contents;
   }
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    /* Room for the single button in the corner (#176). */
+    padding-bottom: calc(
+      max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + var(--ast-corner-size) + 16px
+    );
   }
   ul {
     margin: 0;

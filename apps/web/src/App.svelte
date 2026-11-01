@@ -95,6 +95,9 @@
   import Designation from "./components/Designation.svelte";
   import SkyHeader from "./components/SkyHeader.svelte";
   import TimeBar from "./components/TimeBar.svelte";
+  import ModeButton from "./components/ModeButton.svelte";
+  import { chips as cornerChips, modeOf, type AppMode } from "./lib/modes";
+  import { historyLayer } from "./lib/back.svelte";
   import MenuSheet from "./components/MenuSheet.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
   import SkyTools from "./components/SkyTools.svelte";
@@ -105,13 +108,7 @@
   import { welcomeOnLaunch } from "./lib/welcome";
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
-  import {
-    HIDDEN_TIP_KEY,
-    HIDDEN_TIP_MS,
-    hiddenTipDue,
-    immersiveAfterTap,
-    pointingShortcut,
-  } from "./lib/hud";
+  import { HIDDEN_TIP_KEY, HIDDEN_TIP_MS, hiddenTipDue, immersiveAfterTap } from "./lib/hud";
   import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf, horizontalOf, nextRise, nextRiseOf } from "./lib/horizon";
@@ -558,28 +555,177 @@
   });
   /** Earth view caption unfolded (a single line at rest). */
   let captionOpen = $state(false);
-  /** Sensor pointing on the time line where it can work (phone, HTTPS); else in the menu. */
-  const pointingDirect = pointingShortcut({
-    coarse: matchMedia("(pointer: coarse)").matches,
-    secure: isSecureContext,
-    orientationEvents: "DeviceOrientationEvent" in window,
-    absoluteSensor: "AbsoluteOrientationSensor" in window,
-  });
   function openMenu() {
     timeOpen = false;
     frameOpen = false;
     immersive = false;
     menuOpen = true;
   }
+  /** The single button of the Apprendre screen (#176), over the one of the sky. */
+  let learnMenuButton = $state<HTMLButtonElement>();
   function closeMenu() {
     menuOpen = false;
-    menuButton?.focus();
+    (gamesOpen ? learnMenuButton : menuButton)?.focus();
   }
   /** Runs a menu action that opens something else: the menu closes first, without refocus. */
   const fromMenu = (action: () => void) => () => {
     menuOpen = false;
     action();
   };
+
+  // --- Modes and the single button (#176, lib/modes.ts)
+  /** Observer (the sky map), Orbites (the Earth view), Apprendre (its screen, over either). */
+  const appMode = $derived<AppMode>(modeOf(mode, gamesOpen));
+  const sensorPointing = $derived(pointer.state === "on" || pointer.state === "waiting");
+  /** Chips beside the button: the date when it is not now, the pointing while it is on. */
+  const chipsShown = $derived(
+    cornerChips({
+      mode: appMode,
+      layer: menuOpen ? "sheet" : timeOpen ? "time" : "none",
+      learn: gamesOpen ? "hub" : null,
+      live,
+      pointing: sensorPointing,
+      resumable: false,
+    }),
+  );
+  /** A mode chosen in the sheet: the date and the place stay as they are (#176). */
+  function chooseMode(next: AppMode) {
+    menuOpen = false;
+    if (next === appMode) {
+      menuButton?.focus();
+      return;
+    }
+    if (next === "learn") return openGames();
+    if (gamesOpen) closeGames();
+    if (next === "orbits" && pointer.state !== "off") pointer.toggle();
+    if ((next === "orbits") !== (mode === "space")) toggleSpace();
+  }
+  /** The time line, unfolded from the button: its × takes the focus (the button's place). */
+  let foldButton = $state<HTMLButtonElement>();
+  async function openTime() {
+    menuOpen = false;
+    immersive = false;
+    timeOpen = true;
+    await tick();
+    foldButton?.focus({ preventScroll: true });
+  }
+  async function foldTime() {
+    timeOpen = false;
+    await tick();
+    menuButton?.focus({ preventScroll: true });
+  }
+  /** Observer's « Recentrer »: the view back to the north, the compass's job while it is hidden. */
+  function recentre() {
+    if (mode === "sky") faceNorth();
+    else space?.resetView();
+  }
+
+  // Android and browser back (#176): each layer over the sky has a history entry; back closes the
+  // one on top, then Orbites goes back to the sky. Apprendre and the latitude explorer register
+  // their own inner layers (a game, its settings, the enlarged map).
+  historyLayer(
+    "orbits",
+    () => mode === "space" && !flying,
+    () => flyToSky(),
+  );
+  historyLayer(
+    "selection",
+    () => selection !== null,
+    () => (selection = null),
+  );
+  historyLayer(
+    "sheet",
+    () => menuOpen,
+    () => closeMenu(),
+  );
+  historyLayer(
+    "time",
+    () => timeOpen,
+    () => void foldTime(),
+  );
+  historyLayer(
+    "search",
+    () => searchOpen,
+    () => closeSearch(),
+  );
+  historyLayer(
+    "frame",
+    () => frameOpen,
+    () => (frameOpen = false),
+  );
+  historyLayer(
+    "learn",
+    () => gamesOpen,
+    () => closeGames(),
+  );
+  historyLayer(
+    "latitude",
+    () => latitudeExplorer !== null,
+    () => closeLatitude(),
+  );
+  historyLayer(
+    "credits",
+    () => creditsOpen,
+    () => (creditsOpen = false),
+  );
+  historyLayer(
+    "view3d",
+    () => view3d !== null,
+    () => close3d(),
+  );
+
+  // --- Compass and mini-globe (#176): only while the sky moves under the fingers (a drag, a
+  // pinch, the wheel) or the phone drives it (Viser), fading out 2 s after.
+  const INSTRUMENTS_MS = 2000;
+  let moving = $state(false);
+  let instrumentsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Where each finger went down (not reactive: read by the handlers only). */
+  const pointers: Record<number, { x: number; y: number }> = {};
+  const fingers = () => Object.keys(pointers).length;
+  function showInstruments() {
+    moving = true;
+    clearTimeout(instrumentsTimer);
+  }
+  function settleInstruments() {
+    clearTimeout(instrumentsTimer);
+    instrumentsTimer = setTimeout(() => (moving = false), INSTRUMENTS_MS);
+  }
+  function onSkyPointerDown(e: PointerEvent) {
+    pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (fingers() > 1) showInstruments();
+  }
+  function onSkyPointerMove(e: PointerEvent) {
+    const start = pointers[e.pointerId];
+    if (!start || moving) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) showInstruments();
+  }
+  function onSkyPointerUp(e: PointerEvent) {
+    delete pointers[e.pointerId];
+    if (fingers() === 0 && moving) settleInstruments();
+  }
+  function onSkyWheel() {
+    showInstruments();
+    settleInstruments();
+  }
+  const instruments = $derived(moving || sensorPointing);
+  // Listened on the map's view, passively: the map's own gestures are untouched.
+  $effect(() => {
+    const el = skyView;
+    const passive = { passive: true };
+    el.addEventListener("pointerdown", onSkyPointerDown, passive);
+    el.addEventListener("pointermove", onSkyPointerMove, passive);
+    el.addEventListener("pointerup", onSkyPointerUp, passive);
+    el.addEventListener("pointercancel", onSkyPointerUp, passive);
+    el.addEventListener("wheel", onSkyWheel, passive);
+    return () => {
+      el.removeEventListener("pointerdown", onSkyPointerDown);
+      el.removeEventListener("pointermove", onSkyPointerMove);
+      el.removeEventListener("pointerup", onSkyPointerUp);
+      el.removeEventListener("pointercancel", onSkyPointerUp);
+      el.removeEventListener("wheel", onSkyWheel);
+      clearTimeout(instrumentsTimer);
+    };
+  });
   /** Something was open when the finger went down: the tap that follows only closes it. */
   let overlayAtDown = false;
   function notePointerDown() {
@@ -617,10 +763,8 @@
       latitudeExplorer
     )
       return;
-    if (timeOpen) {
-      timeOpen = false;
-      lineElement?.querySelector<HTMLElement>("[aria-controls='time-controls']")?.focus();
-    } else if (captionOpen) captionOpen = false;
+    if (timeOpen) void foldTime();
+    else if (captionOpen) captionOpen = false;
     else if (immersive) immersive = false;
   }
   addEventListener("keydown", onHudKey);
@@ -1037,7 +1181,7 @@
 
   // --- Search (#99): index built on first use, from the loaded catalogue and the UI names.
   let searchOpen = $state(false);
-  let searchButton = $state<HTMLButtonElement>();
+  /** The search opens from the sheet (#176): focus goes back to the button when it closes. */
   let searchIndex = $state.raw<SearchIndex | null>(null);
   let iauNames: Record<string, string> = {};
   function buildIndex(): SearchIndex | null {
@@ -1074,7 +1218,7 @@
   }
   function closeSearch() {
     searchOpen = false;
-    searchButton?.focus();
+    menuButton?.focus();
   }
   /**
    * Selects a search result, so its sheet opens, and turns the map towards it (even below the
@@ -1185,17 +1329,27 @@
   // immersive mode only the mark that brings the interface back is in the way (#130, #198).
   let header = $state<HTMLElement>();
   let bottomNav: HTMLElement;
-  /** The time line itself (folded): what the Earth view's framing keeps clear (#130). */
+  /** The time line, while unfolded from the button (#176). */
   let lineElement = $state<HTMLElement>();
-  /** Search, mini-globe and compass, top right (#138): resized as the mini-globe comes and goes. */
+  /** Mini-globe and compass, top right (#138): resized as the mini-globe comes and goes. */
   let skyTools = $state<HTMLElement>();
   let hudObserver: ResizeObserver | undefined;
   /** « ← Système solaire » during a visit (#134): kept free of labels while shown. */
   let visitBack = $state<HTMLElement>();
-  const hudBlocks = () =>
-    [header, bottomNav, skyTools, visitBack, restChip].filter(
-      (el) => el !== undefined && el !== null,
-    );
+  /**
+   * No header line on the sky any more (#176): the place is the sheet's title. It only comes back
+   * for a moment to say what is going on (the Earth view loading, the position being found).
+   */
+  const headerShown = $derived(!immersive && (spaceLoading || locating !== "idle"));
+  const hudBlocks = (): HTMLElement[] =>
+    [
+      headerShown ? header : undefined,
+      // The bottom row's own pieces (button, chips, time line, hint), not the whole width.
+      ...(bottomNav ? bottomNav.querySelectorAll<HTMLElement>("[data-hud]") : []),
+      instruments ? skyTools : undefined,
+      visitBack,
+      restChip,
+    ].filter((el): el is HTMLElement => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
     const rects = (immersive ? [hudReturn] : hudBlocks())
@@ -1212,6 +1366,11 @@
     void hudReturn;
     void visitBack;
     void restChip;
+    void headerShown;
+    void instruments;
+    void chipsShown;
+    void timeOpen;
+    void hint;
     if (status === "ready") tick().then(updateGraduationExclusions);
   });
   /**
@@ -1229,7 +1388,8 @@
   function spaceSafeArea() {
     const h = innerHeight;
     const top = (header?.getBoundingClientRect().bottom ?? 36) + 10;
-    const lineTop = lineElement?.getBoundingClientRect().top ?? h - 60;
+    // The button (#176), or the time line unfolded from it: the same top edge.
+    const lineTop = (menuButton ?? lineElement)?.getBoundingClientRect().top ?? h - 72;
     const bottom = h - lineTop + captionReserve();
     return { top, right: 16, bottom, left: 16 };
   }
@@ -2162,7 +2322,7 @@
   place={placeName}
   loading={spaceLoading}
   {locating}
-  hidden={immersive}
+  hidden={!headerShown}
 />
 
 {#if showVisitBack}
@@ -2197,13 +2357,10 @@
   <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
 {/if}
 
-<!-- Top right of the sky map (#138): search, mini-globe, compass. -->
+<!-- Top right of the sky map (#138): mini-globe and compass, while the sky moves (#176). -->
 <SkyTools
   shown={status === "ready" && mode === "sky" && !flying}
-  hidden={immersive}
-  {searchOpen}
-  onsearch={openSearch}
-  bind:searchButton
+  hidden={immersive || !instruments}
   azimuth={viewAzimuth}
   roll={viewRoll}
   {phoneHeading}
@@ -2489,6 +2646,9 @@
       onlocate={locate}
       {locating}
       onclose={closeGames}
+      onmenu={() => (menuOpen ? closeMenu() : openMenu())}
+      {menuOpen}
+      bind:menuButton={learnMenuButton}
     />
   {/await}
 {/if}
@@ -2513,7 +2673,8 @@
 
 <p class="sr-only" role="status">{immersive ? $_("hud.hidden") : ""}</p>
 {#if immersive}
-  <!-- Hidden interface (#198): a bubble the first times, then only this mark to come back. -->
+  <!-- Hidden interface (#198): a bubble the first times, then only this mark, in the button's
+       corner (#176), to come back. -->
   {#if hiddenTip}<p class="hidden-tip" aria-hidden="true">{$_("hud.hidden")}</p>{/if}
   <button
     class="hud-return"
@@ -2526,13 +2687,14 @@
   </button>
 {/if}
 
-<!-- Bottom of the interface (#130): one time line; the slider unfolds above it on a tap. -->
+<!-- Bottom of the interface (#176): the single button in the corner, chips beside it; the time
+     line unfolds from it. Hints sit above. -->
 <nav class="hud bottom" class:hidden={immersive} bind:this={bottomNav}>
   <div class="controls" bind:clientHeight={controlsHeight}>
     <!-- Kept clear of the scrubber's bubble when it rises during playback (#80). -->
     {#if tonight}
       <!-- By day (#106, #198): what is hidden, and a way to the coming night. -->
-      <button class="hint daylight" onclick={() => showDate(tonight.at)}>
+      <button class="hint daylight" data-hud onclick={() => showDate(tonight.at)}>
         <span class="why">{hint}</span>
         <span class="go">
           {$_(`map.daylight.${tonight.when}`, { values: { time: clockLabel(tonight.at) } })}
@@ -2541,54 +2703,61 @@
       </button>
     {:else if hint}<p
         class="hint"
+        data-hud
         class:quiet={!playing}
         style:margin-bottom={timeOpen && playing ? `${BUBBLE_RISE - 8}px` : undefined}
       >
         {hint}
       </p>{/if}
-    <TimeBar
-      {playing}
-      ontoggle={togglePlay}
-      {time}
-      {live}
-      {relative}
-      {timeOpen}
-      ontime={() => {
-        timeOpen = !timeOpen;
-        immersive = false;
-      }}
-      pointing={pointingDirect && mode === "sky"
-        ? pointer.state === "on" || pointer.state === "waiting"
-        : null}
-      onpoint={() => pointer.toggle()}
-      {menuOpen}
-      onmenu={() => (menuOpen ? closeMenu() : openMenu())}
-      bind:menuButton
-      bind:lineElement
-    >
-      {#snippet expanded()}
-        <TimeScrubber
-          {range}
-          {offset}
-          {playing}
-          {relative}
-          target={time}
-          speedKey={RANGES[range].speeds[speedIndex]!.key}
-          onscrub={scrub}
-          ontoggle={togglePlay}
-          onspeed={cycleSpeed}
-          showPlay={false}
-        />
-        <div class="group frame">
-          <button onclick={cycleRange} title={$_("time.rangeChange")}
-            ><Icon name="range" />{$_(`time.range.${range}`)}</button
+    <div class="corner-row">
+      {#if timeOpen}
+        <div class="time-wrap" data-hud>
+          <TimeBar
+            {playing}
+            ontoggle={togglePlay}
+            {time}
+            {live}
+            {relative}
+            onfold={() => void foldTime()}
+            bind:foldButton
+            bind:lineElement
           >
-          <button aria-pressed={live} onclick={goLive} title={$_("time.backToNow")}
-            ><Icon name="now" />{$_("time.now")}</button
-          >
+            {#snippet expanded()}
+              <TimeScrubber
+                {range}
+                {offset}
+                {playing}
+                {relative}
+                target={time}
+                speedKey={RANGES[range].speeds[speedIndex]!.key}
+                onscrub={scrub}
+                ontoggle={togglePlay}
+                onspeed={cycleSpeed}
+                showPlay={false}
+              />
+              <div class="group frame">
+                <button onclick={cycleRange} title={$_("time.rangeChange")}
+                  ><Icon name="range" />{$_(`time.range.${range}`)}</button
+                >
+                <button aria-pressed={live} onclick={goLive} title={$_("time.backToNow")}
+                  ><Icon name="now" />{$_("time.now")}</button
+                >
+              </div>
+            {/snippet}
+          </TimeBar>
         </div>
-      {/snippet}
-    </TimeBar>
+      {:else}
+        <ModeButton
+          floating={false}
+          mode={$_(`modes.${appMode}`)}
+          open={menuOpen}
+          onopen={() => (menuOpen ? closeMenu() : openMenu())}
+          bind:button={menuButton}
+          date={chipsShown.includes("date") ? { time, ontime: openTime, onnow: goLive } : null}
+          pointing={chipsShown.includes("pointing") ? { onstop: () => pointer.toggle() } : null}
+        />
+      {/if}
+    </div>
   </div>
 </nav>
 
@@ -2617,12 +2786,10 @@
 
 {#if menuOpen}
   <MenuSheet
-    {mode}
-    onview={(m) => {
-      menuOpen = false;
-      if (m !== mode) toggleSpace();
-    }}
-    pointing={pointer.state === "on" || pointer.state === "waiting"}
+    mode={appMode}
+    onmode={chooseMode}
+    onsearch={fromMenu(openSearch)}
+    pointing={sensorPointing}
     onpoint={fromMenu(() => pointer.toggle())}
     frame={spaceFrame}
     onframe={(id) => {
@@ -2631,10 +2798,11 @@
     }}
     visiting={spaceFrame === "body" ? targetName(spaceBody) : null}
     onvisit={fromMenu(() => (frameOpen = true))}
-    onrecentre={fromMenu(() => space?.resetView())}
+    onrecentre={fromMenu(recentre)}
     layers={viewLayers[mode]}
     onlayer={setLayer}
     unavailable={mode === "sky" ? unavailableLayers : []}
+    title={placeName}
     placeName={menuPlaceName}
     {coords}
     {locating}
@@ -2642,7 +2810,7 @@
     {time}
     {live}
     {relative}
-    ontime={fromMenu(() => (timeOpen = true))}
+    ontime={() => void openTime()}
     onnow={goLive}
     {night}
     onnight={() => (night = !night)}
@@ -2653,9 +2821,6 @@
     fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
     onfullscreen={toggleFullscreen}
     oncredits={fromMenu(() => (creditsOpen = true))}
-    ongames={fromMenu(() => openGames())}
-    oncatalogue={fromMenu(() => openGames({ view: "catalogue" }))}
-    onlatitude={fromMenu(() => openLatitude())}
     online={network.online}
     iosInstall={needsIosInstallHint()}
     offline={offline.current}
@@ -2704,7 +2869,9 @@
     z-index: 3;
     left: max(16px, env(safe-area-inset-left));
     right: max(16px, env(safe-area-inset-right));
-    bottom: calc(max(16px, env(safe-area-inset-bottom)) + 60px);
+    bottom: calc(
+      max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + var(--ast-corner-size) + 12px
+    );
     width: fit-content;
     max-width: 320px;
     margin: 0 auto;
@@ -2726,8 +2893,8 @@
   .hud-return {
     position: fixed;
     z-index: 3;
-    right: max(16px, env(safe-area-inset-right));
-    bottom: max(16px, env(safe-area-inset-bottom));
+    left: calc(max(var(--ast-corner-inset), env(safe-area-inset-left)) + 8px);
+    bottom: calc(max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + 8px);
     display: grid;
     place-items: center;
     width: 44px;
@@ -2881,14 +3048,17 @@
   .status p {
     margin: 0;
   }
+  /* The bottom strip takes no tap itself: only its pieces do (the sky stays touchable beside the
+     button and its chips). */
   .bottom {
-    left: max(16px, env(safe-area-inset-left));
-    right: max(16px, env(safe-area-inset-right));
-    bottom: max(16px, env(safe-area-inset-bottom));
+    left: max(var(--ast-corner-inset), env(safe-area-inset-left));
+    right: max(var(--ast-corner-inset), env(safe-area-inset-right));
+    bottom: max(var(--ast-corner-inset), env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    pointer-events: none;
     transition:
       opacity 220ms var(--ast-ease-out),
       visibility 0s;
@@ -2913,6 +3083,19 @@
     align-items: center;
     gap: 8px;
     width: 100%;
+  }
+  .bottom [data-hud] {
+    pointer-events: auto;
+  }
+  /* The button's row: everything starts from the corner (#176). */
+  .corner-row {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .time-wrap {
+    width: 100%;
+    max-width: 420px;
   }
   .group {
     display: flex;
