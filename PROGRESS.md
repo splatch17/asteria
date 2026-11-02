@@ -29,6 +29,7 @@
 8. Licences : Hipparcos et Gaia en CC BY-NC 3.0 IGO → autorisation ESA requise avant toute monétisation
 
 ## ✅ Fait récemment
+- 2026-11-02 — #216 (suite) Tranches Gaia d'une demi-magnitude (G < 7, puis 7 à 9 par 0,5) mises en cache une à une : au run 95, la tranche G < 7 est arrivée (16 538 sources) puis l'archive a répondu HTTP 500 trois fois sur la suivante ; chaque essai garde désormais les tranches déjà reçues.
 - 2026-11-02 — #216 Requête Gaia DR3 découpée en quatre tranches de magnitude (G < 7, 7–8, 8–8,5, 8,5–9) : depuis la version 3.15 de l'archive, un job asynchrone s'arrête sans prévenir à 50 000 lignes (le run 94 en avait exactement 50 000, 61 Cyg A manquait, distances Gaia 1 243 au lieu de 1 868, vitesses radiales 3 335 au lieu de 5 082). Une tranche qui atteint la limite fait échouer la construction ; nouveau nom de cache.
 - 2026-11-01 — #212 Plan B de déploiement : si `build_stars.py` échoue (VizieR injoignable), le déploiement reprend `stars.bin`, `star-strings.json` et `constellation-lines.json` du site en ligne (même données tant que le script et ses sources n'ont pas changé), avec un avertissement dans le run.
 - 2026-11-01 — #212 Cache des catalogues durable : `deploy.yml` tourne aussi deux fois par semaine (lundi, jeudi) pour que GitHub ne supprime pas le cache de `raw/` après 7 jours, et l'enregistre même quand une étape échoue (seulement s'il a changé, clé propre au run). Le run 90 (#211) avait échoué : cache expiré et trois miroirs VizieR injoignables.
