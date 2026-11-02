@@ -171,11 +171,17 @@ SELECT n.original_ext_source_id AS hip, g.source_id, g.phot_g_mean_mag, g.parall
        g.pseudocolour, g.ecl_lat, g.radial_velocity, g.radial_velocity_error
 FROM gaiadr3.hipparcos2_best_neighbour AS n
 JOIN gaiadr3.gaia_source AS g ON g.source_id = n.source_id
-WHERE g.phot_g_mean_mag < 9
+WHERE g.phot_g_mean_mag >= {lo} AND g.phot_g_mean_mag < {hi}
 """
+GAIA_G_LIMIT = 9
+# Since archive release 3.15 an asynchronous job returns at most 50 000 rows, silently: the single
+# G < 9 query came back with exactly 50 000 of its matches, 61 Cyg A among the missing (#216).
+# Magnitude bands keep each job well below the cap; a band that reaches it fails the build.
+GAIA_JOB_MAX_ROWS = 50_000
+GAIA_BANDS = ((-5, 7), (7, 8), (8, 8.5), (8.5, GAIA_G_LIMIT))
 # Cached in raw/, which CI restores from earlier runs (#115): rename this file whenever
 # GAIA_QUERY changes, so a restored cache never serves another query's result.
-GAIA_CACHE = "gaia-dr3-hip.ecsv"
+GAIA_CACHE = "gaia-dr3-hip-bands.ecsv"
 # The Gaia archive sometimes answers HTTP 500 (#115): retry before failing the build.
 GAIA_RETRY_WAITS_S = (60, 300)
 
@@ -204,15 +210,22 @@ def load_gaia() -> dict[int, dict]:
         from astroquery.gaia import Gaia
 
         RAW.mkdir(parents=True, exist_ok=True)
-        for attempt, wait in enumerate((*GAIA_RETRY_WAITS_S, None), start=1):
-            try:
-                result = Gaia.launch_job_async(GAIA_QUERY).get_results()
-                break
-            except requests.exceptions.RequestException as e:
-                if wait is None:
-                    raise
-                print(f"  Gaia archive error (attempt {attempt}): {e}; retrying in {wait} s")
-                time.sleep(wait)
+        parts = []
+        for lo, hi in GAIA_BANDS:
+            for attempt, wait in enumerate((*GAIA_RETRY_WAITS_S, None), start=1):
+                try:
+                    part = Gaia.launch_job_async(GAIA_QUERY.format(lo=lo, hi=hi)).get_results()
+                    break
+                except requests.exceptions.RequestException as e:
+                    if wait is None:
+                        raise
+                    print(f"  Gaia archive error (attempt {attempt}): {e}; retrying in {wait} s")
+                    time.sleep(wait)
+            print(f"  {lo} <= G < {hi}: {len(part)} sources")
+            if len(part) >= GAIA_JOB_MAX_ROWS:
+                raise RuntimeError(f"Gaia job {lo} <= G < {hi} truncated at {len(part)} rows (#216)")
+            parts.append(part)
+        result = vstack(parts)
         result.write(path, format="ascii.ecsv")
     from zero_point import zpt
 
@@ -353,7 +366,7 @@ def main() -> int:
 
     print("· Gaia DR3 x Hipparcos best neighbours (parallax, radial velocity)…")
     gaia = load_gaia()
-    print(f"  {len(gaia)} matched sources with G < 9")
+    print(f"  {len(gaia)} matched sources with G < {GAIA_G_LIMIT}")
 
     stars = []
     for r in main_cat:
