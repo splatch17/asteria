@@ -178,10 +178,12 @@ GAIA_G_LIMIT = 9
 # G < 9 query came back with exactly 50 000 of its matches, 61 Cyg A among the missing (#216).
 # Magnitude bands keep each job well below the cap; a band that reaches it fails the build.
 GAIA_JOB_MAX_ROWS = 50_000
-GAIA_BANDS = ((-5, 7), (7, 8), (8, 8.5), (8.5, GAIA_G_LIMIT))
-# Cached in raw/, which CI restores from earlier runs (#115): rename this file whenever
-# GAIA_QUERY changes, so a restored cache never serves another query's result.
-GAIA_CACHE = "gaia-dr3-hip-bands.ecsv"
+GAIA_BANDS = ((-5, 7), (7, 7.5), (7.5, 8), (8, 8.5), (8.5, GAIA_G_LIMIT))
+# Each band is cached in raw/ as soon as it arrives, so a run cut short by the archive (HTTP 500
+# on one band, #216) keeps the bands already fetched; CI restores raw/ from earlier runs (#115).
+# Rename the files (GAIA_CACHE_PREFIX) whenever GAIA_QUERY changes, so a restored cache never
+# serves another query's result.
+GAIA_CACHE_PREFIX = "gaia-dr3-hip-G"
 # The Gaia archive sometimes answers HTTP 500 (#115): retry before failing the build.
 GAIA_RETRY_WAITS_S = (60, 300)
 
@@ -203,34 +205,37 @@ LITERATURE_DISTANCES: dict[int, tuple[float, float, float, str, str, str]] = {
 
 def load_gaia() -> dict[int, dict]:
     """Gaia DR3 sources matched to Hipparcos (best neighbour), G < 9, cached in raw/."""
-    from astropy.table import Table
-
-    path = RAW / GAIA_CACHE
-    if not path.exists():
-        from astroquery.gaia import Gaia
-
-        RAW.mkdir(parents=True, exist_ok=True)
-        parts = []
-        for lo, hi in GAIA_BANDS:
-            for attempt, wait in enumerate((*GAIA_RETRY_WAITS_S, None), start=1):
-                try:
-                    part = Gaia.launch_job_async(GAIA_QUERY.format(lo=lo, hi=hi)).get_results()
-                    break
-                except requests.exceptions.RequestException as e:
-                    if wait is None:
-                        raise
-                    print(f"  Gaia archive error (attempt {attempt}): {e}; retrying in {wait} s")
-                    time.sleep(wait)
-            print(f"  {lo} <= G < {hi}: {len(part)} sources")
-            if len(part) >= GAIA_JOB_MAX_ROWS:
-                raise RuntimeError(f"Gaia job {lo} <= G < {hi} truncated at {len(part)} rows (#216)")
-            parts.append(part)
-        result = vstack(parts)
-        result.write(path, format="ascii.ecsv")
     from zero_point import zpt
 
+    table = vstack([gaia_band(lo, hi) for lo, hi in GAIA_BANDS])
     zpt.load_tables()  # Lindegren et al. 2021 parallax zero-point
-    return {int(r["hip"]): r for r in Table.read(path, format="ascii.ecsv")}
+    return {int(r["hip"]): r for r in table}
+
+
+def gaia_band(lo: float, hi: float):
+    """One magnitude band of GAIA_QUERY, from raw/ or the archive (retried on HTTP errors)."""
+    from astropy.table import Table
+
+    path = RAW / f"{GAIA_CACHE_PREFIX}{lo}-{hi}.ecsv"
+    if path.exists():
+        return Table.read(path, format="ascii.ecsv")
+    from astroquery.gaia import Gaia
+
+    for attempt, wait in enumerate((*GAIA_RETRY_WAITS_S, None), start=1):
+        try:
+            part = Gaia.launch_job_async(GAIA_QUERY.format(lo=lo, hi=hi)).get_results()
+            break
+        except requests.exceptions.RequestException as e:
+            if wait is None:
+                raise
+            print(f"  Gaia archive error ({lo} <= G < {hi}, attempt {attempt}): {e}; retrying in {wait} s")
+            time.sleep(wait)
+    print(f"  {lo} <= G < {hi}: {len(part)} sources")
+    if len(part) >= GAIA_JOB_MAX_ROWS:
+        raise RuntimeError(f"Gaia job {lo} <= G < {hi} truncated at {len(part)} rows (#216)")
+    RAW.mkdir(parents=True, exist_ok=True)
+    part.write(path, format="ascii.ecsv")
+    return Table.read(path, format="ascii.ecsv")  # same column types whether cached or fresh
 
 
 # Colour ranges of the zero-point calibration (L21): outside, the correction "can be seriously
