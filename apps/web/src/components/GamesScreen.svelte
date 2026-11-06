@@ -1,12 +1,28 @@
+<script lang="ts" module>
+  import type { CatalogueFilter as Filter } from "../lib/catalogue";
+
+  /**
+   * What the screen opens on (menu v2): the catalogue's list (a filter), a constellation's card in
+   * the deck (`all`: the deck of the 88, else the list the catalogue opens on), a game's settings,
+   * a game played at once with its last settings (« Reprendre »), or « Ton ciel ».
+   */
+  export type LearnStart =
+    | { view: "catalogue"; filter?: Filter }
+    | { view: "page"; abbr: string; star?: number | null; all?: boolean }
+    | { view: "setup"; game: string }
+    | { view: "play"; game: string }
+    | { view: "sky" };
+</script>
+
 <script lang="ts">
-  // Apprendre screen (#163, #164, #165, #170): the catalogue of the constellations, the games, the
-  // player's level and « Ton ciel », the constellations learnt so far as a grid of cells filled by
-  // mastery (1-bit dither: none, a third in dots, half in checkerboard, full). Catalogue and games
-  // are cards with a vignette (#185); a game's card comes from its `GAMES` entry. Opens over the
-  // whole app (the map stops under it) and closes back to it as it was. A game (QuizGame, WhereGame,
-  // NameStarGame), the
-  // catalogue and a constellation's page are shown in the same dialog, so that Escape and focus
-  // stay in one place. The constellation games feed the same memory of each constellation
+  // Screens of the Catalogue and Jeux tabs (#163, #164, #165, #170; menu v2): the catalogue's
+  // list and deck, a game's settings (#187), a game, and « Ton ciel », the constellations learnt
+  // so far as a grid of cells filled by mastery (1-bit dither: none, a third in dots, half in
+  // checkerboard, full). Their homes are in the menu's sheet (SheetCatalogue, SheetGames): the
+  // screen opens on what was chosen there, over the whole app (the map stops under it), and
+  // closing what it opened on closes the screen, back to that home. A game (QuizGame, WhereGame,
+  // NameStarGame), the catalogue and a constellation's page are shown in the same dialog, so that
+  // Escape and focus stay in one place. The constellation games feed the same memory of each constellation
   // (`con:XXX`), « Nomme l'étoile » that of each star (`star:HIP`). Opened from the map on a
   // constellation's page, « back » returns to the map; opened from « Nomme l'étoile », it returns
   // to the game as it was (the game stays mounted, hidden, under the page).
@@ -73,7 +89,7 @@
     type Answer,
     type Question,
   } from "../lib/games/which-constellation";
-  import { GAME_ID as WHERE_ID, MAX_POINTS, buildWhereSeries } from "../lib/games/where-is-it";
+  import { GAME_ID as WHERE_ID, buildWhereSeries } from "../lib/games/where-is-it";
   import type { Grade } from "../lib/games/srs";
   import { level as levelPref } from "../lib/level-store.svelte";
   import { readSetting, writeSetting } from "../lib/storage";
@@ -81,15 +97,12 @@
   import CatalogueDeck, { type DeckCardProps } from "./CatalogueDeck.svelte";
   import ConstellationPage from "./ConstellationPage.svelte";
   import GameSetup from "./GameSetup.svelte";
-  import Icon from "./Icon.svelte";
   import NameStarGame from "./NameStarGame.svelte";
   import QuizGame from "./QuizGame.svelte";
   import WhereGame from "./WhereGame.svelte";
-  import Vignette from "./Vignette.svelte";
-  import ModeButton from "./ModeButton.svelte";
   import { historyLayer } from "../lib/back.svelte";
-  import { LAST_GAME_KEY, isResumable } from "../lib/games/catalog";
-  import type { IconName } from "../lib/icons";
+  import { LAST_GAME_KEY } from "../lib/games/catalog";
+  import { RECENT_KEY, isRecentList, pushRecent } from "../lib/recent-cards";
   import type { Mastery } from "../lib/games/srs";
 
   let {
@@ -103,23 +116,12 @@
     figureSet,
     placeName,
     located = false,
-    start = null,
-    onlatitude,
+    start,
     onexplain,
     onlocate,
     locating = "idle",
     onclose,
-    onmenu,
-    menuOpen = false,
-    menuButton = $bindable(),
   }: {
-    /**
-     * The single button (#176), bottom left of this screen's home as on the sky: it opens the
-     * sheet of the modes (« Observer » goes back to the sky).
-     */
-    onmenu: () => void;
-    menuOpen?: boolean;
-    menuButton?: HTMLButtonElement | undefined;
     /** The player's own place is known (else `observer` is the app's default place, #187). */
     located?: boolean;
     /**
@@ -141,41 +143,17 @@
     theme: SkyTheme;
     figureSet: string;
     placeName: string;
-    /** Where the screen opens: the catalogue (menu), or a constellation's page (map, #170). */
-    start?: { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
-    /** Opens « Selon la latitude » (#188) over this screen, at a latitude (null: the player's). */
-    onlatitude?: (latitude?: number | null) => void;
+    /** Where the screen opens (a tab of the menu, or a constellation's page from the map, #170). */
+    start: LearnStart;
     onclose: () => void;
   } = $props();
 
-  const LEVELS: readonly FigureLevel[] = ["discovery", "amateur", "expert"];
   /** « Ton ciel » counts, best known first. */
   const MASTERY: readonly Mastery[] = ["mastered", "known", "learning", "new"];
 
-  /** A card of the screen (#185): the catalogue or a game (one entry of `GAMES` each). */
-  interface Card {
-    /** Vignette and element ids: `catalogue` or the game id. */
-    id: string;
-    /** Element ids when the same vignette shows twice (« Reprendre », #176). */
-    key?: string;
-    title: string;
-    pitch: string;
-    /** Record or progress line; empty for a game to come. */
-    meta: string;
-    /** Gauge: `value` of `total` inked (best score, constellations seen). */
-    value: number;
-    total: number;
-    /** Challenge records (#187), small tags under the gauge. */
-    chips?: string[];
-    icon: IconName;
-    action: string;
-    /** Null for a game to come (« Bientôt »). */
-    onclick: (() => void) | null;
-  }
   const params = new URLSearchParams(location.search);
-  // The app's level (#201): this control is a shortcut to the one of Menu › Réglages.
+  // The app's level (#201), set in the menu (Jeux tab, Réglages).
   const level = $derived<FigureLevel>(levelPref.value);
-  const chooseLevel = (l: FigureLevel) => levelPref.set(l);
 
   // Older records (one per game, #163) become the training records of the level chosen.
   let progress = $state.raw<Progress>(
@@ -240,11 +218,10 @@
   /** The game whose settings sheet is open. */
   let setup = $state<string | null>(null);
   const setupGame = $derived(GAMES.find((g) => g.id === setup) ?? null);
-  async function closeSetup() {
-    const id = setup;
+  /** The settings closed without playing: back to the Jeux tab. */
+  function closeSetup() {
     setup = null;
-    await tick();
-    dialog.querySelector<HTMLElement>(`[data-game='${id}']`)?.focus();
+    if (!playing) onclose();
   }
   function startGame(game: string, chosen: GameSettings) {
     settings = { ...settings, [game]: chosen };
@@ -272,16 +249,12 @@
     outside: boolean;
     sequence: CatalogueEntry[];
   } | null>(null);
-  const seenCount = $derived(Object.keys(progress.seen).filter((k) => k.startsWith("con:")).length);
 
-  function openPage(abbr: string, star: number | null = null, outside = false) {
-    const sequence = pageSequence(entries, abbr, {
-      filter,
-      query,
-      level,
-      outside,
-      tonight: visible,
-    });
+  /** `all`: the deck of the 88 (« Ouvrir les 88 cartes », a recent card). */
+  function openPage(abbr: string, star: number | null = null, outside = false, all = false) {
+    const sequence = all
+      ? pageSequence(entries, abbr, { filter: "all", query: "", level, outside: false })
+      : pageSequence(entries, abbr, { filter, query, level, outside, tonight: visible });
     page = { abbr, star, outside, sequence };
     markPageSeen(abbr);
   }
@@ -290,8 +263,12 @@
     if (page) page = { ...page, abbr };
     markPageSeen(abbr);
   }
-  /** A page read is « seen » (#170): kept apart from the games' review schedule. */
+  /**
+   * A page read is « seen » (#170): kept apart from the games' review schedule. It also leads
+   * « Tes dernières cartes » of the Catalogue tab.
+   */
   function markPageSeen(abbr: string) {
+    writeSetting(RECENT_KEY, pushRecent(readSetting(RECENT_KEY, [], isRecentList), abbr));
     const next = markSeen(progress, itemKey("con", abbr), Date.now());
     if (next !== progress) {
       progress = next;
@@ -306,10 +283,9 @@
     await tick();
     dialog.querySelector<HTMLElement>(`[data-abbr='${from?.abbr}']`)?.focus();
   }
-  async function closeCatalogue() {
+  function closeCatalogue() {
     catalogueOpen = false;
-    await tick();
-    dialog.querySelector<HTMLElement>("[data-learn='catalogue']")?.focus();
+    onclose();
   }
 
   /** The series being played, null on the list. `?seed=` makes it reproducible (captures). */
@@ -347,17 +323,9 @@
         series: buildStarSeries({ ...common, pool: starItems, visible: starsTonight }),
         ...meta,
       };
-    lastGame = game;
+    // « Reprendre » of the Jeux tab (#176): this game, with these settings, in one tap.
     writeSetting(LAST_GAME_KEY, game);
   }
-  /**
-   * « Reprendre » (#176): the game played last, with its last settings, first on the screen; a
-   * tap plays it (the third tap from the sky: button, Apprendre, Reprendre).
-   */
-  let lastGame = $state<string | null>(
-    readSetting<string | null>(LAST_GAME_KEY, null, isResumable),
-  );
-  const resume = $derived(GAMES.find((g) => g.id === lastGame) ?? null);
   /** « Rejouer »: the same settings, the record to beat updated. */
   const replay = () => playing && play(playing.game, playing.settings);
   function namedAnswer(hip: number, correct: boolean): ItemResult {
@@ -397,20 +365,19 @@
     saveProgress(progress);
     return previous;
   }
-  async function leave() {
-    const game = playing?.game;
+  /** Out of a game: back to the Jeux tab. */
+  function leave() {
     playing = null;
     gamePage = null;
-    await tick();
-    dialog.querySelector<HTMLElement>(`[data-game='${game}']`)?.focus();
+    onclose();
   }
 
   // Android back (#176) closes what is on top: a page opened from a game, the game, its settings,
-  // a constellation's page, the catalogue; then the screen itself (App.svelte).
+  // a constellation's page, the catalogue; closing what the screen opened on closes it.
   historyLayer(
     "learn-catalogue",
     () => catalogueOpen,
-    () => void closeCatalogue(),
+    () => closeCatalogue(),
   );
   historyLayer(
     "learn-page",
@@ -420,12 +387,12 @@
   historyLayer(
     "learn-setup",
     () => setup !== null,
-    () => void closeSetup(),
+    () => closeSetup(),
   );
   historyLayer(
     "learn-game",
     () => playing !== null,
-    () => void leave(),
+    () => leave(),
   );
   historyLayer(
     "learn-game-page",
@@ -436,7 +403,7 @@
   let dialog: HTMLElement;
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
-    menuButton?.focus({ preventScroll: true });
+    dialog.focus({ preventScroll: true });
     // Captures: ?game=1 (« Quelle constellation ? »), 2 (« Où est-elle ? »), 3 (« Nomme
     // l'étoile »), with its remembered settings or ?mode= and ?scope=; ?setup=N opens a game's
     // settings.
@@ -449,9 +416,15 @@
     }
     const sheet = GAMES[Number(params.get("setup")) - 1];
     if (sheet?.available) setup = sheet.id;
-    if (start?.view === "catalogue") catalogueOpen = true;
-    else if (start?.view === "page" && shapes[start.abbr])
-      openPage(start.abbr, start.star ?? null, true);
+    const asked = GAMES.find((g) => "game" in start && g.id === start.game && g.available);
+    if (start.view === "catalogue") {
+      if (start.filter) filter = start.filter;
+      catalogueOpen = true;
+    } else if (start.view === "page" && shapes[start.abbr])
+      openPage(start.abbr, start.star ?? null, true, start.all);
+    else if (start.view === "setup" && asked) setup = asked.id;
+    else if (start.view === "play" && asked && !playing) play(asked.id);
+    else if (start.view !== "sky" && !playing && !setup) onclose(); // nothing to show
     return () => previous?.focus?.();
   });
 
@@ -462,9 +435,9 @@
       e.stopPropagation();
       if (gamePage) void closeGamePage();
       else if (playing) void leave();
-      else if (setup) void closeSetup();
+      else if (setup) closeSetup();
       else if (page) void closePage();
-      else if (catalogueOpen) void closeCatalogue();
+      else if (catalogueOpen) closeCatalogue();
       else onclose();
       return;
     }
@@ -509,6 +482,7 @@
 
 <div
   class="games"
+  class:bare={!playing && !page && !catalogueOpen && start.view !== "sky"}
   role="dialog"
   aria-modal="true"
   aria-labelledby="games-title"
@@ -629,167 +603,57 @@
       {onclose}
     />
   {:else}
-    <header class="head" inert={setup !== null}>
-      <div>
-        <h1 id="games-title">{$_("learn.title")}</h1>
-        <!-- The level in force (#201), still in sight once the control below scrolls away. -->
-        <p class="head-level">
-          {$_("learn.level", { values: { level: $_(`level.${level}`) } })}
-        </p>
-      </div>
-    </header>
-
-    <div class="scroll" inert={setup !== null}>
-      {#if resume}
-        {@const g = resume}
-        {@const s = settings[g.id] ?? defaultSettings(located)}
-        <!-- Reprendre (#176): the last game, its last settings, in one tap. -->
-        <section class="group resume" aria-labelledby="learn-resume">
-          <h2 class="group-title" id="learn-resume">{$_("learn.resume.title")}</h2>
-          <ul class="cards">
-            {@render card({
-              id: g.id,
-              key: "resume",
-              title: $_(`games.${g.id}.title`),
-              pitch: $_(`games.mode.${s.mode}.label`) + " · " + $_(`games.scope.${s.scope}.label`),
-              meta: "",
-              value: 0,
-              total: 0,
-              icon: "play",
-              action: $_("learn.resume.play"),
-              onclick: () => play(g.id, s),
-            })}
-          </ul>
-        </section>
-      {/if}
-      <div class="levels" role="group" aria-label={$_("games.level")}>
-        {#each LEVELS as l (l)}
-          <button aria-pressed={level === l} onclick={() => chooseLevel(l)}
-            >{$_(`level.${l}`)}</button
-          >
-        {/each}
-      </div>
-
-      <section class="group" aria-labelledby="learn-catalogue">
-        <h2 class="group-title" id="learn-catalogue">{$_("catalogue.title")}</h2>
-        <ul class="cards">
-          {@render card({
-            id: "catalogue",
-            title: $_("learn.catalogue.title"),
-            pitch: $_("learn.catalogue.hint"),
-            meta: $_("learn.catalogue.seen", {
-              values: { seen: seenCount, total: entries.length },
-            }),
-            value: seenCount,
-            total: entries.length,
-            icon: "catalogue",
-            action: $_("learn.catalogue.open"),
-            onclick: () => (catalogueOpen = true),
-          })}
-          {#if onlatitude}
-            {@render card({
-              id: "latitude",
-              title: $_("learn.latitude.title"),
-              pitch: $_("learn.latitude.hint"),
-              meta: "",
-              value: 0,
-              total: 0,
-              icon: "latitude",
-              action: $_("learn.latitude.open"),
-              onclick: () => onlatitude(),
-            })}
-          {/if}
-        </ul>
-      </section>
-
-      <section class="group" aria-labelledby="games-list">
-        <h2 class="group-title" id="games-list">{$_("games.section.games")}</h2>
-        <ul class="cards">
-          {#each GAMES as game (game.id)}
-            {@const best = bestOf(game.id)}
-            {@const streak = bestOf(game.id, "streak")}
-            {@const timed = bestOf(game.id, "timed")}
-            {@render card({
-              // Challenge records at this level (#187), when there are some.
-              chips: [
-                ...(streak > 0 ? [$_("games.card.streak", { values: { score: streak } })] : []),
-                ...(timed > 0
-                  ? [
-                      game.points
-                        ? $_("games.card.timedPoints", { values: { score: timed } })
-                        : $_("games.card.timed", { values: { score: timed } }),
-                    ]
-                  : []),
-              ],
-              id: game.id,
-              title: $_(`games.${game.id}.title`),
-              pitch: $_(`games.${game.id}.hint`),
-              meta: !game.available
-                ? ""
-                : best > 0
-                  ? game.points
-                    ? $_("games.bestPoints", { values: { score: best } })
-                    : $_("games.best", { values: { score: best, total: game.length } })
-                  : streak + timed > 0
-                    ? $_("games.setup.noRecord")
-                    : $_("games.noRecord"),
-              // Points games (#184): one square per MAX_POINTS of the record.
-              value: game.points ? Math.round(best / MAX_POINTS) : best,
-              total: game.length,
-              icon: "play",
-              action: $_("games.play"),
-              onclick: game.available ? () => (setup = game.id) : null,
-            })}
-          {/each}
-        </ul>
-        {#if visible.size > 0}<p class="note">{$_("games.tonight")}</p>{/if}
-      </section>
-
-      <section class="group" aria-labelledby="games-sky">
-        <h2 class="group-title" id="games-sky">{$_("games.section.sky")}</h2>
-        <div class="panel-block sky-panel">
-          <dl class="stats">
-            {#each MASTERY as state (state)}
-              <div class="stat">
-                <dt>
-                  <span class={`swatch ${state}`} aria-hidden="true"></span>{$_(
-                    `games.sky.count.${state}`,
-                    { values: { count: counts[state] } },
-                  )}
-                </dt>
-                <dd>{counts[state]}</dd>
-              </div>
-            {/each}
-          </dl>
-          <!-- Découverte (#198): the names in full, on wider cells; abbreviations elsewhere. -->
-          <ul class="sky" class:few={pool.length < 40} class:named={level === "discovery"}>
-            {#each skyCells as abbr (abbr)}
-              {@const state = masteryOfItem(progress, itemKey("con", abbr))}
-              <li
-                class={`cell ${state}`}
-                title={names[abbr] ?? abbr}
-                aria-label={$_("games.sky.cell", {
-                  values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
-                })}
-              >
-                <span aria-hidden="true"
-                  >{level === "discovery" ? (names[abbr] ?? abbr) : abbr}</span
+    <!-- « Ton ciel » (#185), from the Jeux tab: what the games know of each constellation. Under
+         a game's settings opened from that tab, nothing: the sheet rises over the sky. -->
+    {#if start.view === "sky"}
+      <header class="head">
+        <button
+          class="icon"
+          onclick={onclose}
+          aria-label={$_("games.sky.back")}
+          title={$_("games.sky.back")}>←</button
+        >
+        <h1 id="games-title">{$_("games.section.sky")}</h1>
+      </header>
+      <div class="scroll">
+        <section class="group" aria-labelledby="games-title">
+          <div class="panel-block sky-panel">
+            <dl class="stats">
+              {#each MASTERY as state (state)}
+                <div class="stat">
+                  <dt>
+                    <span class={`swatch ${state}`} aria-hidden="true"></span>{$_(
+                      `games.sky.count.${state}`,
+                      { values: { count: counts[state] } },
+                    )}
+                  </dt>
+                  <dd>{counts[state]}</dd>
+                </div>
+              {/each}
+            </dl>
+            <!-- Découverte (#198): the names in full, on wider cells; abbreviations elsewhere. -->
+            <ul class="sky" class:few={pool.length < 40} class:named={level === "discovery"}>
+              {#each skyCells as abbr (abbr)}
+                {@const state = masteryOfItem(progress, itemKey("con", abbr))}
+                <li
+                  class={`cell ${state}`}
+                  title={names[abbr] ?? abbr}
+                  aria-label={$_("games.sky.cell", {
+                    values: { name: names[abbr] ?? abbr, state: $_(`games.mastery.${state}`) },
+                  })}
                 >
-              </li>
-            {/each}
-          </ul>
-        </div>
-      </section>
-    </div>
-    <!-- The single button (#176), as on the sky: the modes; « Observer » goes back to the sky. -->
-    <div class="corner" inert={setup !== null}>
-      <ModeButton
-        mode={$_("modes.learn")}
-        open={menuOpen}
-        onopen={onmenu}
-        bind:button={menuButton}
-      />
-    </div>
+                  <span aria-hidden="true"
+                    >{level === "discovery" ? (names[abbr] ?? abbr) : abbr}</span
+                  >
+                </li>
+              {/each}
+            </ul>
+          </div>
+        </section>
+      </div>
+    {:else}
+      <h1 id="games-title" class="sr-only">{$_("tabs.games")}</h1>
+    {/if}
     {#if setupGame}
       {@const g = setupGame}
       {@const scope = askable(g)}
@@ -818,49 +682,6 @@
     {/if}
   {/if}
 </div>
-
-<!-- A card of the screen (#185): vignette, title, pitch, record, gauge and the one action,
-     which covers the whole card (a tap anywhere opens it). -->
-{#snippet card(c: Card)}
-  <li class="card" class:soon={!c.onclick}>
-    <div class="art"><Vignette id={c.id} /></div>
-    <div class="text">
-      <h3 id={`card-${c.key ?? c.id}`}>{c.title}</h3>
-      <p class="pitch">{c.pitch}</p>
-      {#if c.meta}
-        <p class="meta">
-          <span class="gauge" class:fine={c.total > 20} aria-hidden="true">
-            {#each Array.from({ length: c.total }, (_, i) => i < c.value) as on, i (i)}
-              <i class:on></i>
-            {/each}
-          </span>
-          <span>{c.meta}</span>
-        </p>
-      {/if}
-      {#if c.chips?.length}
-        <p class="chips">
-          {#each c.chips as chip (chip)}<span class="chip">{chip}</span>{/each}
-        </p>
-      {/if}
-    </div>
-    <div class="action">
-      {#if c.onclick}
-        <button
-          class="go"
-          id={`go-${c.key ?? c.id}`}
-          aria-labelledby={`go-${c.key ?? c.id} card-${c.key ?? c.id}`}
-          onclick={c.onclick}
-          data-learn={c.key ?? (c.id === "catalogue" ? "catalogue" : undefined)}
-          data-game={c.id === "catalogue" || c.key ? undefined : c.id}
-        >
-          <Icon name={c.icon} size={12} /><span>{c.action}</span>
-        </button>
-      {:else}
-        <span class="later">{$_("games.soon")}</span>
-      {/if}
-    </div>
-  </li>
-{/snippet}
 
 <style>
   .games {
@@ -907,8 +728,7 @@
   .head {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     padding-top: max(16px, env(safe-area-inset-top));
     padding-bottom: 12px;
     border-bottom: 1px solid var(--ast-hairline);
@@ -918,13 +738,6 @@
     font: 700 30px/1 var(--ast-font-display);
     letter-spacing: 0.02em;
     text-transform: uppercase;
-  }
-  .head-level {
-    margin: 6px 0 0;
-    font: 500 11px/1.2 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
   }
   button {
     font: 500 11px/1 var(--ast-font-mono);
@@ -941,18 +754,12 @@
     outline: 1px solid var(--ast-fg);
     outline-offset: 2px;
   }
-  .corner {
-    display: contents;
-  }
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    /* Room for the single button in the corner (#176). */
-    padding-bottom: calc(
-      max(var(--ast-corner-inset), env(safe-area-inset-bottom)) + var(--ast-corner-size) + 16px
-    );
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
   ul {
     margin: 0;
@@ -960,244 +767,19 @@
     list-style: none;
   }
 
-  /* Level: a segmented control across the width. */
-  .levels {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: 16px;
-    border: 1px solid var(--ast-control-border);
+  /* A game's settings opened from the Jeux tab (menu v2): the sheet rises over the sky. */
+  .games.bare {
+    background: transparent;
   }
-  .levels button {
-    min-height: 44px;
-    padding: 0 6px;
-    color: var(--ast-fg-muted);
-    transition:
-      color 120ms var(--ast-ease-out),
-      background-color 120ms var(--ast-ease-out);
+  .icon {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    margin: -8px 0 0 -12px;
+    font: 400 20px/1 var(--ast-font-mono);
   }
-  .levels button + button {
-    border-left: 1px solid var(--ast-hairline);
-  }
-  .levels button[aria-pressed="true"] {
-    color: var(--ast-bg);
-    background: var(--ast-fg);
-  }
-  .levels button:focus-visible {
-    outline-offset: -4px;
-  }
-  .levels button[aria-pressed="true"]:focus-visible {
-    outline-color: var(--ast-bg);
-  }
-
-  /* Groups: catalogue, games, « Ton ciel ». A spaced-capitals title ruled to the edge. */
   .group {
     margin-top: 26px;
-  }
-  .levels + .group {
-    margin-top: 22px;
-  }
-  .group-title {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0 0 10px;
-    font: 500 10px/1.4 var(--ast-font-mono);
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .group-title::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: var(--ast-hairline);
-  }
-
-  /* Cards (#185): panels (#171) with a vignette, the record and one action over the card. */
-  .cards {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    container-type: inline-size;
-  }
-  .card {
-    position: relative;
-    display: grid;
-    grid-template-columns: 104px minmax(0, 1fr);
-    grid-template-areas:
-      "art text"
-      "art action";
-    gap: 12px 14px;
-    border: 1px solid var(--ast-panel-border);
-    background: var(--ast-panel-bg);
-    padding: 12px;
-    transition:
-      border-color 160ms var(--ast-ease-out),
-      background-color 160ms var(--ast-ease-out);
-  }
-  .art {
-    grid-area: art;
-    align-self: center;
-    width: 104px;
-    height: 104px;
-    background: var(--ast-bg);
-    box-shadow: inset 0 0 0 1px var(--ast-hairline);
-  }
-  .text {
-    grid-area: text;
-    align-self: end;
-    min-width: 0;
-  }
-  h3 {
-    margin: 0 0 4px;
-    font: 700 21px/1 var(--ast-font-display);
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    text-wrap: balance;
-  }
-  .pitch {
-    margin: 0;
-    font: 400 11px/1.45 var(--ast-font-mono);
-    color: var(--ast-fg-muted);
-  }
-  .meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px 8px;
-    margin: 8px 0 0;
-    font: 500 9px/1.3 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-  }
-  /* Gauge: one pip per round (the record) or one tick per constellation (the catalogue). */
-  .gauge {
-    display: flex;
-    align-items: flex-end;
-    gap: 2px;
-  }
-  .gauge i {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    box-sizing: border-box;
-    border: 1px solid var(--ast-fg-muted);
-  }
-  .gauge i.on {
-    border-color: var(--ast-fg);
-    background: var(--ast-fg);
-  }
-  .gauge.fine {
-    gap: 1px;
-  }
-  .gauge.fine i {
-    width: 1px;
-    height: 6px;
-    border: 0;
-    background: var(--ast-fg-muted);
-    opacity: 0.6;
-  }
-  .gauge.fine i:nth-child(10n) {
-    height: 9px;
-  }
-  .gauge.fine i.on {
-    height: 9px;
-    opacity: 1;
-    background: var(--ast-fg);
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin: 6px 0 0;
-  }
-  .chip {
-    padding: 3px 5px 2px;
-    border: 1px solid var(--ast-hairline);
-    font: 500 8px/1 var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .action {
-    grid-area: action;
-    align-self: start;
-    display: flex;
-  }
-  .go {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 44px;
-    padding: 0 16px;
-    color: var(--ast-bg);
-    background: var(--ast-fg);
-  }
-  /* The action covers the card: a tap anywhere on it plays (one tap, ≤ 2 rule). */
-  .go::after {
-    content: "";
-    position: absolute;
-    inset: -1px;
-  }
-  .go:focus-visible {
-    outline: none;
-  }
-  .go:focus-visible::after {
-    outline: 1px solid var(--ast-fg);
-    outline-offset: 2px;
-  }
-  .go :global(svg) {
-    transition: transform 160ms var(--ast-ease-out);
-  }
-  @media (hover: hover) {
-    .card:hover {
-      border-color: var(--ast-fg-muted);
-    }
-    .card:hover .go :global(svg) {
-      transform: translateX(2px);
-    }
-  }
-  .card:active {
-    background: color-mix(in srgb, var(--ast-fg) 9%, transparent);
-  }
-  .later {
-    font: 500 9px/44px var(--ast-font-mono);
-    letter-spacing: var(--ast-tracking-meta);
-    text-transform: uppercase;
-    color: var(--ast-fg-muted);
-  }
-  .soon .art,
-  .soon h3 {
-    opacity: 0.55;
-  }
-  /* Wide (tablet, desktop): one row, the action on the right. */
-  @container (min-width: 520px) {
-    .card {
-      grid-template-columns: 96px minmax(0, 1fr) auto;
-      grid-template-areas: "art text action";
-      column-gap: 20px;
-      padding: 14px;
-    }
-    .art {
-      width: 96px;
-      height: 96px;
-    }
-    .text,
-    .action {
-      align-self: center;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .card,
-    .levels button,
-    .go :global(svg) {
-      transition: none;
-    }
-  }
-  .note {
-    margin: 10px 0 0;
-    font: 400 11px/1.5 var(--ast-font-mono);
-    color: var(--ast-fg-muted);
   }
 
   /* « Ton ciel » (#185): counts by mastery (the numbers are the legend), then the cells. */
