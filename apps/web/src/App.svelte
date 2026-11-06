@@ -2523,7 +2523,11 @@
   </div>
 {/if}
 
-<GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
+<GestureTip
+  view="earth"
+  active={mode === "space" && !flying && !!space && !menuOpen}
+  top={toastTop}
+/>
 
 {#if povCaption && !flying && !selection && !immersive}
   <!-- Points of view (#128): what stays fixed, what moves; what is (not) to scale. One line at

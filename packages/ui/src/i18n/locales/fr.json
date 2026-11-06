@@ -841,7 +841,7 @@
   "catalogue.meta": "{seen} / {total} consultées",
   "catalogue.recent": "Tes dernières cartes",
   "catalogue.start": "Pour commencer",
-  "catalogue.start.hint": "La plus haute dans ton ciel en ce moment.",
+  "catalogue.start.hint": "Haut dans ton ciel en ce moment : commence par elle.",
   "catalogue.openAll": "Ouvrir les {total} cartes",
   "catalogue.visible": "Visibles ce soir",
   "catalogue.visible.label": "Visibles ce soir : {n, plural, =0 {aucune constellation} one {# constellation} other {# constellations}}",

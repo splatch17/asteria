@@ -3,7 +3,8 @@
   // dernières cartes », the last three constellations looked at in the deck (lib/recent-cards),
   // as small cards drawn from their sky (CardThumb): a tap opens the deck on that card. Then
   // « Ouvrir les 88 cartes », the deck laid on the constellation standing highest in the sky now
-  // (lib/sky-tonight). Then two tiles: « Visibles ce soir » (their count; the catalogue's list on
+  // (lib/sky-tonight figureToSee: among the well-known ones of the Découverte list when one is at
+  // least 20° high, as « Ce soir » of the Ciel tab, else the highest of all). Then two tiles: « Visibles ce soir » (their count; the catalogue's list on
   // its « Ce soir » filter, #170) and « Selon la latitude » (#188). Before any card was looked at,
   // the highest constellation is offered as the first card to open.
   // Computed once per opening: the date and the place do not change under the sheet.
@@ -15,7 +16,8 @@
   import { loadProgress } from "../lib/games/progress";
   import { visibleTonight } from "../lib/games/visibility";
   import { RECENT_KEY, isRecentList, recentCards } from "../lib/recent-cards";
-  import { highestFigure } from "../lib/sky-tonight";
+  import { figureToSee, highestFigure } from "../lib/sky-tonight";
+  import { DISCOVERY_CONSTELLATIONS } from "../lib/games/pool";
   import { readSetting } from "../lib/storage";
   import CardThumb from "./CardThumb.svelte";
   import Vignette from "./Vignette.svelte";
@@ -57,13 +59,16 @@
   );
   const centres = Object.fromEntries(all.map((a) => [a, shapes[a]!.centre]));
   const highest = untrack(
-    () => highestFigure(centres, all, date, observer)?.abbr ?? recent[0] ?? "Ori",
+    () =>
+      figureToSee(centres, DISCOVERY_CONSTELLATIONS, date, observer)?.abbr ?? recent[0] ?? "Ori",
   );
   const visible = untrack(() => visibleTonight(shapes, date, observer));
-  /** The tile's picture: the highest of those up tonight. */
-  const visibleArt = untrack(
-    () => highestFigure(centres, [...visible], date, observer)?.abbr ?? [...visible][0] ?? null,
-  );
+  /** The tile's picture: one of those up tonight, the well-known first, not the card above. */
+  const visibleArt = untrack(() => {
+    const up = [...visible].filter((a) => a !== highest);
+    const known = up.filter((a) => DISCOVERY_CONSTELLATIONS.includes(a));
+    return highestFigure(centres, known.length ? known : up, date, observer)?.abbr ?? up[0] ?? null;
+  });
   const name = (abbr: string) => names[abbr] ?? abbr;
   $effect(() => {
     onmeta?.($_("catalogue.meta", { values: { seen, total: all.length } }));
