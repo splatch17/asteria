@@ -58,7 +58,10 @@ await tap("[data-corner='button']");
 await tap("[data-tab='catalogue']", 900);
 await tap("[data-action='settings']");
 check("settings open", (await has("#main-menu[data-settings]")) === 1);
-check("tab of origin still marked", (await has("[data-tab='catalogue'][aria-selected='true']")) === 1);
+check(
+  "tab of origin still marked",
+  (await has("[data-tab='catalogue'][aria-selected='true']")) === 1,
+);
 await back();
 check("back: settings → Catalogue home", (await sheetTab()) === "catalogue");
 check("settings closed", (await has("#main-menu[data-settings]")) === 0);
@@ -78,7 +81,10 @@ await tap("[data-tab='catalogue']", 900);
 await tap("[data-action='deck']", 2500);
 check("deck open", (await has(".games")) === 1 && (await has("#main-menu")) === 0);
 await back();
-check("back: deck → Catalogue home", (await has(".games")) === 0 && (await sheetTab()) === "catalogue");
+check(
+  "back: deck → Catalogue home",
+  (await has(".games")) === 0 && (await sheetTab()) === "catalogue",
+);
 await back();
 check("back closes the sheet", (await has("#main-menu")) === 0);
 
@@ -110,7 +116,10 @@ check("map enlarged", (await has(".map-block.expanded")) === 1);
 await back();
 check("back reduces the map", (await has(".map-block.expanded")) === 0);
 await back();
-check("back: latitude → Catalogue home", (await has(".map-block")) === 0 && (await sheetTab()) === "catalogue");
+check(
+  "back: latitude → Catalogue home",
+  (await has(".map-block")) === 0 && (await sheetTab()) === "catalogue",
+);
 
 // Ciel/Orbites tabs switch the map behind the sheet.
 await tap("[data-tab='orbits']", 6000);

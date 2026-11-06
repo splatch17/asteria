@@ -135,7 +135,10 @@ const shots = {
     await ctx.close();
   },
   async "apres-08-reglages"() {
-    const { ctx, page } = await open(PHONE, SKY, { ...PLAYED, "asteria.menu.settings": '"display"' });
+    const { ctx, page } = await open(PHONE, SKY, {
+      ...PLAYED,
+      "asteria.menu.settings": '"display"',
+    });
     await tap(page, "[data-corner='button']");
     await tap(page, "[data-action='settings']");
     await shot(page, "apres-08-reglages-affichage");
