@@ -1,5 +1,5 @@
 /**
- * Vignettes of the Apprendre screen (#185): a tiny sky per card, drawn in the house 1-bit style
+ * Vignettes of the Catalogue and Jeux tabs (#185, menu v2): a tiny sky per card, drawn in the house 1-bit style
  * (ART_DIRECTION.md §3), no image file. Each vignette is a 40×40 pixel grid:
  * - a ground of ink dithered with the shaders' Bayer 8×8 matrix (a Milky Way band, a planisphere's
  *   shading, the ground below a horizon), in three nested densities so that the card can reveal
@@ -434,108 +434,7 @@ function starrySky(): Scene {
   };
 }
 
-// --- Modes of the app (#176): the three tiles of the sheet, in the same hand.
-
-/** Observer: the sky over a horizon, Cassiopeia's W and the Milky Way rising from the ground. */
-function observeMode(): Scene {
-  const horizon = (x: number) => 30 + 1.2 * Math.sin((x + 3) / 6);
-  const sky = band(30, 36, -58, 5, 0.45, 5);
-  const w: Pt[] = [
-    [9, 13],
-    [13, 9],
-    [17, 13],
-    [21, 8],
-    [26, 11],
-  ];
-  const bright: Star[] = [
-    ...w.map(([x, y], i): Star => ({ x, y, size: i === 2 ? 1 : 0 })),
-    { x: 31, y: 19, size: 2 },
-  ];
-  return {
-    density: (x, y) => (y > horizon(x) ? 0.62 : sky(x, y)),
-    stars: [
-      ...bright,
-      ...scatter(
-        10,
-        113,
-        bright.map((s): Pt => [s.x, s.y]),
-        4,
-      ).filter((s) => s.y < horizon(s.x) - 2),
-    ],
-    lines: [
-      { points: w },
-      {
-        points: Array.from({ length: 9 }, (_, i): Pt => [5 * i, horizon(5 * i) - 0.5]),
-        gap: 0,
-      },
-    ],
-  };
-}
-
-/** Orbites: the Earth, its night side dithered, the Moon on its orbit, the Sun in a corner. */
-function orbitsMode(): Scene {
-  const [cx, cy, r] = [20, 21, 6.5];
-  const orbit: Pt[] = Array.from({ length: 33 }, (_, i): Pt => {
-    const a = (i / 32) * 2 * Math.PI;
-    return [cx - 0.5 + Math.cos(a) * 15, cy - 0.5 + Math.sin(a) * 6];
-  });
-  const moon: Pt = [cx + 13, cy - 4];
-  return {
-    density: (x, y) => {
-      const d = Math.hypot(x - cx, y - cy);
-      if (d > r) return 0;
-      // Lit from the upper left: the far side in dense dots, a light wash on the day side.
-      return (x - cx) * 0.7 + (y - cy) * 0.7 > -1 ? 0.62 : 0.16;
-    },
-    stars: [
-      { x: 6, y: 6, size: 3 },
-      { x: moon[0], y: moon[1], size: 1 },
-      ...scatter(9, 131, [[6, 6], moon, [cx, cy]], 9),
-    ],
-    lines: [{ points: orbit, gap: 0 }],
-    rings: [{ x: cx - 0.5, y: cy - 0.5, r }],
-  };
-}
-
-/** Apprendre: a constellation's card from the catalogue's deck, its index in the corner. */
-function learnMode(): Scene {
-  const [x0, y0, x1, y1] = [9, 5, 29, 34];
-  const edge = (pts: Pt[]): Line => ({ points: pts, gap: 0 });
-  const figure: Pt[] = [
-    [14, 25],
-    [17, 20],
-    [20, 23],
-    [23, 17],
-    [25, 21],
-  ];
-  const index: Pt[] = [];
-  for (let x = x0 + 2; x <= x0 + 6; x++) for (let y = y0 + 2; y <= y0 + 4; y++) index.push([x, y]);
-  return {
-    density: (x, y) => {
-      // The card's dithered thickness (#196), offset to the bottom right.
-      const inCard = x >= x0 && x <= x1 && y >= y0 && y <= y1;
-      const inShadow = x >= x0 + 3 && x <= x1 + 3 && y >= y0 + 3 && y <= y1 + 3;
-      return !inCard && inShadow ? 0.5 : 0;
-    },
-    stars: [...figure.map(([x, y], i): Star => ({ x, y, size: i === 3 ? 1 : 0 }))],
-    lines: [
-      { points: figure },
-      edge([
-        [x0, y0],
-        [x1, y0],
-        [x1, y1],
-        [x0, y1],
-        [x0, y0],
-      ]),
-    ],
-    pixels: index,
-  };
-}
-
 const SCENES: Record<string, () => Scene> = {
-  "mode-observe": observeMode,
-  "mode-orbits": orbitsMode,
-  "mode-learn": learnMode,
   catalogue: planisphere,
   whichConstellation: orion,
   nameStar: namedStar,

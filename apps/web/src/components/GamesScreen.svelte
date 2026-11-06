@@ -89,7 +89,7 @@
     type Answer,
     type Question,
   } from "../lib/games/which-constellation";
-  import { GAME_ID as WHERE_ID, MAX_POINTS, buildWhereSeries } from "../lib/games/where-is-it";
+  import { GAME_ID as WHERE_ID, buildWhereSeries } from "../lib/games/where-is-it";
   import type { Grade } from "../lib/games/srs";
   import { level as levelPref } from "../lib/level-store.svelte";
   import { readSetting, writeSetting } from "../lib/storage";
