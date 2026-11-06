@@ -65,6 +65,13 @@
       ? $_("games.bestPoints", { values: { score } })
       : $_("games.best", { values: { score, total: game.length } });
   }
+  /** « Reprendre »'s record, after the mode's name: « record 8 », « record 4 200 pts ». */
+  function resumeRecord(id: string, mode: GameMode): string {
+    const score = best(id, mode);
+    if (score <= 0) return "";
+    const points = GAMES.find((g) => g.id === id)?.points ?? false;
+    return $_(points ? "games.resume.recordPoints" : "games.resume.record", { values: { score } });
+  }
   /** The best tag of a game across its modes, training first. */
   const tagOf = (id: string) =>
     (["training", "streak", "timed"] as const).map((m) => recordTag(id, m)).find(Boolean) ?? "";
@@ -77,7 +84,7 @@
       line: [
         $_(`games.mode.${s.mode}.label`),
         $_(`games.scope.${s.scope}.label`),
-        recordTag(lead.id, s.mode),
+        resumeRecord(lead.id, s.mode),
       ]
         .filter(Boolean)
         .join(" · "),

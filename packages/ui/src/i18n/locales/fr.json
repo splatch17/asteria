@@ -848,5 +848,7 @@
   "games.start": "Pour commencer",
   "games.level.label": "Niveau {level} : changer",
   "games.sky.tile": "Ton ciel : {n} sur {total} connues",
-  "games.sky.back": "Revenir aux jeux"
+  "games.sky.back": "Revenir aux jeux",
+  "games.resume.record": "record {score, number}",
+  "games.resume.recordPoints": "record {score, number} pts"
 }
