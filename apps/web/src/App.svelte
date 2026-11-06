@@ -2437,7 +2437,7 @@
     body={spaceBody}
     bodies={BODY_TARGETS.map((id) => ({ id, name: targetName(id) }))}
     onbody={chooseBody}
-    top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
+    top={`calc(max(var(--ast-corner-inset), env(safe-area-inset-top)) + ${Math.max(headerHeight + 12, COMPASS_CLEAR)}px)`}
     onselect={chooseFrame}
     onclose={() => (frameOpen = false)}
     toggle={menuButton}
