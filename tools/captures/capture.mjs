@@ -1,5 +1,7 @@
 // Captures of #176 (modes behind the single button). Usage: node capture.mjs <outDir> [only...]
-import { chromium } from "playwright"; // pre-installed in the cloud container
+// Playwright is installed globally in the cloud container: ESM imports ignore NODE_PATH, require does not.
+import { createRequire } from "node:module";
+const { chromium } = createRequire(import.meta.url)("playwright");
 import { mkdirSync } from "node:fs";
 
 const out = process.argv[2];

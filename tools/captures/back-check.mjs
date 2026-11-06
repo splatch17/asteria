@@ -1,5 +1,7 @@
 // Checks Android/browser back over the layers (#176) in Chromium.
-import { chromium } from "playwright"; // pre-installed in the cloud container
+// Playwright is installed globally in the cloud container: ESM imports ignore NODE_PATH, require does not.
+import { createRequire } from "node:module";
+const { chromium } = createRequire(import.meta.url)("playwright");
 
 const browser = await chromium.launch({
   executablePath: process.env.PW_CHROMIUM, // optional: a Chromium other than Playwright's own
