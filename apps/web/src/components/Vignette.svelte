@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A card's tiny sky on the Apprendre screen (#185), drawn by lib/vignettes.ts: dithered ground
+  // A card's tiny sky in the Catalogue and Jeux tabs (#185, menu v2), drawn by lib/vignettes.ts: dithered ground
   // revealed in three densities (the dots grow denser, as the figures appear), stars, thin lines.
   // Inked with currentColor (night red included); decorative, hidden from screen readers.
   import { VIGNETTE_SIZE, vignette } from "../lib/vignettes";

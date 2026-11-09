@@ -1,109 +1,211 @@
 <script lang="ts">
-  // Instruments of the sky map, top right (#138): the mini-globe (#38) and a small
-  // engraved compass, stacked on one axis under the safe area. With a phone compass, it is a real
-  // one (#144): the needle points to true north as the phone turns; otherwise it follows the
-  // view's heading. Either way a tap turns the view to face north. Only on the sky map, and only
-  // while the sky moves (a drag, a pinch, Viser; #176): it fades out 2 s after, and stays out in
-  // immersive mode. The mini-globe is passed in (it keeps its own state).
+  // Top right of the map (menu v2, croquis-compass.jpg): a small engraved compass, always there
+  // on the sky map, under the notch, 44 px, framed like the button bottom left. The needle shows
+  // where north is as the map turns (the view's heading and roll); a tap turns the map to face
+  // north (it replaced « Recentrer », #176). While Viser drives the map, the phone's direction is
+  // an ink mark on the dial (the map follows the phone: the mark sits at the top, and the needle
+  // turns as the phone does) and a tap does nothing. With the interface hidden it stays, dimmed.
+  // In the Earth view (Orbites) the same place puts the point of view back (its framing): north
+  // means nothing there, and the corner keeps one meaning, « remettre la vue droite ».
+  // The mini-globe (#38) comes under it during a gesture only and fades 2 s after (#176).
   import type { Snippet } from "svelte";
   import { _ } from "@asteria/ui";
   import { compassHeading, compassPoint, needleRotation } from "../lib/hud";
+  import Icon from "./Icon.svelte";
 
   let {
+    view,
     shown,
-    hidden = false,
+    dimmed = false,
+    instruments = false,
     azimuth,
     roll,
+    pointing,
     phoneHeading = null,
-    northDisabled,
     onnorth,
+    onreframe,
     globe,
     element = $bindable(),
   }: {
-    /** Sky map at rest (not the Earth view, not flying). */
+    /** The sky map (compass) or the Earth view (reframe). */
+    view: "sky" | "space";
+    /** Something to show: the view is ready and not flying. */
     shown: boolean;
-    /** At rest or in immersive mode: faded out and out of the way. */
-    hidden?: boolean;
+    /** The interface is hidden (immersive): the compass stays, dimmed. */
+    dimmed?: boolean;
+    /** A gesture moves the sky: the mini-globe comes under the compass. */
+    instruments?: boolean;
     /** View heading, degrees from north through east, and roll (sensor pointing). */
     azimuth: number;
     roll: number;
-    /** True heading of the phone (magnetometer + declination), or null without a compass. */
+    /** Sensor pointing (Viser) drives the map: the compass only reads. */
+    pointing: boolean;
+    /** True heading of the phone while Viser is on, or null (no magnetometer). */
     phoneHeading?: number | null;
-    /** Sensor pointing drives the view: the compass only reads. */
-    northDisabled: boolean;
     onnorth: () => void;
+    onreframe: () => void;
     /** The mini-globe, when its layer is on. */
     globe?: Snippet;
     element?: HTMLElement | undefined;
   } = $props();
 
-  const real = $derived(phoneHeading !== null);
-  const heading = $derived(compassHeading(phoneHeading ?? azimuth));
-  const rotation = $derived(
-    phoneHeading !== null ? needleRotation(phoneHeading) : needleRotation(azimuth, roll),
-  );
+  const heading = $derived(compassHeading(azimuth));
+  const rotation = $derived(needleRotation(azimuth, roll));
+  /** The phone's mark on the dial, degrees clockwise from the top (0 while the map follows it). */
+  const mark = $derived(phoneHeading === null ? 0 : rotation + phoneHeading);
   const values = $derived({ heading, dir: $_(`compass.dir.${compassPoint(heading)}`) });
+  const north = $derived(heading === 0);
 </script>
 
-<div class="tools" class:hidden class:off={!shown} bind:this={element}>
-  {@render globe?.()}
-  <button
-    class="round compass"
-    data-heading={heading}
-    onclick={onnorth}
-    disabled={northDisabled}
-    class:real
-    aria-label={$_(
-      northDisabled ? "compass.labelPointing" : real ? "compass.labelPhone" : "compass.label",
-      { values },
-    )}
-    title={northDisabled ? $_("compass.pointing") : $_("compass.north")}
-  >
-    <svg viewBox="-20 -20 40 40" aria-hidden="true">
-      <!-- Engraved dial: a hairline ring and eight ticks, the cardinal ones longer. -->
-      <circle r="17" class="ring" />
-      <g transform={`rotate(${rotation})`}>
-        {#each [45, 90, 135, 180, 225, 270, 315] as a (a)}
-          <path
-            d={a % 90 === 0 ? "M0 -17 V-14" : "M0 -17 V-15.5"}
-            class="tick"
-            transform={`rotate(${a})`}
+<div class="tools" class:off={!shown} class:dimmed bind:this={element}>
+  {#if view === "sky"}
+    <button
+      class="compass frame"
+      data-tool="compass"
+      data-heading={heading}
+      data-hud
+      onclick={pointing ? undefined : onnorth}
+      aria-disabled={pointing}
+      class:north
+      aria-label={$_(pointing ? "compass.labelPointing" : "compass.label", { values })}
+      title={pointing ? $_("compass.pointing") : $_("compass.north")}
+    >
+      <svg viewBox="-22 -22 44 44" aria-hidden="true">
+        <!-- Engraved dial: one ring at the control outline's strength. -->
+        <circle r="13.5" class="ring" />
+        {#if pointing}
+          <!-- Viser: the phone's direction, an ink bar across the ring. -->
+          <rect
+            x="-1.4"
+            y="-17.5"
+            width="2.8"
+            height="6"
+            class="lubber"
+            transform={`rotate(${mark})`}
           />
-        {/each}
-        <path d="M0 -10.5 L3 0 L-3 0 Z" class="north" />
-        <path d="M0 10.5 L3 0 L-3 0 Z" class="south" />
-        <text y="-13.9" class="n" text-anchor="middle" dominant-baseline="central"
-          >{$_("compass.letter")}</text
-        >
-      </g>
-      {#if real}
-        <!-- Lubber line: the phone's own direction, fixed at the top of the dial. -->
-        <path d="M0 -20 L1.6 -17.4 L-1.6 -17.4 Z" class="lubber" />
-      {/if}
-      <circle r="1.2" class="pivot" />
-    </svg>
-  </button>
+        {/if}
+        <g class="needle" transform={`rotate(${rotation})`}>
+          <!-- A kite: the north half inked, the south half drawn; N beyond its tip. -->
+          <path d="M0 -12 L3.6 -1.2 L0 1.2 L-3.6 -1.2 Z" class="north-half" />
+          <path d="M0 12 L3.6 -1.2 L0 1.2 L-3.6 -1.2 Z" class="south-half" />
+          <text y="-17.4" class="n" text-anchor="middle" dominant-baseline="central"
+            >{$_("compass.letter")}</text
+          >
+        </g>
+      </svg>
+    </button>
+    {#if globe}
+      <div class="globe" class:away={!instruments || dimmed}>{@render globe()}</div>
+    {/if}
+  {:else}
+    <button
+      class="compass frame"
+      data-tool="reframe"
+      data-hud
+      onclick={onreframe}
+      aria-label={$_("gestures.recentre")}
+      title={$_("gestures.recentre")}
+    >
+      <Icon name="recentre" size={22} />
+    </button>
+  {/if}
 </div>
 
 <style>
-  /* One axis on the right: the mini-globe (56 px) sets its width; the round buttons are centred. */
+  /* One axis on the right, under the notch, at the button's distance from the edges. */
   .tools {
     position: fixed;
-    z-index: 2;
-    top: max(16px, env(safe-area-inset-top));
-    right: max(16px, env(safe-area-inset-right));
+    z-index: 3;
+    top: max(var(--ast-corner-inset), env(safe-area-inset-top));
+    right: max(var(--ast-corner-inset), env(safe-area-inset-right));
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
     width: 56px;
+    pointer-events: none;
     transition: opacity 220ms var(--ast-ease-out);
+  }
+  .tools > :global(*) {
+    pointer-events: auto;
   }
   .tools.off {
     display: none;
   }
-  /* At rest the instruments leave slowly (#176): they fade, they do not blink away. */
-  .tools.hidden {
+  /* Interface hidden: the compass stays, faint (still a tap away). */
+  .tools.dimmed {
+    opacity: 0.45;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tools,
+    .needle,
+    .lubber {
+      transition: none;
+    }
+  }
+  .compass {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    color: var(--ast-fg);
+    border-color: var(--ast-control-border);
+    border-radius: var(--ast-radius);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .compass[aria-disabled="true"] {
+    cursor: default;
+  }
+  .compass:focus-visible {
+    outline: 2px solid var(--ast-focus);
+    outline-offset: 2px;
+  }
+  .compass svg {
+    display: block;
+    width: 42px;
+    height: 42px;
+    overflow: visible;
+  }
+  .ring {
+    fill: none;
+    stroke: var(--ast-fg-muted);
+    stroke-width: 1.2;
+  }
+  .compass.north .ring {
+    stroke: var(--ast-fg);
+  }
+  .needle {
+    transition: transform 120ms linear;
+  }
+  .north-half {
+    fill: var(--ast-fg);
+  }
+  .south-half {
+    fill: none;
+    stroke: var(--ast-fg);
+    stroke-width: 1;
+    stroke-linejoin: round;
+  }
+  .lubber {
+    fill: var(--ast-fg);
+  }
+  .n {
+    font: 700 6.5px var(--ast-font-mono);
+    fill: var(--ast-fg);
+  }
+  @media (hover: hover) {
+    .compass:not([aria-disabled="true"]):hover .ring {
+      stroke: var(--ast-fg);
+    }
+  }
+  /* The mini-globe under the compass, during a gesture only: it leaves slowly (#176), it fades,
+     it does not blink away. */
+  .globe {
+    transition: opacity 220ms var(--ast-ease-out);
+  }
+  .globe.away {
     opacity: 0;
     visibility: hidden;
     transition:
@@ -111,77 +213,9 @@
       visibility 0s 600ms;
   }
   @media (prefers-reduced-motion: reduce) {
-    .tools,
-    .tools.hidden {
+    .globe,
+    .globe.away {
       transition: none;
     }
-  }
-  .round {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    color: var(--ast-fg);
-    background: color-mix(in srgb, var(--ast-bg) 55%, transparent);
-    border: 1px solid var(--ast-control-border);
-    border-radius: 50%;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .round:hover:not(:disabled) {
-    border-color: var(--ast-fg-muted);
-  }
-  .round:focus-visible {
-    outline: 1px solid var(--ast-fg);
-    outline-offset: 2px;
-  }
-  /* The compass has its own ring: the button's border stays off. */
-  .compass {
-    border-color: transparent;
-  }
-  .compass:disabled {
-    cursor: default;
-  }
-  .compass svg {
-    display: block;
-    width: 44px;
-    height: 44px;
-  }
-  .ring {
-    fill: none;
-    stroke: var(--ast-hairline);
-    stroke-width: 1;
-  }
-  /* A live compass: a firmer ring, and the lubber line. */
-  .compass.real .ring {
-    stroke: var(--ast-fg-muted);
-  }
-  .lubber {
-    fill: var(--ast-fg);
-  }
-  .compass:hover:not(:disabled) .ring {
-    stroke: var(--ast-fg-muted);
-  }
-  .tick {
-    stroke: var(--ast-fg-muted);
-    stroke-width: 1;
-  }
-  .north {
-    fill: var(--ast-fg);
-  }
-  .south {
-    fill: none;
-    stroke: var(--ast-fg-muted);
-    stroke-width: 0.8;
-  }
-  .pivot {
-    fill: var(--ast-bg);
-    stroke: var(--ast-fg);
-    stroke-width: 0.8;
-  }
-  .n {
-    font: 700 5.5px var(--ast-font-mono);
-    fill: var(--ast-fg);
   }
 </style>

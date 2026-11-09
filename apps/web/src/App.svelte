@@ -96,7 +96,12 @@
   import SkyHeader from "./components/SkyHeader.svelte";
   import TimeBar from "./components/TimeBar.svelte";
   import ModeButton from "./components/ModeButton.svelte";
-  import { chips as cornerChips, modeOf, type AppMode } from "./lib/modes";
+  import { chips as cornerChips, mapOf, mapOfTab, tabOfMap, type SheetTab } from "./lib/modes";
+  import type { LearnStart } from "./components/GamesScreen.svelte";
+  import { constellationShapes } from "./lib/games/geometry";
+  import { DISCOVERY_CONSTELLATIONS } from "./lib/games/pool";
+  import { tonightLine, type TonightLine } from "./lib/sky-tonight";
+  import { compassPoint } from "./lib/hud";
   import { historyLayer } from "./lib/back.svelte";
   import MenuSheet from "./components/MenuSheet.svelte";
   import MiniGlobe from "./components/MiniGlobe.svelte";
@@ -261,28 +266,38 @@
   const showPlanets = $derived(viewLayers[mode].planets);
   let creditsOpen = $state(false);
   /**
-   * Jeux screen (#163), over the whole app: the view under it stops drawing and starts again,
-   * as it was, on closing (the level may have changed there, as in the 3D view).
+   * Screens of the Catalogue and Jeux tabs (#163, #170, menu v2), over the whole app: the view
+   * under it stops drawing and starts again, as it was, on closing (the level may have changed
+   * there, as in the 3D view). Opened from a tab's home, closing it comes back to that home.
    */
   let games = $state.raw<{ stars: CatalogStar[]; lines: Record<string, number[][]> } | null>(null);
   const gamesOpen = $derived(games !== null);
-  /** Where the Apprendre screen opens (#170): its home, the catalogue, or a constellation's page. */
-  type LearnStart =
-    { view: "catalogue" } | { view: "page"; abbr: string; star?: number | null } | null;
-  let learnStart = $state.raw<LearnStart>(null);
-  function openGames(start: LearnStart = null) {
+  /** What the screen opens on (GamesScreen's LearnStart). */
+  let learnStart = $state.raw<LearnStart>({ view: "sky" });
+  /** The tab whose home opened the screen (or « Selon la latitude »): it comes back on closing. */
+  let returnTab: SheetTab | null = null;
+  function openGames(start: LearnStart, from: SheetTab | null = null) {
     if (!catalog) return;
     stopPlaying();
+    menuOpen = false;
     if (mode === "sky") map?.stop();
     else space?.stop();
     learnStart = start;
+    returnTab = from;
     games = catalog;
   }
   function closeGames() {
     games = null;
     if (mode === "sky") map?.start();
     else space?.start();
-    menuButton?.focus();
+    backToTab();
+  }
+  /** Back to the home the screen was opened from, else to the button. */
+  function backToTab() {
+    const tab = returnTab;
+    returnTab = null;
+    if (tab) openMenu(tab);
+    else menuButton?.focus();
   }
   /**
    * « Selon la latitude » (#188), over the whole app (and over the Apprendre screen when opened
@@ -293,9 +308,11 @@
     latitude: number | null;
     sky: { stars: CatalogStar[]; lines: Record<string, number[][]> };
   } | null>(null);
-  function openLatitude(latitude: number | null = null) {
+  function openLatitude(latitude: number | null = null, from: SheetTab | null = null) {
     if (!catalog) return;
+    menuOpen = false;
     if (!games) {
+      returnTab = from;
       stopPlaying();
       if (mode === "sky") map?.stop();
       else space?.stop();
@@ -307,7 +324,7 @@
     if (games) return;
     if (mode === "sky") map?.start();
     else space?.start();
-    menuButton?.focus();
+    backToTab();
   }
   /** Constellation 3D view (#8): the figure, the catalogue and the map's view it starts from. */
   let view3d = $state.raw<{
@@ -510,14 +527,14 @@
     declination: () => declinationHere(),
   });
 
-  // --- Real compass (#144): the phone's true heading, while the sky map's compass is shown.
+  // --- Real compass (#144): the phone's true heading, marked on the compass while Viser is on.
   /** Magnetic declination at the observer, now (WMM2025), degrees east. */
   function declinationHere() {
     return magneticDeclination(place.latitude, place.longitude, 0, decimalYear(new Date()));
   }
   let phoneHeading = $state<number | null>(null);
   $effect(() => {
-    if (!(status === "ready" && mode === "sky" && !flying)) return;
+    if (!(status === "ready" && mode === "sky" && !flying && sensorPointing)) return;
     const stop = watchCompass(declinationHere, (h) => (phoneHeading = h));
     return () => {
       stop();
@@ -555,17 +572,18 @@
   });
   /** Earth view caption unfolded (a single line at rest). */
   let captionOpen = $state(false);
-  function openMenu() {
+  /** The sheet opens on the tab of the map's mode, or on the home a screen was opened from. */
+  let sheetTab = $state<SheetTab>("sky");
+  function openMenu(tab: SheetTab = tabOfMap(mapMode)) {
     timeOpen = false;
     frameOpen = false;
     immersive = false;
+    sheetTab = tab;
     menuOpen = true;
   }
-  /** The single button of the Apprendre screen (#176), over the one of the sky. */
-  let learnMenuButton = $state<HTMLButtonElement>();
   function closeMenu() {
     menuOpen = false;
-    (gamesOpen ? learnMenuButton : menuButton)?.focus();
+    menuButton?.focus();
   }
   /** Runs a menu action that opens something else: the menu closes first, without refocus. */
   const fromMenu = (action: () => void) => () => {
@@ -573,32 +591,35 @@
     action();
   };
 
-  // --- Modes and the single button (#176, lib/modes.ts)
-  /** Observer (the sky map), Orbites (the Earth view), Apprendre (its screen, over either). */
-  const appMode = $derived<AppMode>(modeOf(mode, gamesOpen));
+  // --- The map's modes, the button and its sheet (#176, menu v2, lib/modes.ts)
+  /** Ciel (the sky map) or Orbites (the Earth view). */
+  const mapMode = $derived(mapOf(mode));
   const sensorPointing = $derived(pointer.state === "on" || pointer.state === "waiting");
   /** Chips beside the button: the date when it is not now, the pointing while it is on. */
   const chipsShown = $derived(
     cornerChips({
-      mode: appMode,
+      map: mapMode,
       layer: menuOpen ? "sheet" : timeOpen ? "time" : "none",
-      learn: gamesOpen ? "hub" : null,
+      tab: sheetTab,
+      settings: false,
+      screen: gamesOpen ? "game" : null,
       live,
       pointing: sensorPointing,
       resumable: false,
+      recent: false,
+      north: false,
     }),
   );
-  /** A mode chosen in the sheet: the date and the place stay as they are (#176). */
-  function chooseMode(next: AppMode) {
-    menuOpen = false;
-    if (next === appMode) {
-      menuButton?.focus();
-      return;
-    }
-    if (next === "learn") return openGames();
-    if (gamesOpen) closeGames();
-    if (next === "orbits" && pointer.state !== "off") pointer.toggle();
-    if ((next === "orbits") !== (mode === "space")) toggleSpace();
+  /**
+   * A tab chosen in the sheet: Ciel and Orbites switch the map behind it at once (the date and
+   * the place stay as they are); Catalogue and Jeux leave the map as it is.
+   */
+  function chooseTab(next: SheetTab) {
+    sheetTab = next;
+    const target = mapOfTab(next);
+    if (!target || target === mapMode) return;
+    if (target === "orbits" && pointer.state !== "off") pointer.toggle();
+    toggleSpace();
   }
   /** The time line, unfolded from the button: its × takes the focus (the button's place). */
   let foldButton = $state<HTMLButtonElement>();
@@ -614,15 +635,15 @@
     await tick();
     menuButton?.focus({ preventScroll: true });
   }
-  /** Observer's « Recentrer »: the view back to the north, the compass's job while it is hidden. */
-  function recentre() {
-    if (mode === "sky") faceNorth();
-    else space?.resetView();
+  /** Orbites: the point of view back to its framing (the compass's place, top right). */
+  function reframe() {
+    space?.resetView(reducedMotion.matches);
   }
 
   // Android and browser back (#176): each layer over the sky has a history entry; back closes the
-  // one on top, then Orbites goes back to the sky. Apprendre and the latitude explorer register
-  // their own inner layers (a game, its settings, the enlarged map).
+  // one on top, then Orbites goes back to the sky. The sheet (its settings page), the games screen
+  // and the latitude explorer register their own inner layers (a game, its settings, the deck,
+  // the enlarged map); a screen opened from a tab comes back to that tab's home.
   historyLayer(
     "orbits",
     () => mode === "space" && !flying,
@@ -1129,10 +1150,12 @@
       ...(Number.isFinite(view[1]) && { altitude: view[1] }),
       ...(Number.isFinite(view[2]) && { fov: view[2] }),
     });
-    if (params.get("panel") === "menu" || params.get("panel") === "layers") menuOpen = true; // captures
+    if (params.get("panel") === "menu" || params.get("panel") === "layers") openMenu(); // captures
+    const tab = params.get("tab"); // captures: ?tab=catalogue opens the sheet on that tab
+    if (tab === "sky" || tab === "orbits" || tab === "catalogue" || tab === "games") openMenu(tab);
     if (params.get("panel") === "time") timeOpen = true; // captures
     if (params.get("panel") === "credits") creditsOpen = true; // captures
-    if (params.get("panel") === "games") openGames(); // captures
+    if (params.get("panel") === "games") openGames({ view: "sky" }); // captures
     if (params.get("panel") === "latitude") openLatitude(); // captures (#188)
     // Captures (#170): ?learn=catalogue, or ?learn=<abbr>[&learnStar=<HIP>] for a page.
     const learn = params.get("learn");
@@ -2284,6 +2307,72 @@
     });
   });
   const menuPlaceName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
+
+  // --- « Ce soir » of the Ciel tab (menu v2, lib/sky-tonight): computed while that tab is shown,
+  // once per minute shown and place (a few hundred altitudes: the figures, the Moon's set).
+  let figureCentres: Record<string, Vec3> | null = null;
+  let tonightCache: { key: string; line: TonightLine } | null = null;
+  const tonightInfo = $derived.by(() => {
+    if (!menuOpen || sheetTab !== "sky" || status !== "ready" || !catalog) return null;
+    const key = `${Math.floor(date.getTime() / 60_000)}|${place.latitude}|${place.longitude}`;
+    if (tonightCache?.key !== key) {
+      if (!figureCentres) {
+        const shapes = constellationShapes(catalog.stars, catalog.lines);
+        figureCentres = Object.fromEntries(Object.values(shapes).map((s) => [s.abbr, s.centre]));
+      }
+      const sunAltitude = bodies.sun.altitude;
+      const night = sunAltitude > -6 ? nextDarkNight(date, place) : null;
+      const observer = { latitude: place.latitude, longitude: place.longitude };
+      tonightCache = {
+        key,
+        line: tonightLine({
+          date,
+          observer,
+          sunAltitude,
+          nightStart: night ? nightJump(night.date, date).at : null,
+          centres: figureCentres,
+          known: DISCOVERY_CONSTELLATIONS,
+          moonAltitude: bodies.moon
+            ? (t) => bodyPosition("Moon", new Date(t), observer).altitude
+            : null,
+        }),
+      };
+    }
+    const line = tonightCache.line;
+    if (!line.figure) return null;
+    const figure = line.figure;
+    const name = names[figure.abbr] ?? figure.abbr;
+    const dir = $_(`compass.dir.${compassPoint(figure.azimuth)}`);
+    const parts = [
+      $_(line.high ? "sky.tonight.high" : "sky.tonight.up", { values: { name, dir } }),
+      ...(line.moon
+        ? [
+            $_(line.moon.kind === "sets" ? "sky.tonight.moonSets" : "sky.tonight.moonRises", {
+              values: { time: clockLabel(new Date(line.moon.at)) },
+            }),
+          ]
+        : []),
+    ];
+    return {
+      label: line.later
+        ? $_(`sky.tonight.at.${line.when}`, { values: { time: clockLabel(line.at) } })
+        : $_(`sky.tonight.${line.when}`),
+      text: parts.join(" · "),
+      onselect: () => {
+        menuOpen = false;
+        // By day the line speaks of the coming night: the time goes there, then the figure.
+        if (line.later) showDate(line.at);
+        select({ kind: "constellation", abbr: figure.abbr });
+      },
+    };
+  });
+  /** The sky's catalogue once loaded, for the Catalogue and Jeux tabs. */
+  const loadedSky = $derived(status === "ready" ? (catalog ?? null) : null);
+  /** The sheet's header: « PARIS · 21:30 · EN DIRECT », and the Earth view's point of view. */
+  const sheetMetas = $derived({
+    sky: [menuPlaceName, clockLabel(date), live ? $_("time.live") : relative].join(" · "),
+    orbits: povTitle,
+  });
   /** « ← Système solaire » under the header during a visit (#134); toasts go below it. */
   const showVisitBack = $derived(
     mode === "space" && spaceFrame === "body" && !flying && !immersive && !!space,
@@ -2295,8 +2384,10 @@
   let captionHeight = $state(28);
   /** The rest chip (#139): a HUD block, kept free of labels. */
   let restChip = $state<HTMLElement>();
+  /** Below the compass, top right (menu v2): 44 px at the corner's inset, and a margin. */
+  const COMPASS_CLEAR = 56;
   const toastTop = $derived(
-    `calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 16 + (showVisitBack ? 26 : 0)}px)`,
+    `calc(max(var(--ast-corner-inset), env(safe-area-inset-top)) + ${Math.max(headerHeight + 16 + (showVisitBack ? 26 : 0), COMPASS_CLEAR + 8)}px)`,
   );
 </script>
 
@@ -2346,7 +2437,7 @@
     body={spaceBody}
     bodies={BODY_TARGETS.map((id) => ({ id, name: targetName(id) }))}
     onbody={chooseBody}
-    top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
+    top={`calc(max(var(--ast-corner-inset), env(safe-area-inset-top)) + ${Math.max(headerHeight + 12, COMPASS_CLEAR)}px)`}
     onselect={chooseFrame}
     onclose={() => (frameOpen = false)}
     toggle={menuButton}
@@ -2357,19 +2448,23 @@
   <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
 {/if}
 
-<!-- Top right of the sky map (#138): mini-globe and compass, while the sky moves (#176). -->
+<!-- Top right (menu v2): the compass, always there on the sky map (a tap: north up), the
+     mini-globe under it while the sky moves (#176); in Orbites, the point of view's reframe. -->
 <SkyTools
-  shown={status === "ready" && mode === "sky" && !flying}
-  hidden={immersive || !instruments}
+  view={mode}
+  shown={status === "ready" && !flying && !gamesOpen && (mode === "sky" || !!space)}
+  dimmed={immersive}
+  {instruments}
   azimuth={viewAzimuth}
   roll={viewRoll}
+  pointing={sensorPointing}
   {phoneHeading}
-  northDisabled={pointer.state === "on"}
   onnorth={faceNorth}
+  onreframe={reframe}
   bind:element={skyTools}
 >
   {#snippet globe()}{#if globeLayer}<MiniGlobe
-        hidden={!showGlobe || immersive}
+        hidden={!showGlobe}
         images={globeImages}
         {place}
         sun={bodies.sun}
@@ -2428,7 +2523,11 @@
   </div>
 {/if}
 
-<GestureTip view="earth" active={mode === "space" && !flying && !!space} top={toastTop} />
+<GestureTip
+  view="earth"
+  active={mode === "space" && !flying && !!space && !menuOpen}
+  top={toastTop}
+/>
 
 {#if povCaption && !flying && !selection && !immersive}
   <!-- Points of view (#128): what stays fixed, what moves; what is (not) to scale. One line at
@@ -2585,7 +2684,7 @@
       brightest={info.brightest}
       visibility={info.visibility}
       daylight={bodies.sun.altitude > -6}
-      top={`calc(max(16px, env(safe-area-inset-top)) + ${headerHeight + 8}px)`}
+      top={`calc(max(var(--ast-corner-inset), env(safe-area-inset-top)) + ${Math.max(headerHeight + 12, COMPASS_CLEAR)}px)`}
       bottom={aboveControls}
       onclose={() => (selection = null)}
       onstar={info.star
@@ -2641,14 +2740,10 @@
       {placeName}
       located={place.name === "mine"}
       start={learnStart}
-      onlatitude={openLatitude}
       onexplain={() => openLatitude(place.latitude)}
       onlocate={locate}
       {locating}
       onclose={closeGames}
-      onmenu={() => (menuOpen ? closeMenu() : openMenu())}
-      {menuOpen}
-      bind:menuButton={learnMenuButton}
     />
   {/await}
 {/if}
@@ -2749,7 +2844,7 @@
       {:else}
         <ModeButton
           floating={false}
-          mode={$_(`modes.${appMode}`)}
+          mode={$_(`tabs.${mapMode}`)}
           open={menuOpen}
           onopen={() => (menuOpen ? closeMenu() : openMenu())}
           bind:button={menuButton}
@@ -2786,46 +2881,83 @@
 
 {#if menuOpen}
   <MenuSheet
-    mode={appMode}
-    onmode={chooseMode}
-    onsearch={fromMenu(openSearch)}
-    pointing={sensorPointing}
-    onpoint={fromMenu(() => pointer.toggle())}
-    frame={spaceFrame}
-    onframe={(id) => {
-      menuOpen = false;
-      chooseFrame(id);
+    tab={sheetTab}
+    ontab={chooseTab}
+    metas={sheetMetas}
+    sky={{
+      onsearch: fromMenu(openSearch),
+      tonight: tonightInfo,
+      time,
+      live,
+      relative,
+      ontime: () => void openTime(),
+      pointing: sensorPointing,
+      onpoint: fromMenu(() => pointer.toggle()),
+      night,
+      onnight: () => (night = !night),
+      minBrightness: MIN_DIM,
+      onhide: fromMenu(() => (immersive = true)),
     }}
-    visiting={spaceFrame === "body" ? targetName(spaceBody) : null}
-    onvisit={fromMenu(() => (frameOpen = true))}
-    onrecentre={fromMenu(recentre)}
-    layers={viewLayers[mode]}
-    onlayer={setLayer}
-    unavailable={mode === "sky" ? unavailableLayers : []}
-    title={placeName}
-    placeName={menuPlaceName}
-    {coords}
-    {locating}
-    onlocate={locate}
-    {time}
-    {live}
-    {relative}
-    ontime={() => void openTime()}
-    onnow={goLive}
-    {night}
-    onnight={() => (night = !night)}
+    orbits={{
+      frame: spaceFrame,
+      onframe: (id) => {
+        menuOpen = false;
+        chooseFrame(id);
+      },
+      visiting: spaceFrame === "body" ? targetName(spaceBody) : null,
+      onvisit: fromMenu(() => (frameOpen = true)),
+      time,
+      live,
+      relative,
+      ontime: () => void openTime(),
+    }}
+    catalogue={loadedSky
+      ? {
+          stars: loadedSky.stars,
+          lines: loadedSky.lines,
+          names,
+          date,
+          observer: place,
+          theme: night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day,
+          onopen: (abbr) => openGames({ view: "page", abbr, all: true }, "catalogue"),
+          onvisible: () => openGames({ view: "catalogue", filter: "tonight" }, "catalogue"),
+          onlatitude: () => openLatitude(null, "catalogue"),
+        }
+      : null}
+    games={loadedSky
+      ? {
+          located: place.name === "mine",
+          constellations: Object.keys(loadedSky.lines),
+          onresume: (game) => openGames({ view: "play", game }, "games"),
+          onsetup: (game) => openGames({ view: "setup", game }, "games"),
+          onsky: () => openGames({ view: "sky" }, "games"),
+        }
+      : null}
+    settings={{
+      view: mode,
+      layers: viewLayers[mode],
+      onlayer: setLayer,
+      unavailable: mode === "sky" ? unavailableLayers : [],
+      placeName: menuPlaceName,
+      coords,
+      locating,
+      onlocate: locate,
+      time,
+      live,
+      relative,
+      ontime: () => void openTime(),
+      onnow: goLive,
+      realistic: spaceStyle === "realistic",
+      onrealistic: () => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic"),
+      fullscreen: fullscreenAvailable ? fullscreenEnv.active : null,
+      onfullscreen: toggleFullscreen,
+      oncredits: fromMenu(() => (creditsOpen = true)),
+      online: network.online,
+      iosInstall: needsIosInstallHint(),
+      offline: offline.current,
+      onofflineretry: retryOffline,
+    }}
     bind:brightness
-    minBrightness={MIN_DIM}
-    realistic={spaceStyle === "realistic"}
-    onrealistic={() => (spaceStyle = spaceStyle === "realistic" ? "engraving" : "realistic")}
-    fullscreen={fullscreenAvailable ? fullscreenEnv.active : null}
-    onfullscreen={toggleFullscreen}
-    oncredits={fromMenu(() => (creditsOpen = true))}
-    online={network.online}
-    iosInstall={needsIosInstallHint()}
-    offline={offline.current}
-    onofflineretry={retryOffline}
-    onhide={fromMenu(() => (immersive = true))}
     onclose={closeMenu}
   />
 {/if}
