@@ -150,10 +150,10 @@ export function showingOf(
     any = none;
   };
   let prev = night.start;
-  let prevAlt = alt(prev);
-  if (prevAlt >= minAltitude) {
+  const first = alt(prev);
+  if (first >= minAltitude) {
     from = prev;
-    sample(prev, prevAlt);
+    sample(prev, first);
   }
   while (prev < night.end) {
     const t = Math.min(prev + TONIGHT_STEP, night.end);
@@ -162,7 +162,6 @@ export function showingOf(
     if (from !== null && a < minAltitude) close(crossing(alt, minAltitude, prev, t), false);
     else if (from !== null) sample(t, a);
     prev = t;
-    prevAlt = a;
   }
   close(night.end, true);
   return best;

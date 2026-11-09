@@ -3,9 +3,8 @@
   // grouped by kind — the Moon, the planets one can see with the naked eye, the Space Station's
   // pass, and the well-known figures standing highest (lib/tonight-list). A tap on a row goes
   // to the map at the moment the object shows best and selects it. Opened from the « Ce soir »
-  // row of the tab's home; ‹ in the sheet's header comes back (MenuSheet).
-  import { _ } from "@asteria/ui";
-
+  // row of the tab's home; ‹ in the sheet's header comes back (MenuSheet). The texts are
+  // composed by App.svelte.
   export interface TonightRow {
     id: string;
     name: string;
