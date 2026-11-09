@@ -363,7 +363,7 @@
     flex: 1;
     min-width: 0;
     margin: 4px 0 0;
-    font: 500 9px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -409,7 +409,7 @@
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     cursor: pointer;
@@ -418,7 +418,7 @@
     background: color-mix(in srgb, var(--ast-fg) 12%, transparent);
   }
   .caret {
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     color: var(--ast-fg-muted);
   }
   .levels {
@@ -436,7 +436,7 @@
     border-radius: 0;
     background: transparent;
     color: var(--ast-fg-muted);
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     cursor: pointer;
@@ -477,7 +477,7 @@
   }
   .wait {
     margin: 12px 2px;
-    font: 400 11px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   /* The foot: the button's place (« × Fermer »), then the tabs, all on one row. */
@@ -509,14 +509,16 @@
     font: 400 22px/1 var(--ast-font-mono);
   }
   .close-label {
-    font: 500 8px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
+  /* Each tab takes the room of its word and shares the rest: « Catalogue » fits at 11 px on a
+     320 px screen, where four equal columns would cut it. */
   .tabs {
     flex: 1;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-width: 0;
+    display: flex;
   }
   /* A tab: engraved pictogram over a word; the one shown is inked, with a rule on the side of
      the sheet (above). Under the settings, the tab of origin keeps its rule only. */
@@ -527,13 +529,16 @@
     align-items: center;
     justify-content: center;
     gap: 5px;
-    padding: 6px 2px 5px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 3px 5px;
     border: 0;
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg-muted);
-    font: 500 9px/1.15 var(--ast-font-mono);
-    letter-spacing: 0.04em;
+    font: 500 var(--ast-fs-xs)/1.15 var(--ast-font-mono);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     text-transform: uppercase;
     text-align: center;
     cursor: pointer;
@@ -566,7 +571,6 @@
   }
   .tab-label {
     max-width: 100%;
-    overflow-wrap: anywhere;
   }
   @media (prefers-reduced-motion: reduce) {
     .tab {

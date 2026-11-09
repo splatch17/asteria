@@ -478,7 +478,7 @@
     box-sizing: border-box;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -548,7 +548,7 @@
   }
   .context {
     margin: 0;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -589,7 +589,7 @@
   .n {
     flex: none;
     width: 16px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     color: var(--ast-fg-muted);
   }
   .c-name {
@@ -635,7 +635,7 @@
   }
   .hint {
     margin: 0;
-    font: 400 11px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .sheet {
@@ -655,7 +655,7 @@
   }
   .s-meta {
     margin: 0;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -672,7 +672,7 @@
     flex-wrap: wrap;
     gap: 0 8px;
     margin: 0;
-    font: 12px/1.6 var(--ast-font-mono);
+    font: var(--ast-fs-m)/1.6 var(--ast-font-mono);
     letter-spacing: 0.06em;
     color: var(--ast-fg-muted);
   }
@@ -683,7 +683,7 @@
   }
   .s-rank {
     margin: 2px 0 0;
-    font: 400 12px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.5 var(--ast-font-mono);
   }
   .go {
     display: flex;

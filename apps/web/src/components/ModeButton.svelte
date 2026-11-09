@@ -129,7 +129,7 @@
   .label {
     max-width: calc(100% - 4px);
     overflow: hidden;
-    font: 500 7.5px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     white-space: nowrap;
@@ -176,7 +176,7 @@
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     cursor: pointer;

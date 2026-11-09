@@ -409,7 +409,7 @@
     border-color: var(--ast-fg);
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -435,7 +435,7 @@
   }
   .kicker {
     margin: 0 0 6px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -448,7 +448,7 @@
   }
   .lede {
     margin: 0 0 14px;
-    font: 400 12px/1.55 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.55 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   /* Choices: full-width rows, the main one inked (mock-up B). */
@@ -460,7 +460,7 @@
     min-height: 56px;
     padding: 0 16px;
     border: 1px solid var(--ast-control-border);
-    font-size: 12px;
+    font-size: var(--ast-fs-m);
     letter-spacing: 0.1em;
     text-align: left;
   }
@@ -483,7 +483,7 @@
   }
   .opt small {
     margin-left: auto;
-    font: 400 10px/1 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.08em;
     text-transform: none;
   }
@@ -495,7 +495,7 @@
   }
   .error {
     margin: 8px 2px 0;
-    font: 400 11px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg);
   }
   /* Level (#201): the segmented control of Réglages, the choice inverted. */
@@ -538,7 +538,7 @@
   }
   .meta {
     margin: 0;
-    font: 400 11px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -550,7 +550,7 @@
   }
   .sight {
     margin: 0 0 6px;
-    font: 500 11px/1.5 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
   }
@@ -561,7 +561,7 @@
   }
   .con {
     margin: 0 0 4px;
-    font: 500 11px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -577,7 +577,7 @@
     grid-template-columns: max-content 1fr;
     gap: 0 12px;
     margin: 0;
-    font: 11px/1.7 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.7 var(--ast-font-mono);
     letter-spacing: 0.06em;
     color: var(--ast-fg-muted);
   }
@@ -591,7 +591,7 @@
   }
   .note {
     margin: 10px 2px 12px;
-    font: 400 11px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
 
@@ -627,7 +627,7 @@
     text-transform: uppercase;
   }
   .text {
-    font: 400 12px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .foot {
@@ -639,7 +639,7 @@
     border-top: 1px solid var(--ast-hairline);
   }
   .count {
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.12em;
     color: var(--ast-fg-muted);
   }

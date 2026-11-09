@@ -29,7 +29,7 @@
     gap: 8px;
     min-height: 44px;
     padding: 0 14px 0 12px;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);

@@ -45,7 +45,14 @@
      Atkinson Hyperlegible has no Greek: the browser takes α, β, φ, δ… (and ′ ″) from the next
      font of the stack, JetBrains Mono, so Bayer letters and symbols read as data, without markup. */
   --ast-font-text: "Atkinson Hyperlegible", "JetBrains Mono", ui-sans-serif, sans-serif;
-  --ast-text-size: 15px;
+  /* Type scale (audit P5): nothing under 11 px. Labels (xs), interface text (s), short prose and
+     data (m), reading text. « Taille du texte » in Réglages sets --ast-text-scale (lib/text-size);
+     titles in the display face keep their size. */
+  --ast-text-scale: 1;
+  --ast-fs-xs: calc(11px * var(--ast-text-scale));
+  --ast-fs-s: calc(12px * var(--ast-text-scale));
+  --ast-fs-m: calc(13px * var(--ast-text-scale));
+  --ast-text-size: calc(15px * var(--ast-text-scale));
   --ast-text-leading: 1.55;
   /* Longest comfortable line where the layout leaves room: about 65 characters of Atkinson
      (65ch would be about 80, the ch being the width of a wide « 0 »); phones are narrower. */

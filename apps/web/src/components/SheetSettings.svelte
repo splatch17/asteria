@@ -12,6 +12,8 @@
   import { sectionsFor, type LayerKey } from "../lib/layers";
   import { LEVELS } from "../lib/level";
   import { level } from "../lib/level-store.svelte";
+  import { TEXT_SIZES } from "../lib/text-size";
+  import { textSize } from "../lib/text-size-store.svelte";
   import {
     LEGACY_PANEL_KEY,
     SETTINGS_PARTS,
@@ -214,6 +216,18 @@
     <p class="note level-note">
       {$_(`settings.level.${level.value}`)}<br />{$_("settings.level.scope")}
     </p>
+    <!-- Text size (audit P5): the small steps of the type scale and the names on the maps. -->
+    <h3 id="menu-text-size">{$_("settings.textSize")}</h3>
+    <div class="levels text-sizes" role="group" aria-labelledby="menu-text-size">
+      {#each TEXT_SIZES as size (size)}
+        <button
+          data-text-size={size}
+          aria-pressed={textSize.value === size}
+          onclick={() => textSize.set(size)}>{$_(`settings.textSize.${size}`)}</button
+        >
+      {/each}
+    </div>
+    <p class="note level-note">{$_("settings.textSize.note")}</p>
     <div class="grid">
       <MenuTile
         id="realistic"
@@ -327,7 +341,7 @@
     border-radius: 0;
     background: transparent;
     color: var(--ast-fg-muted);
-    font: 500 10px/1.15 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.15 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     cursor: pointer;
@@ -336,9 +350,11 @@
       color 120ms var(--ast-ease-out),
       background-color 120ms var(--ast-ease-out);
   }
+  /* « Découverte » in a third of the sheet, whatever the text size. */
   .levels button {
     min-height: 44px;
-    font-size: 11px;
+    font-size: min(var(--ast-fs-s), 4vw);
+    letter-spacing: 0.04em;
   }
   .segments button + button,
   .levels button + button {
@@ -386,7 +402,7 @@
   }
   h3 {
     margin: 14px 2px 6px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -404,7 +420,7 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
   }
   .line {
@@ -424,7 +440,7 @@
     flex-direction: column;
     gap: 3px;
     min-width: 0;
-    font: 500 11px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.2 var(--ast-font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -435,7 +451,7 @@
     white-space: nowrap;
   }
   .sub {
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     color: var(--ast-fg-muted);
   }
   .icon {
@@ -481,14 +497,14 @@
   }
   .note {
     margin: 12px 4px 0;
-    font: 10px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .help {
     margin: 0 2px;
     padding: 0;
     list-style: none;
-    font: 10px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .help li + li {
@@ -502,7 +518,7 @@
     padding: 7px 12px 8px;
     box-sizing: border-box;
     border-top: 1px solid var(--ast-hairline);
-    font: 400 10px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
   }

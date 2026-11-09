@@ -113,7 +113,7 @@
   .meta {
     margin: 0;
     padding-right: 32px;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -130,7 +130,7 @@
   .sight {
     margin: 0 0 6px;
     padding-right: 32px;
-    font: 500 11px/1.5 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -146,7 +146,7 @@
     margin-top: 2px;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -174,7 +174,7 @@
     grid-template-columns: max-content 1fr;
     gap: 0 12px;
     margin: 0;
-    font: 11px/1.7 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.7 var(--ast-font-mono);
     letter-spacing: 0.06em;
     color: var(--ast-fg-muted);
   }

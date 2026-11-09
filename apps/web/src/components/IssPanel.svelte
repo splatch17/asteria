@@ -298,7 +298,7 @@
     border: 1px solid var(--ast-control-border);
     border-radius: var(--ast-radius);
     background: transparent;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -312,11 +312,11 @@
   .text,
   .state {
     margin: 0 0 6px;
-    font: 400 12px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .state {
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
   }
@@ -342,7 +342,7 @@
     min-height: 44px;
     padding: 6px 0;
     text-align: left;
-    font: 400 11px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     letter-spacing: 0.04em;
     color: var(--ast-fg-muted);
     background: transparent;
@@ -377,14 +377,14 @@
   .cells i {
     font-style: normal;
     text-transform: uppercase;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
   }
   dl {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 0 12px;
     margin: 0;
-    font: 11px/1.7 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.7 var(--ast-font-mono);
     letter-spacing: 0.06em;
     color: var(--ast-fg-muted);
   }
@@ -397,12 +397,12 @@
   }
   .note {
     margin-top: 8px;
-    font: 400 10px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .warn {
     margin-top: 8px;
-    font: 500 11px/1.5 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg);
   }
 </style>

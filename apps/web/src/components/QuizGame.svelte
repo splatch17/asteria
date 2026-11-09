@@ -381,7 +381,7 @@
     margin: 0 auto;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -452,7 +452,7 @@
   /* The finding hint (#198): one line under « C'est Pégase. », lighter than the answer. */
   .tip {
     margin: -4px 0 10px;
-    font: 400 12px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .choices {
@@ -483,7 +483,7 @@
   .n {
     flex: none;
     width: 16px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     color: var(--ast-fg-muted);
   }
   .c-name {

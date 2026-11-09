@@ -132,7 +132,7 @@
   h2,
   h3 {
     margin: 6px 2px 6px;
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -155,7 +155,7 @@
     gap: 8px;
     min-height: 76px;
     padding: 10px 4px 8px;
-    font: 500 9px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     text-align: center;
@@ -209,7 +209,7 @@
   .readout {
     min-height: 2.8em;
     margin: 8px 2px 0;
-    font: 400 10px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
   }
@@ -230,7 +230,7 @@
   .body {
     min-height: 44px;
     padding: 0 2px;
-    font: 500 9px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -254,7 +254,7 @@
   .soon {
     padding: 2px 4px;
     border: 1px solid var(--ast-hairline);
-    font-size: 8px;
+    font-size: var(--ast-fs-xs);
     letter-spacing: var(--ast-tracking-meta);
   }
 </style>

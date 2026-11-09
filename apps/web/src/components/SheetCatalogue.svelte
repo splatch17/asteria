@@ -156,7 +156,7 @@
   }
   h3 {
     margin: 0 2px 6px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -213,7 +213,7 @@
     font-size: 24px;
   }
   .pitch {
-    font: 400 11px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .art {
@@ -227,7 +227,7 @@
     padding: 3px 5px 2px;
     background: var(--ast-fg);
     color: var(--ast-bg);
-    font: 600 9px/1 var(--ast-font-mono);
+    font: 600 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -266,7 +266,7 @@
     border-radius: var(--ast-radius);
     background: var(--ast-fg);
     color: var(--ast-bg);
-    font: 600 11px/1 var(--ast-font-mono);
+    font: 600 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     cursor: pointer;
@@ -280,7 +280,7 @@
   .tile {
     position: relative;
     display: block;
-    height: 84px;
+    height: 96px;
     padding: 0;
     overflow: hidden;
     border: 1px solid var(--ast-control-border);
@@ -300,15 +300,16 @@
     width: 64px;
     height: 64px;
   }
+  /* The name on its own band under the drawing, never over its lines. */
   .tile-name {
     position: absolute;
-    left: 10px;
-    right: 10px;
-    bottom: 8px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 6px 10px 7px;
+    border-top: 1px solid var(--ast-hairline);
+    background: var(--ast-bg);
     font: 700 17px/1 var(--ast-font-display);
-    text-shadow:
-      0 0 4px var(--ast-bg),
-      0 0 2px var(--ast-bg);
   }
   .count {
     position: absolute;
@@ -318,7 +319,7 @@
     padding: 3px 4px 2px;
     border: 1px solid var(--ast-fg);
     background: var(--ast-bg);
-    font: 600 9px/1 var(--ast-font-mono);
+    font: 600 var(--ast-fs-xs)/1 var(--ast-font-mono);
     text-align: center;
   }
   @media (prefers-reduced-motion: reduce) {

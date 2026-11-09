@@ -64,7 +64,7 @@
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);
-    font: 400 11px/1.35 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.35 var(--ast-font-mono);
     text-align: left;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -84,12 +84,12 @@
   }
   .field {
     color: var(--ast-fg-muted);
-    font-size: 12px;
+    font-size: var(--ast-fs-m);
   }
   .hint {
     border-color: var(--ast-hairline);
     color: var(--ast-fg-muted);
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     cursor: default;
   }
   .icon {
@@ -100,7 +100,7 @@
   .label {
     flex: none;
     min-width: 52px;
-    font: 500 10px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.2 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);

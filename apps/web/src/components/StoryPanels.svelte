@@ -92,7 +92,7 @@
   }
   .sources {
     margin-top: 6px;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     line-height: 1.5;
   }
   .sources summary {

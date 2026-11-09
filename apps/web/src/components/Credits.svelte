@@ -162,7 +162,7 @@
   }
   .meta,
   dt {
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -207,7 +207,7 @@
   }
   .intro {
     margin: 14px 0 4px;
-    font: 400 12px/1.55 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.55 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   section {
@@ -238,12 +238,12 @@
   }
   h3 {
     margin: 0 0 4px;
-    font: 700 12px/1.35 var(--ast-font-mono);
+    font: 700 var(--ast-fs-m)/1.35 var(--ast-font-mono);
     letter-spacing: 0.04em;
   }
   .role {
     margin: 0 0 8px;
-    font: 400 11px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   dl {
@@ -251,7 +251,7 @@
     grid-template-columns: max-content 1fr;
     gap: 3px 12px;
     margin: 0;
-    font: 400 11px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.45 var(--ast-font-mono);
   }
   dt {
     line-height: 1.6;
@@ -269,7 +269,7 @@
   }
   .notice {
     margin: 8px 0 0;
-    font: 400 10px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
     overflow-wrap: anywhere;
   }
@@ -278,7 +278,7 @@
     flex-direction: column;
     gap: 2px;
     margin: 10px 0 0;
-    font: 500 11px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
   }
   .links a {
     display: flex;

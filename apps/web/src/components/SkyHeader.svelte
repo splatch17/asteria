@@ -88,7 +88,7 @@
   .line,
   .status {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     line-height: 16px;
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;

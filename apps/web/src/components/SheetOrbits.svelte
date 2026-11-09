@@ -82,7 +82,7 @@
   }
   h3 {
     margin: 0 2px -2px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -94,14 +94,14 @@
   }
   .time {
     display: block;
-    font: 500 11px/1.3 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.3 var(--ast-font-mono);
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
   .sub {
     display: block;
     margin-top: 2px;
-    font: 500 9px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);

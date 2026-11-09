@@ -394,13 +394,13 @@
   .bar-title {
     margin: 0;
     text-align: center;
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -527,7 +527,7 @@
     min-height: 44px;
     padding: 0 12px;
     /* Room above the capitals: É and È are not cut by the ellipsis' clipping. */
-    font: 500 10px/1.5 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -554,7 +554,7 @@
     font: 400 16px/1 var(--ast-font-mono);
   }
   .pos {
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.06em;
     font-variant-numeric: tabular-nums;
     color: var(--ast-fg-muted);

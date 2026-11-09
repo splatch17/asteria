@@ -125,8 +125,8 @@
     min-width: 44px;
     min-height: 60px;
     padding: 8px 2px 6px;
-    font: 500 9px/1.2 var(--ast-font-mono);
-    letter-spacing: 0.06em;
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
+    letter-spacing: 0.02em;
     text-transform: uppercase;
     text-align: center;
     color: var(--ast-fg-muted);
