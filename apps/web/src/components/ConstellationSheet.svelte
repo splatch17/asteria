@@ -178,7 +178,7 @@
   .meta {
     margin: 0;
     padding-right: 88px;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -203,7 +203,7 @@
     grid-template-columns: auto 1fr;
     gap: 2px 12px;
     margin: 0;
-    font: 11px/1.6 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.6 var(--ast-font-mono);
     letter-spacing: 0.06em;
   }
   /* Expanded: the reading area gets the room; the data rows come back when folded. */
@@ -223,7 +223,7 @@
   }
   .note {
     margin: 8px 0 0;
-    font: 11px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .actions {
@@ -233,7 +233,7 @@
     display: flex;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);

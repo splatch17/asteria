@@ -405,7 +405,7 @@
   }
   .meta {
     margin: 0;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -419,7 +419,7 @@
     text-transform: uppercase;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -503,12 +503,12 @@
   }
   .lesson {
     margin: 0;
-    font-size: 13px;
+    font-size: var(--ast-fs-m);
     line-height: 1.5;
   }
   .note {
     margin: 6px 0 0;
-    font: 11px/1.45 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .star {
@@ -518,7 +518,7 @@
     justify-content: space-between;
     gap: 4px 12px;
     margin: 0;
-    font: 12px/1.4 var(--ast-font-mono);
+    font: var(--ast-fs-m)/1.4 var(--ast-font-mono);
   }
   .star-name {
     font-family: var(--ast-font-display);

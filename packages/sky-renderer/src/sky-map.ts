@@ -344,6 +344,36 @@ function planetRadius(p: { name: Planet; magnitude: number }): number {
   return (size * (p.name === "Saturn" ? 1.6 : 1)) / 2;
 }
 
+/** Scale of every name drawn on the maps (the app's text size); see setLabelScale. */
+let labelScale = 1;
+const scaledFonts = new Map<string, string>();
+/** The maps alive, redrawn when the scale changes. */
+const liveMaps = new Set<{ redrawLabels(): void }>();
+
+/**
+ * Scales the names drawn by every SkyMap (stars, constellations, planets, cardinal points…), from
+ * the next frame on. 1 = the sizes written in this file.
+ */
+export function setLabelScale(scale: number): void {
+  if (!(scale > 0) || scale === labelScale) return;
+  labelScale = scale;
+  scaledFonts.clear();
+  for (const map of liveMaps) map.redrawLabels();
+}
+
+/** « 700 10px » at the current scale, to a tenth of a pixel. */
+function scaledFont(weightSize: string): string {
+  let scaled = scaledFonts.get(weightSize);
+  if (scaled === undefined) {
+    scaled = weightSize.replace(
+      /(\d+(?:\.\d+)?)px/,
+      (_, px: string) => `${Math.round(Number(px) * labelScale * 10) / 10}px`,
+    );
+    scaledFonts.set(weightSize, scaled);
+  }
+  return scaled;
+}
+
 export class SkyMap {
   readonly view: ViewState = { azimuth: 180, altitude: 35, fov: 100, roll: 0 };
   private observer: Observer = { latitude: 48.8566, longitude: 2.3522 };
@@ -502,6 +532,7 @@ export class SkyMap {
   private readonly milkyWay: MilkyWayLayer;
 
   constructor(private readonly options: SkyMapOptions) {
+    liveMaps.add(this);
     const { canvas, overlay, stars, lines } = options;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1207,7 +1238,13 @@ export class SkyMap {
   }
 
   /** Stops the loop and frees listeners, geometries, materials, textures and the renderer. */
+  /** The names are to be drawn again (their scale changed). */
+  redrawLabels(): void {
+    this.dirty = true;
+  }
+
   dispose(): void {
+    liveMaps.delete(this);
     this.stop();
     this.figureLayer.dispose();
     this.milkyWay.dispose();
@@ -2158,6 +2195,7 @@ export class SkyMap {
    * so the current one is remembered; text widths are cached per font (labels repeat every frame).
    */
   private setLabelFont(weightSize: string, spacing: string, alpha: number, family = MONO): void {
+    if (labelScale !== 1) weightSize = scaledFont(weightSize);
     const key = `${weightSize}|${spacing}|${family}`;
     if (key !== this.fontKey) {
       this.fontKey = key;

@@ -223,7 +223,7 @@
     min-width: 0;
   }
   .over {
-    font: 500 9px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -234,7 +234,7 @@
     text-wrap: balance;
   }
   .lead-meta {
-    font: 500 9px/1.35 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.35 var(--ast-font-mono);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -247,7 +247,7 @@
     padding: 7px 12px 6px;
     background: var(--ast-fg);
     color: var(--ast-bg);
-    font: 600 10px/1 var(--ast-font-mono);
+    font: 600 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
@@ -259,20 +259,23 @@
   }
   .tile {
     position: relative;
-    display: block;
+    /* The picture, then the name under it: a name on two lines (narrow screens, large text)
+       makes the tile taller, it never runs over the picture. */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     width: 100%;
-    height: 96px;
-    padding: 0;
+    min-height: 96px;
+    padding: 6px 8px 8px 10px;
     border: 1px solid var(--ast-control-border);
     background: var(--ast-bg);
     overflow: hidden;
   }
   .tile-art {
-    position: absolute;
-    top: 6px;
-    left: 8px;
+    flex: none;
     width: 50px;
     height: 50px;
+    margin-left: -2px;
   }
   .tag {
     position: absolute;
@@ -281,17 +284,16 @@
     max-width: calc(100% - 70px);
     padding: 3px 5px 2px;
     border: 1px solid var(--ast-hairline);
-    font: 500 8px/1.1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
   }
   .tile-name {
-    position: absolute;
-    left: 10px;
-    right: 8px;
-    bottom: 8px;
+    margin-top: auto;
+    padding-top: 6px;
     font: 700 17px/1 var(--ast-font-display);
+    text-align: left;
     text-wrap: balance;
   }
   /* « Ton ciel »: the count in large, a gauge of pips under it. */

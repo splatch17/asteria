@@ -1020,11 +1020,11 @@
   }
   .subtitle {
     margin: 4px 0 0;
-    font: 400 11px/1.3 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.3 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   button {
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -1094,7 +1094,7 @@
     font-variant-numeric: tabular-nums;
   }
   .readout span {
-    font: 500 9px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -1118,7 +1118,7 @@
     align-items: baseline;
     gap: 2px 10px;
     min-width: 0;
-    font: 400 10px/1.35 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.35 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .picked strong {
@@ -1129,7 +1129,7 @@
   }
   .picked .data {
     flex-basis: 100%;
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
@@ -1238,7 +1238,7 @@
     display: flex;
     justify-content: space-between;
     margin-top: 2px;
-    font: 500 9px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.08em;
     color: var(--ast-fg-muted);
   }
@@ -1271,7 +1271,7 @@
     align-items: center;
     gap: 8px;
     margin: 18px 0 8px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -1348,7 +1348,7 @@
     font-variant-numeric: tabular-nums;
   }
   .map-readout span {
-    font: 500 9px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -1402,7 +1402,7 @@
   .gestures,
   .map-picked {
     margin: 4px 0 0;
-    font: 400 10px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .map-picked {
@@ -1455,7 +1455,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    font: 500 9px/1.25 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.25 var(--ast-font-mono);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -1490,7 +1490,7 @@
   .empty,
   .hint {
     margin: 0 0 8px;
-    font: 400 10px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .list .group-title {
@@ -1516,7 +1516,7 @@
     min-height: 32px;
     padding: 0 9px;
     border: 1px solid var(--ast-control-border);
-    font: 400 11px/1 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0;
     text-transform: none;
   }
@@ -1544,7 +1544,7 @@
     align-items: center;
     gap: 6px;
     margin: 10px 0 0;
-    font: 400 10px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .legend .mark + * {
@@ -1624,7 +1624,7 @@
       font-size: 26px;
     }
     .expanded .band .what {
-      font-size: 10.5px;
+      font-size: var(--ast-fs-s);
     }
     .expanded .swatch {
       width: 13px;

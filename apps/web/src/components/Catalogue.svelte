@@ -149,7 +149,7 @@
     text-transform: uppercase;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -201,9 +201,9 @@
   .search::placeholder {
     color: var(--ast-fg-muted);
   }
+  /* Each filter takes the room of its word and shares the rest (« Essentielles » at 320 px). */
   .filters {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: flex;
     border: 1px solid var(--ast-control-border);
   }
   .filters button {
@@ -211,10 +211,12 @@
     align-items: center;
     justify-content: center;
     gap: 5px;
-    min-height: 40px;
-    padding: 0 2px;
-    font-size: 10px;
-    letter-spacing: 0.04em;
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: var(--ast-fs-s);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     color: var(--ast-fg-muted);
   }
   .filters button + button {
@@ -225,7 +227,7 @@
     background: var(--ast-fg);
   }
   .n {
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     opacity: 0.8;
   }
   .scroll {
@@ -238,7 +240,7 @@
   .count,
   .empty {
     margin: 10px 0 6px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -246,7 +248,7 @@
   .empty {
     text-transform: none;
     letter-spacing: 0;
-    font-size: 12px;
+    font-size: var(--ast-fs-m);
   }
   .list {
     margin: 0;
@@ -292,14 +294,14 @@
     flex: none;
     width: 30px;
     text-align: right;
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .tag {
     flex: none;
     padding: 3px 5px;
     border: 1px solid var(--ast-hairline);
-    font: 500 8px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);

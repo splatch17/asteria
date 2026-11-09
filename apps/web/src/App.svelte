@@ -2979,7 +2979,7 @@
   }
   .warn {
     margin: 8px 0 0;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     line-height: 1.5;
     color: var(--ast-fg);
   }
@@ -3010,7 +3010,7 @@
     padding: 10px 12px;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 88%, transparent);
-    font: 12px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-m)/1.5 var(--ast-font-mono);
     color: var(--ast-fg);
     text-align: center;
     pointer-events: none;
@@ -3053,7 +3053,7 @@
     padding: 10px 12px;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 88%, transparent);
-    font: 11px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg);
     text-align: center;
     text-transform: none;
@@ -3076,7 +3076,7 @@
     align-items: baseline;
     border: 0;
     background: none;
-    font: 10px/14px var(--ast-font-mono);
+    font: var(--ast-fs-s)/14px var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -3103,7 +3103,7 @@
     display: block;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
-    font: 10px/1.45 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
     text-align: left;
     text-transform: none;
@@ -3137,7 +3137,7 @@
   .note-title {
     display: block;
     margin-bottom: 4px;
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -3145,7 +3145,7 @@
   .toast .dismiss {
     display: block;
     margin-top: 6px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -3172,7 +3172,7 @@
     justify-items: center;
     gap: 12px;
     margin: 0;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -3235,7 +3235,7 @@
     max-width: 100%;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -3256,7 +3256,7 @@
     padding: 8px 12px;
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
-    font: 11px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   /* By day (#198): the banner is a button to the coming night, the way there in full ink. */
@@ -3266,6 +3266,7 @@
     align-items: center;
     justify-content: center;
     gap: 2px 10px;
+    height: auto;
     min-height: 44px;
     padding: 6px 14px;
     border-color: var(--ast-control-border);
@@ -3273,7 +3274,7 @@
     cursor: pointer;
   }
   .hint.daylight .why {
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
   }
   .hint.daylight .go {
     color: var(--ast-fg);
@@ -3283,7 +3284,7 @@
   /* Standing hint (daytime sky, #106): lighter than the playback hints. */
   .hint.quiet {
     padding: 4px 10px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     border-color: transparent;
   }
   .group button:disabled {

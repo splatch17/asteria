@@ -108,7 +108,7 @@
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     cursor: pointer;
   }
   button:focus-visible {
@@ -140,7 +140,7 @@
     gap: 4px;
     margin: 0;
     padding: 0 8px 0 12px;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     color: var(--ast-fg);
   }
   .date,
@@ -154,7 +154,7 @@
   }
   .state {
     letter-spacing: var(--ast-tracking-meta);
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     color: var(--ast-fg-muted);
   }
   .state.live {

@@ -136,7 +136,7 @@
   }
   .meta {
     margin: 0 0 8px;
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -223,7 +223,7 @@
     }
   }
   .sub {
-    font: 500 8px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);

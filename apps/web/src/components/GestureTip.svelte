@@ -77,7 +77,7 @@
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 88%, transparent);
     color: var(--ast-fg);
-    font: 11px/1.5 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.5 var(--ast-font-mono);
     text-align: center;
   }
   p {
@@ -85,7 +85,7 @@
   }
   .title {
     margin-bottom: 4px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -98,7 +98,7 @@
     border-radius: var(--ast-radius);
     background: transparent;
     color: var(--ast-fg);
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     cursor: pointer;

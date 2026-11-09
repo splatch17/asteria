@@ -251,7 +251,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font: 10px/1.4 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
   }
@@ -262,7 +262,7 @@
   }
   .hint {
     margin: 16px 12px;
-    font: 11px/1.6 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.6 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .sr-only {

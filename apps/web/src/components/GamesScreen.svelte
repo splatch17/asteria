@@ -740,7 +740,7 @@
     text-transform: uppercase;
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -805,7 +805,7 @@
     display: flex;
     align-items: flex-start;
     gap: 5px;
-    font: 500 9px/1.25 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.25 var(--ast-font-mono);
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -837,13 +837,13 @@
     box-sizing: border-box;
     padding-top: 5px;
     border: 1px solid var(--ast-hairline);
-    font: 500 9px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: 0.02em;
     color: var(--ast-fg-muted);
   }
   .sky.few .cell {
     padding-top: 7px;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
   }
   .cell span {
     position: relative;
@@ -857,7 +857,7 @@
     aspect-ratio: auto;
     min-height: 52px;
     padding: 6px 4px 0;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     line-height: 1.2;
     text-align: center;
   }

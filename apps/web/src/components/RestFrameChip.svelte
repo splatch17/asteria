@@ -147,7 +147,7 @@
     gap: 6px;
     height: 30px;
     padding: 0 10px 0 8px;
-    font: 500 10px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -171,7 +171,7 @@
     outline-offset: 2px;
   }
   .caret {
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     color: var(--ast-fg-muted);
   }
   .popover {
@@ -193,7 +193,7 @@
   }
   h2 {
     margin: 6px 4px 4px;
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -257,12 +257,12 @@
     min-width: 0;
   }
   .name {
-    font: 500 10px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.2 var(--ast-font-mono);
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
   .hint {
-    font: 400 10px/1.35 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.35 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   @media (prefers-reduced-motion: reduce) {

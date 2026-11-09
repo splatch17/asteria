@@ -126,7 +126,7 @@
     background: transparent;
     color: var(--ast-fg);
     cursor: pointer;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: 0.04em;
   }
   .play {
@@ -138,7 +138,7 @@
     background: var(--ast-fg);
   }
   .speed {
-    width: 104px;
+    min-width: 104px;
     padding: 0 6px;
     white-space: nowrap;
     border-left: 1px solid var(--ast-control-border);
@@ -196,7 +196,7 @@
     position: absolute;
     top: 34px;
     transform: translateX(-50%);
-    font: 9px/1 var(--ast-font-mono);
+    font: var(--ast-fs-xs)/1 var(--ast-font-mono);
     color: var(--ast-fg-muted);
     white-space: nowrap;
   }
@@ -235,13 +235,13 @@
     padding: 6px 10px;
     border: 1px solid var(--ast-fg);
     background: var(--ast-bg);
-    font: 10px/1.2 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.2 var(--ast-font-mono);
     color: var(--ast-fg-muted);
     white-space: nowrap;
     pointer-events: none;
   }
   .bubble strong {
-    font: 700 13px/1 var(--ast-font-mono);
+    font: 700 var(--ast-fs-m)/1 var(--ast-font-mono);
     color: var(--ast-fg);
   }
   /* small pointer under the bubble */

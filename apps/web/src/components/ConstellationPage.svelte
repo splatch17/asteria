@@ -381,14 +381,14 @@
     flex: none;
     margin: 2px 0 0;
     padding: 3px 5px 2px;
-    font: 600 10px/1 var(--ast-font-mono);
+    font: 600 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -436,7 +436,7 @@
     border: 1px solid var(--ast-control-border);
     background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
     color: var(--ast-fg-muted);
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
   }
   .chip[aria-pressed="true"] {
     color: var(--ast-fg);
@@ -466,7 +466,7 @@
   .s-meta {
     margin: 0;
     padding-right: 32px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -482,7 +482,7 @@
     flex-wrap: wrap;
     gap: 0 10px;
     margin: 0;
-    font: 11px/1.6 var(--ast-font-mono);
+    font: var(--ast-fs-s)/1.6 var(--ast-font-mono);
     letter-spacing: 0.06em;
     color: var(--ast-fg-muted);
   }
@@ -502,18 +502,19 @@
   .hint {
     margin: 0;
     padding: 4px 0;
-    font: 400 11px/1.4 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .facts {
     display: grid;
-    grid-template-columns: max-content 1fr;
+    /* The label takes what it needs up to 45 %, then wraps (large text, narrow cards). */
+    grid-template-columns: fit-content(45%) minmax(0, 1fr);
     gap: 4px 14px;
     margin: 0;
-    font: 12px/1.45 var(--ast-font-mono);
+    font: var(--ast-fs-m)/1.45 var(--ast-font-mono);
   }
   .facts dt {
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     line-height: 1.75;
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
@@ -540,7 +541,7 @@
     text-align: left;
     text-transform: none;
     letter-spacing: 0;
-    font: 500 13px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-m)/1.2 var(--ast-font-mono);
   }
   .s-row[aria-pressed="true"] .s-label {
     text-decoration: underline;
@@ -553,7 +554,7 @@
   .s-bayer,
   .s-v {
     flex: none;
-    font-size: 11px;
+    font-size: var(--ast-fs-s);
     color: var(--ast-fg-muted);
   }
   .s-v {
@@ -563,7 +564,7 @@
   }
   .data-sources {
     margin: 14px 0 0;
-    font: 400 10px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .panel-block {

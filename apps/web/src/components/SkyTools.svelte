@@ -192,7 +192,7 @@
     fill: var(--ast-fg);
   }
   .n {
-    font: 700 6.5px var(--ast-font-mono);
+    font: 700 6.5px var(--ast-font-mono); /* a glyph of the icon, not text to read */
     fill: var(--ast-fg);
   }
   @media (hover: hover) {

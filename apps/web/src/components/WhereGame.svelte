@@ -869,7 +869,7 @@
     min-width: 0;
   }
   .label {
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -899,7 +899,7 @@
   .status {
     margin: 6px 0 10px;
     min-height: 1.5em;
-    font: 400 12px/1.5 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.5 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .status.right {
@@ -912,7 +912,7 @@
   }
   .total {
     flex: 1;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
   }
@@ -923,7 +923,7 @@
     gap: 8px;
     min-height: 48px;
     padding: 0 16px;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);

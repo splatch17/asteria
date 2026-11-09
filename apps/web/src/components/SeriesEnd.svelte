@@ -171,7 +171,7 @@
   h2,
   h3 {
     margin: 0;
-    font: 500 9px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -217,7 +217,7 @@
   }
   .caption {
     margin: 4px 0 0;
-    font: 500 11px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -253,7 +253,7 @@
   }
   .record {
     margin: 10px 0 20px;
-    font: 500 11px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
   }
@@ -299,7 +299,7 @@
     min-height: 34px;
     padding: 4px 0;
     border-top: 1px solid var(--ast-hairline);
-    font: 400 13px/1.2 var(--ast-font-mono);
+    font: 400 var(--ast-fs-m)/1.2 var(--ast-font-mono);
   }
   .mark {
     width: 14px;
@@ -312,14 +312,14 @@
   .detail {
     display: block;
     margin-top: 3px;
-    font-size: 10px;
+    font-size: var(--ast-fs-s);
     color: var(--ast-fg-muted);
   }
   .tag {
     flex: none;
     padding: 3px 6px;
     border: 1px solid var(--ast-hairline);
-    font: 500 9px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -349,7 +349,7 @@
     justify-content: center;
     gap: 8px;
     min-height: 48px;
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);

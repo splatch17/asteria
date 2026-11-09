@@ -317,7 +317,7 @@
     }
   }
   button {
-    font: 500 11px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg);
@@ -368,7 +368,7 @@
     align-items: center;
     gap: 10px;
     margin: 18px 0 8px;
-    font: 500 10px/1.4 var(--ast-font-mono);
+    font: 500 var(--ast-fs-s)/1.4 var(--ast-font-mono);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ast-fg-muted);
@@ -426,18 +426,19 @@
     stroke: currentColor;
   }
   .m-name {
-    font: 700 17px/1 var(--ast-font-display);
+    /* « Entraînement » in a third of a 320 px screen. */
+    font: 700 clamp(14px, 4.6vw, 17px) / 1 var(--ast-font-display);
     letter-spacing: 0.03em;
   }
   .m-detail {
     min-height: 2.5em;
-    font: 400 9px/1.25 var(--ast-font-mono);
+    font: 400 var(--ast-fs-xs)/1.25 var(--ast-font-mono);
     letter-spacing: 0.02em;
     text-transform: none;
     color: var(--ast-fg-muted);
   }
   .m-record {
-    font: 500 8px/1.2 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1.2 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     color: var(--ast-fg-muted);
   }
@@ -458,12 +459,14 @@
   .explain {
     margin: 8px 0 0;
     min-height: 1.45em;
-    font: 400 11px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
 
   /* Sky: one row per scope, a square that fills when chosen, the count on the right. */
   .scope-row {
+    container: scope-row / inline-size;
+    font-size: var(--ast-fs-s);
     display: flex;
     align-items: stretch;
     border-top: 1px solid var(--ast-hairline);
@@ -525,7 +528,7 @@
     font: 500 14px/1.2 var(--ast-font-mono);
   }
   .s-hint {
-    font: 400 10px/1.35 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.35 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .count {
@@ -541,10 +544,22 @@
     font-variant-numeric: tabular-nums;
   }
   .unit {
-    font: 500 8px/1 var(--ast-font-mono);
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
     letter-spacing: var(--ast-tracking-meta);
     text-transform: uppercase;
     color: var(--ast-fg-muted);
+  }
+  /* When the row is short for its text (narrow screens, large text), the number alone: the unit
+     stays read aloud, and the name keeps its line. The em is the row's, so it follows the scale. */
+  @container scope-row (max-width: 26em) {
+    .unit {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
   }
   .scope[aria-checked="false"] .n {
     color: var(--ast-fg-muted);
@@ -565,7 +580,7 @@
     align-self: center;
     min-height: 44px;
     padding: 0 0 0 10px;
-    font-size: 9px;
+    font-size: var(--ast-fs-xs);
     color: var(--ast-fg-muted);
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -587,7 +602,7 @@
   }
   .note {
     margin: 8px 0 0;
-    font: 400 10px/1.45 var(--ast-font-mono);
+    font: 400 var(--ast-fs-s)/1.45 var(--ast-font-mono);
     color: var(--ast-fg-muted);
   }
   .play {
@@ -598,7 +613,7 @@
     width: 100%;
     min-height: 52px;
     margin-top: 16px;
-    font-size: 12px;
+    font-size: var(--ast-fs-m);
     color: var(--ast-bg);
     background: var(--ast-fg);
   }
