@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { decodeStarCatalog, type StarStrings } from "@asteria/catalog";
 import { CONSTELLATION_LATIN, constellationNames } from "@asteria/content";
-import { DISCOVERY_CONSTELLATIONS, FIRST_MAGNITUDE, constellationPool } from "./pool";
+import {
+  DISCOVERY_CONSTELLATIONS,
+  FIRST_MAGNITUDE,
+  LEARNING_ORDER,
+  constellationPool,
+  learningPool,
+} from "./pool";
 
 const ALL = Object.keys(CONSTELLATION_LATIN);
 
@@ -51,5 +57,40 @@ describe.skipIf(!available)("first-magnitude rule (public/data)", () => {
         .map((s) => s.con),
     );
     expect([...bright].sort()).toEqual([...FIRST_MAGNITUDE].sort());
+  });
+});
+
+describe("learningPool", () => {
+  const SOME = [
+    "And",
+    "Cnc",
+    "Cas",
+    "Ori",
+    "UMa",
+    "UMi",
+    "Cyg",
+    "Lyr",
+    "Leo",
+    "Sco",
+    "Tau",
+    "Gem",
+    "Aps",
+  ];
+
+  it("lists the best-known figures first, then the rest by abbreviation", () => {
+    const pool = learningPool("amateur", SOME);
+    expect(pool.slice(0, 4)).toEqual(["UMa", "Ori", "Cas", "UMi"]);
+    expect(pool.indexOf("Cnc")).toBeGreaterThan(pool.indexOf("Gem"));
+    expect(pool.slice(-2)).toEqual(["And", "Aps"]);
+  });
+
+  it("holds the same constellations as the level's pool", () => {
+    for (const level of ["discovery", "amateur", "expert"] as const)
+      expect([...learningPool(level, SOME)].sort()).toEqual(constellationPool(level, SOME));
+  });
+
+  it("names each constellation once in the learning order", () => {
+    expect(new Set(LEARNING_ORDER).size).toBe(LEARNING_ORDER.length);
+    for (const abbr of DISCOVERY_CONSTELLATIONS) expect(LEARNING_ORDER).toContain(abbr);
   });
 });

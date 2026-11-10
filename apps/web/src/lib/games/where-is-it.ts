@@ -18,7 +18,7 @@
 import type { FigureLevel } from "@asteria/sky-renderer";
 import type { Vec3 } from "@asteria/astro-core";
 import type { ConstellationShape } from "./geometry";
-import { constellationPool } from "./pool";
+import { CONSTELLATION_NEW_WINDOW, learningPool } from "./pool";
 import { itemKey, type Progress } from "./progress";
 import { CHALLENGE_LENGTH } from "./challenge";
 import type { Rng } from "./rng";
@@ -103,9 +103,8 @@ export function buildWhereSeries({
   challenge = false,
   length = challenge ? CHALLENGE_LENGTH : SERIES_LENGTH,
 }: WhereOptions): string[] {
-  const pool = constellationPool(level, Object.keys(shapes));
   return drawItems(
-    pool.map((a) => itemKey("con", a)),
+    learningPool(level, Object.keys(shapes)).map((a) => itemKey("con", a)),
     progress,
     {
       count: length,
@@ -113,6 +112,7 @@ export function buildWhereSeries({
       rng,
       visible: visible && new Set([...visible].map((a) => itemKey("con", a))),
       maxNew: level === "discovery" ? 5 : 4,
+      newWindow: CONSTELLATION_NEW_WINDOW,
       ask: ask?.map((a) => itemKey("con", a)),
       sequence: challenge,
     },

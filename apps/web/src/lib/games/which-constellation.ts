@@ -13,7 +13,7 @@
  */
 import type { FigureLevel } from "@asteria/sky-renderer";
 import { nearest, type ConstellationShape } from "./geometry";
-import { constellationPool } from "./pool";
+import { CONSTELLATION_NEW_WINDOW, constellationPool, learningPool } from "./pool";
 import { itemKey, recordAnswer, type Progress } from "./progress";
 import { CHALLENGE_LENGTH } from "./challenge";
 import { shuffle, type Rng } from "./rng";
@@ -80,7 +80,7 @@ export function buildSeries({
 }: SeriesOptions): Question[] {
   const pool = constellationPool(level, Object.keys(shapes));
   const keys = drawItems(
-    pool.map((a) => itemKey("con", a)),
+    learningPool(level, Object.keys(shapes)).map((a) => itemKey("con", a)),
     progress,
     {
       count: length,
@@ -88,6 +88,7 @@ export function buildSeries({
       rng,
       visible: visible && new Set([...visible].map((a) => itemKey("con", a))),
       maxNew: level === "discovery" ? 5 : 4,
+      newWindow: CONSTELLATION_NEW_WINDOW,
       ask: ask?.map((a) => itemKey("con", a)),
       sequence: challenge,
     },

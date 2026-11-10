@@ -370,6 +370,8 @@
   "search.hint": "Étoiles, constellations, planètes, ciel profond, ISS. Ex. : α Ori, HIP 27989, M 31, NGC 869.",
   "search.results": "{count, plural, =0 {Aucun résultat} one {# résultat} other {# résultats}}",
   "search.empty": "Rien pour « {query} ».",
+  "search.group.recent": "Récents",
+  "search.group.up": "Dans ton ciel en ce moment",
   "search.kind.star": "Étoile",
   "search.kind.constellation": "Constellation",
   "search.kind.planet": "Planète",

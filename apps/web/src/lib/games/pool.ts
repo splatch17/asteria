@@ -57,6 +57,47 @@ export const DISCOVERY_CONSTELLATIONS: readonly string[] = [
   ...new Set<string>([...ZODIAC, ...FIRST_MAGNITUDE, ...GUIDES]),
 ];
 
+/**
+ * The order in which constellations are learnt (review of 2026-11-09, point 7): the figures
+ * nearly everyone has heard of first, so that a new player's first questions are the Great Bear
+ * and Orion, not the Crab. An editorial choice, not a measurement: the two Bears, Orion and
+ * Cassiopeia, the summer triangle, the brightest of the zodiac, then the other figures of the
+ * Découverte list in its order, then the rest by abbreviation.
+ */
+export const LEARNING_ORDER: readonly string[] = [
+  ...new Set<string>([
+    "UMa",
+    "Ori",
+    "Cas",
+    "UMi",
+    "Cyg",
+    "Lyr",
+    "Leo",
+    "Sco",
+    "Tau",
+    "Gem",
+    "CMa",
+    "Aql",
+    "Peg",
+    "Boo",
+    "Vir",
+    "Cru",
+    "Cen",
+    ...DISCOVERY_CONSTELLATIONS,
+  ]),
+];
+/** New constellations are drawn among the first ones of that order not asked yet (lib/select). */
+export const CONSTELLATION_NEW_WINDOW = 10;
+
+/** The level's constellations (constellationPool) in the order they are learnt. */
+export function learningPool(level: FigureLevel, all: readonly string[]): string[] {
+  const pool = constellationPool(level, all);
+  const inPool = new Set(pool);
+  const first = LEARNING_ORDER.filter((a) => inPool.has(a));
+  const listed = new Set(first);
+  return [...first, ...pool.filter((a) => !listed.has(a))];
+}
+
 /** Constellations a level asks about, among those the catalogue draws (`all`), sorted. */
 export function constellationPool(level: FigureLevel, all: readonly string[]): string[] {
   const known = new Set(all);

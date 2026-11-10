@@ -124,8 +124,14 @@
       </span>
     </button>
   {:else}
-    <!-- No game played yet: the first one leads, its settings a tap away. -->
-    <button class="lead" data-action="first" data-game={first.id} onclick={() => onsetup(first.id)}>
+    <!-- No game played yet: the first one leads and starts at once, with the default settings
+         (review 2026-11-09, point 7); its tile below opens the settings. -->
+    <button
+      class="lead"
+      data-action="first"
+      data-game={first.id}
+      onclick={() => onresume(first.id)}
+    >
       <span class="lead-art"><Vignette id={first.id} /></span>
       <span class="lead-text">
         <span class="over">{$_("games.start")}</span>

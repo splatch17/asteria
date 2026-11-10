@@ -101,6 +101,14 @@
   import { constellationShapes } from "./lib/games/geometry";
   import { DISCOVERY_CONSTELLATIONS } from "./lib/games/pool";
   import { farFromDeviceClock, isChosenPlace, loadPlace, savePlace, type Place } from "./lib/place";
+  import {
+    brightestUp,
+    entryOf,
+    loadRecentSearches,
+    rememberSearch,
+    targetKey,
+    type UpNow,
+  } from "./lib/search-suggest";
   import { tonightLine, type TonightLine } from "./lib/sky-tonight";
   import {
     moonPhaseName,
@@ -125,7 +133,12 @@
   import FramePanel from "./components/FramePanel.svelte";
   import RestFrameChip from "./components/RestFrameChip.svelte";
   import { HIDDEN_TIP_KEY, HIDDEN_TIP_MS, hiddenTipDue, immersiveAfterTap } from "./lib/hud";
-  import { buildSearchIndex, type SearchIndex, type SearchTarget } from "./lib/search";
+  import {
+    buildSearchIndex,
+    type SearchEntry,
+    type SearchIndex,
+    type SearchTarget,
+  } from "./lib/search";
   import { brightestStar, figureDirections, frameAbove, placeFigure } from "./lib/constellation";
   import { altitudeOf, horizontalOf, nextRise, nextRiseOf } from "./lib/horizon";
   import { level as levelPref } from "./lib/level-store.svelte";
@@ -1223,9 +1236,62 @@
       }),
     });
   }
+  /**
+   * What the search proposes before anything is typed (audit P12): the last objects chosen,
+   * then what is up now — the Moon, the planets one sees with the naked eye and the brightest
+   * named stars at 10° or more, and the two well-known figures standing highest. Computed when
+   * the search opens (about 60 altitudes).
+   */
+  let searchSuggestions = $state.raw<{ id: string; title: string; entries: SearchEntry[] }[]>([]);
+  function suggestSearches(index: SearchIndex): typeof searchSuggestions {
+    if (!catalog) return [];
+    const entries = (targets: readonly SearchTarget[]) =>
+      targets
+        .map((t) => entryOf(index, targetKey(t)))
+        .filter((e): e is SearchEntry => e !== undefined);
+    const recent = loadRecentSearches(appStorage())
+      .map((key) => entryOf(index, key))
+      .filter((e): e is SearchEntry => e !== undefined);
+    const up: SearchTarget[] = [];
+    if (bodies.moon && bodies.moon.altitude >= 10) up.push({ kind: "body", body: "Moon" });
+    const planetsUp: UpNow[] = (planets ?? [])
+      .filter((p) => NAKED_EYE.includes(p.name))
+      .map((p) => ({
+        target: { kind: "planet", planet: p.name },
+        altitude: p.altitude,
+        magnitude: p.magnitude,
+      }));
+    up.push(...brightestUp(planetsUp, 3).map((u) => u.target));
+    // The catalogue is sorted by magnitude: its first named stars are the sky's brightest.
+    const starsUp: UpNow[] = catalog.stars
+      .filter((st) => st.name)
+      .slice(0, 40)
+      .map((st) => ({
+        target: { kind: "star", hip: st.hip },
+        altitude: altitudeOf(st.ra, st.dec, date, place),
+        magnitude: st.v,
+      }));
+    up.push(...brightestUp(starsUp, 3).map((u) => u.target));
+    up.push(
+      ...topFigures(figureCentresOf(catalog), DISCOVERY_CONSTELLATIONS, date, place, 2).map(
+        (f): SearchTarget => ({ kind: "constellation", abbr: f.abbr }),
+      ),
+    );
+    const seen = new Set(recent.map((e) => targetKey(e.target)));
+    return [
+      { id: "recent", title: $_("search.group.recent"), entries: recent },
+      {
+        id: "up",
+        title: $_("search.group.up"),
+        entries: entries(up).filter((e) => !seen.has(targetKey(e.target))),
+      },
+    ].filter((g) => g.entries.length > 0);
+  }
+
   function openSearch() {
     if (!catalog) return;
     searchIndex ??= buildIndex();
+    if (searchIndex) searchSuggestions = suggestSearches(searchIndex);
     // Deep-sky objects join the index once their catalogue is there (#101).
     if (!deepSky)
       void ensureDeepSky().then((objects) => {
@@ -1245,6 +1311,7 @@
   function goTo(target: SearchTarget) {
     closeSearch();
     if (!catalog) return;
+    rememberSearch(appStorage(), target);
     const years = yearsSinceHipparcos(date);
     let next: SkySelection;
     let dirs: ReturnType<typeof figureDirections>;
@@ -2315,15 +2382,20 @@
   // --- « Ce soir » of the Ciel tab (menu v2, lib/sky-tonight): computed while that tab is shown,
   // once per minute shown and place (a few hundred altitudes: the figures, the Moon's set).
   let figureCentres: Record<string, Vec3> | null = null;
+  /** The centre of each figure (J2000 direction), computed once. */
+  function figureCentresOf(c: NonNullable<typeof catalog>): Record<string, Vec3> {
+    if (!figureCentres) {
+      const shapes = constellationShapes(c.stars, c.lines);
+      figureCentres = Object.fromEntries(Object.values(shapes).map((sh) => [sh.abbr, sh.centre]));
+    }
+    return figureCentres;
+  }
   let tonightCache: { key: string; line: TonightLine } | null = null;
   const tonightInfo = $derived.by(() => {
     if (!menuOpen || sheetTab !== "sky" || status !== "ready" || !catalog) return null;
     const key = `${Math.floor(date.getTime() / 60_000)}|${place.latitude}|${place.longitude}`;
     if (tonightCache?.key !== key) {
-      if (!figureCentres) {
-        const shapes = constellationShapes(catalog.stars, catalog.lines);
-        figureCentres = Object.fromEntries(Object.values(shapes).map((s) => [s.abbr, s.centre]));
-      }
+      const centres = figureCentresOf(catalog);
       const sunAltitude = bodies.sun.altitude;
       const night = sunAltitude > -6 ? nextDarkNight(date, place) : null;
       const observer = { latitude: place.latitude, longitude: place.longitude };
@@ -2334,7 +2406,7 @@
           observer,
           sunAltitude,
           nightStart: night ? nightJump(night.date, date).at : null,
-          centres: figureCentres,
+          centres,
           known: DISCOVERY_CONSTELLATIONS,
           moonAltitude: bodies.moon
             ? (t) => bodyPosition("Moon", new Date(t), observer).altitude
@@ -2409,12 +2481,8 @@
         // In the order of the night: the first to show first.
         data.planets.sort((a, b) => a.showing.from - b.showing.from);
       }
-      if (!figureCentres) {
-        const shapes = constellationShapes(catalog.stars, catalog.lines);
-        figureCentres = Object.fromEntries(Object.values(shapes).map((sh) => [sh.abbr, sh.centre]));
-      }
       data.figures = topFigures(
-        figureCentres,
+        figureCentresOf(catalog),
         DISCOVERY_CONSTELLATIONS,
         new Date(data.at),
         observer,
@@ -2632,7 +2700,12 @@
 {/if}
 
 {#if searchOpen}
-  <SearchPanel index={searchIndex} onselect={goTo} onclose={closeSearch} />
+  <SearchPanel
+    index={searchIndex}
+    suggestions={searchSuggestions}
+    onselect={goTo}
+    onclose={closeSearch}
+  />
 {/if}
 
 <!-- Top right (menu v2): the compass, always there on the sky map (a tap: north up), the

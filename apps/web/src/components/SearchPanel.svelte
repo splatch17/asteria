@@ -10,10 +10,13 @@
 
   let {
     index,
+    suggestions = [],
     onselect,
     onclose,
   }: {
     index: SearchIndex | null;
+    /** Shown before anything is typed: the last objects chosen, what is up now (audit P12). */
+    suggestions?: readonly { id: string; title: string; entries: readonly SearchEntry[] }[];
     onselect: (target: SearchTarget) => void;
     onclose: () => void;
   } = $props();
@@ -23,7 +26,14 @@
   let list = $state<HTMLUListElement>();
   let query = $state("");
   let active = $state(0);
-  const results = $derived(index ? search(index, query) : []);
+  const typed = $derived(query.trim() !== "");
+  /** The options listed: the matches of what is typed, else the suggestions, group after group. */
+  const results = $derived.by((): { entry: SearchEntry; group?: string }[] => {
+    if (typed) return index ? search(index, query).map(({ entry }) => ({ entry })) : [];
+    return suggestions.flatMap((g) =>
+      g.entries.map((entry, i) => (i === 0 ? { entry, group: g.title } : { entry })),
+    );
+  });
 
   const ICONS: Record<SearchTarget["kind"], IconName> = {
     star: "star",
@@ -63,7 +73,7 @@
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
       active = (active + step + results.length) % results.length;
-      list?.children[active]?.scrollIntoView({ block: "nearest" });
+      list?.querySelector(`#${optionId(active)}`)?.scrollIntoView({ block: "nearest" });
     } else if (e.key === "Enter") {
       e.preventDefault();
       choose(results[active]?.entry);
@@ -109,15 +119,14 @@
       >
     </div>
     <p class="sr-only" role="status">
-      {query.trim() ? $_("search.results", { values: { count: results.length } }) : ""}
+      {typed ? $_("search.results", { values: { count: results.length } }) : ""}
     </p>
-    {#if !query.trim()}
-      <p class="hint">{$_("search.hint")}</p>
-    {:else if !results.length}
+    {#if typed && !results.length}
       <p class="hint">{$_("search.empty", { values: { query: query.trim() } })}</p>
     {/if}
     <ul id="search-results" role="listbox" aria-label={$_("search.label")} bind:this={list}>
-      {#each results as { entry }, i (i)}
+      {#each results as { entry, group }, i (i)}
+        {#if group}<li class="group" role="presentation">{group}</li>{/if}
         <!-- svelte-ignore a11y_click_events_have_key_events (keys go to the combobox input) -->
         <li
           id={optionId(i)}
@@ -137,6 +146,7 @@
           </span>
         </li>
       {/each}
+      {#if !typed}<li class="tip" role="presentation">{$_("search.hint")}</li>{/if}
     </ul>
   </div>
 </div>
@@ -259,6 +269,24 @@
   .detail::before {
     content: " · ";
     white-space: pre;
+  }
+  /* Suggestions: a group's title, and the hint at the end of the list. */
+  li.group,
+  li.tip {
+    min-height: 0;
+    border-bottom: 0;
+    cursor: default;
+  }
+  li.group {
+    padding: 14px 12px 6px;
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+  }
+  li.tip {
+    display: block;
+    padding: 14px 12px;
+    font: var(--ast-fs-s)/1.6 var(--ast-font-mono);
   }
   .hint {
     margin: 16px 12px;
