@@ -87,6 +87,12 @@ jobs:
         continue-on-error: true
         env:
           PYTHONIOENCODING: utf-8
+      # Cities of the place picker (Natural Earth pinned release); -I: the downloaded file is
+      # untrusted data. Optional: without it the picker still takes coordinates typed by hand.
+      - run: python -I packages/sky-data/build_cities.py
+        continue-on-error: true
+        env:
+          PYTHONIOENCODING: utf-8
       # Saved even when a download failed, so the sources that did answer are not asked again on
       # the next attempt (#212), and only when raw/ changed. A run-specific key: GitHub never
       # overwrites an existing cache entry.

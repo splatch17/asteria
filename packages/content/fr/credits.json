@@ -144,8 +144,8 @@
   "assets": [
     {
       "id": "natural-earth",
-      "name": "Natural Earth, côtes au 1:50 000 000",
-      "role": "Contours des continents du globe (vue Terre).",
+      "name": "Natural Earth, côtes au 1:50 000 000 et lieux habités au 1:10 000 000 (v5.1.2)",
+      "role": "Contours des continents du globe (vue Terre) ; liste des villes du choix du lieu.",
       "author": "Natural Earth",
       "notice": "Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com.",
       "license": "Domaine public",

@@ -23,4 +23,6 @@ if (existsSync(`${from}/milkyway.webp`)) cpSync(`${from}/milkyway.webp`, `${to}/
 if (existsSync(`${from}/space`)) cpSync(`${from}/space`, `${to}/space`, { recursive: true });
 // Illustrated constellation figures (build_figures.py, #95), loaded on demand: optional.
 if (existsSync(`${from}/figures`)) cpSync(`${from}/figures`, `${to}/figures`, { recursive: true });
+// Cities of the place picker (build_cities.py), loaded on demand: optional too.
+if (existsSync(`${from}/cities.json`)) cpSync(`${from}/cities.json`, `${to}/cities.json`);
 console.log(`Synced sky data → ${to}`);

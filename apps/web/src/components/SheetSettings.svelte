@@ -12,7 +12,9 @@
   import { sectionsFor, type LayerKey } from "../lib/layers";
   import { LEVELS } from "../lib/level";
   import { level } from "../lib/level-store.svelte";
+  import type { Place } from "../lib/place";
   import { TEXT_SIZES } from "../lib/text-size";
+  import CityPicker from "./CityPicker.svelte";
   import { textSize } from "../lib/text-size-store.svelte";
   import {
     LEGACY_PANEL_KEY,
@@ -37,6 +39,8 @@
     coords,
     locating,
     onlocate,
+    onplace,
+    farClock,
     time,
     live,
     relative,
@@ -61,6 +65,10 @@
     coords: string;
     locating: "idle" | "busy" | "error";
     onlocate: () => void;
+    /** A city or coordinates chosen in the picker. */
+    onplace: (place: Place) => void;
+    /** The place is far from the device's time zone: the hours shown are the device's. */
+    farClock: boolean;
     time: string;
     live: boolean;
     relative: string;
@@ -91,6 +99,8 @@
     ),
   );
   let segments = $state<HTMLElement>();
+  /** The city picker is unfolded under the place. */
+  let picking = $state(false);
   function show(id: SettingsPart) {
     if (id === part) return;
     part = id;
@@ -174,6 +184,26 @@
         title={$_("place.locate")}><Icon name="locate" size={16} /></button
       >
     </div>
+    <!-- A city or coordinates (review 2026-11-09, point 5): for whoever refuses geolocation,
+         has none (desktop), or wants another sky than their own. -->
+    {#if picking}
+      <div class="city">
+        <CityPicker
+          onpick={(p) => {
+            picking = false;
+            onplace(p);
+          }}
+        />
+        <button class="choose quiet" onclick={() => (picking = false)}
+          >{$_("place.pick.cancel")}</button
+        >
+      </div>
+    {:else}
+      <button class="choose" data-action="choose-city" onclick={() => (picking = true)}
+        ><Icon name="search" size={16} /><span>{$_("place.choose")}</span></button
+      >
+      {#if farClock}<p class="note far">{$_("place.farClock")}</p>{/if}
+    {/if}
     <div class="line">
       <span class="data">
         <span class="main">{time}</span>
@@ -431,8 +461,43 @@
     padding-left: 4px;
     color: var(--ast-fg-muted);
   }
-  .line + .line {
+  .line + .line,
+  .choose + .line,
+  .city + .line {
     margin-top: 8px;
+  }
+  .choose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--ast-control-border);
+    border-radius: var(--ast-radius);
+    background: transparent;
+    color: var(--ast-fg);
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
+    letter-spacing: var(--ast-tracking-meta);
+    text-transform: uppercase;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .choose.quiet {
+    border-color: transparent;
+    color: var(--ast-fg-muted);
+  }
+  .choose:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: 2px;
+  }
+  .city {
+    margin-top: 8px;
+  }
+  .note.far {
+    margin: 8px 4px 0;
   }
   .data {
     flex: 1;

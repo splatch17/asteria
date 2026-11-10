@@ -100,6 +100,7 @@
   import type { LearnStart } from "./components/GamesScreen.svelte";
   import { constellationShapes } from "./lib/games/geometry";
   import { DISCOVERY_CONSTELLATIONS } from "./lib/games/pool";
+  import { farFromDeviceClock, isChosenPlace, loadPlace, savePlace, type Place } from "./lib/place";
   import { tonightLine, type TonightLine } from "./lib/sky-tonight";
   import {
     moonPhaseName,
@@ -391,8 +392,7 @@
   let viewRoll = $state(0);
   // Declared before loadPlace() runs: read earlier, it was in its temporal dead zone and the
   // saved place was never restored (the ReferenceError fell into loadPlace's catch).
-  const PLACE_KEY = "asteria.place";
-  let place = $state(loadPlace());
+  let place = $state<Place>(loadPlace(appStorage()));
   let locating = $state<"idle" | "busy" | "error">("idle");
   let clock: ReturnType<typeof setInterval>;
   const names = constellationNames("fr");
@@ -415,23 +415,6 @@
     Object.fromEntries(PLANETS.map((p) => [p, planetName(p)])) as Record<Planet, string>;
   const hipLabel = (hip: number) => $_("star.hip", { values: { hip } });
   const starLabel = (s: CatalogStar) => s.name ?? s.bayer ?? hipLabel(s.hip);
-
-  interface Place {
-    name: string | null; // null = default city (translated at render time)
-    latitude: number;
-    longitude: number;
-  }
-
-  function loadPlace(): Place {
-    try {
-      const saved = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null");
-      if (saved && Number.isFinite(saved.latitude) && Number.isFinite(saved.longitude))
-        return saved;
-    } catch {
-      // storage unavailable: fall back to the default place
-    }
-    return { name: null, latitude: 48.8566, longitude: 2.3522 };
-  }
 
   function setOffset(value: number) {
     offset = clampOffset(value, range);
@@ -1032,6 +1015,14 @@
     map?.animateTo({ azimuth: 0 }, viewTurnMs());
   }
 
+  /** The place the sky is seen from: the player's position, a city, or coordinates. */
+  function choosePlace(next: Place) {
+    place = next;
+    locating = "idle";
+    map?.setObserver(place);
+    savePlace(appStorage(), place);
+  }
+
   function locate() {
     if (locating === "busy") return;
     if (!("geolocation" in navigator)) {
@@ -1040,14 +1031,8 @@
     }
     locating = "busy";
     const found = ({ coords }: GeolocationPosition) => {
-      place = { name: "mine", latitude: coords.latitude, longitude: coords.longitude };
-      map?.setObserver(place);
+      choosePlace({ name: "mine", latitude: coords.latitude, longitude: coords.longitude });
       locating = "idle";
-      try {
-        localStorage.setItem(PLACE_KEY, JSON.stringify(place));
-      } catch {
-        // not persisted: acceptable
-      }
     };
     // The quick network position first; without a network (offline in the field, #142) it
     // fails, then the GPS itself, slower to get a first fix.
@@ -2310,13 +2295,22 @@
    * menu keeps « Ma position » above the precise coordinates.
    */
   const placeName = $derived.by(() => {
-    if (place.name !== "mine") return $_("place.paris");
+    if (place.name === null) return $_("place.paris");
+    if (place.name === "city" && place.label) return place.label;
     const p = placeParts(place.latitude, place.longitude, lang);
     return $_("geo.place", {
       values: { lat: p.lat, ns: $_(`geo.${p.ns}`), lon: p.lon, ew: $_(`geo.${p.ew}`) },
     });
   });
-  const menuPlaceName = $derived(place.name === "mine" ? $_("place.mine") : $_("place.paris"));
+  const menuPlaceName = $derived(
+    place.name === "mine"
+      ? $_("place.mine")
+      : place.name === "city" && place.label
+        ? place.label
+        : place.name === "custom"
+          ? $_("place.custom")
+          : $_("place.paris"),
+  );
 
   // --- « Ce soir » of the Ciel tab (menu v2, lib/sky-tonight): computed while that tab is shown,
   // once per minute shown and place (a few hundred altitudes: the figures, the Moon's set).
@@ -2931,7 +2925,7 @@
       theme={night ? { ...THEMES.red, ink: nightInk(brightness) } : THEMES.day}
       figureSet={`${import.meta.env.BASE_URL}data/figures/stellarium-western.json`}
       {placeName}
-      located={place.name === "mine"}
+      located={isChosenPlace(place)}
       start={learnStart}
       onexplain={() => openLatitude(place.latitude)}
       onlocate={locate}
@@ -3063,8 +3057,9 @@
       !latitudeExplorer}
     when={bodies.sun.altitude >= 0 ? "day" : date.getHours() >= 15 ? "evening" : "night"}
     {locating}
-    located={place.name === "mine"}
+    located={isChosenPlace(place)}
     onlocate={locate}
+    onplace={choosePlace}
     example={welcomeExample}
     view={() =>
       map ? { azimuth: map.view.azimuth, altitude: map.view.altitude, fov: map.view.fov } : null}
@@ -3121,7 +3116,7 @@
       : null}
     games={loadedSky
       ? {
-          located: place.name === "mine",
+          located: isChosenPlace(place),
           constellations: Object.keys(loadedSky.lines),
           onresume: (game) => openGames({ view: "play", game }, "games"),
           onsetup: (game) => openGames({ view: "setup", game }, "games"),
@@ -3137,6 +3132,9 @@
       coords,
       locating,
       onlocate: locate,
+      onplace: choosePlace,
+      farClock:
+        isChosenPlace(place) && farFromDeviceClock(place.longitude, date.getTimezoneOffset()),
       time,
       live,
       relative,
