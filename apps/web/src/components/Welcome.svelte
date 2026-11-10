@@ -20,6 +20,8 @@
   import { onDestroy, tick } from "svelte";
   import { _ } from "@asteria/ui";
   import type { FigureLevel } from "@asteria/sky-renderer";
+  import CityPicker from "./CityPicker.svelte";
+  import type { Place } from "../lib/place";
   import Icon from "./Icon.svelte";
   import Designation from "./Designation.svelte";
   import { LEVELS } from "../lib/level";
@@ -46,6 +48,7 @@
     locating,
     located,
     onlocate,
+    onplace,
     example,
     view,
     bottom,
@@ -60,6 +63,8 @@
     located: boolean;
     /** The menu's « Utiliser ma position » (Menu › Lieu et temps). */
     onlocate: () => void;
+    /** A city or coordinates chosen in the picker. */
+    onplace: (place: Place) => void;
     example: (level: FigureLevel) => WelcomeExample | null;
     /** The map's current view, for the drag and pinch hints. */
     view: () => ViewSample | null;
@@ -125,6 +130,8 @@
     asked = true;
     onlocate();
   }
+  /** The city picker replaces the three choices; a city chosen, on to the level. */
+  let picking = $state(false);
   $effect(() => {
     if (step === "place" && asked && located && locating === "idle") send({ type: "next" });
   });
@@ -260,17 +267,34 @@
             {$_("welcome.place.title", { values: { when } })}
           </h2>
           <p class="lede">{$_("welcome.place.lede")}</p>
-          <button class="opt ink" onclick={locate} aria-busy={locating === "busy"}>
-            <Icon name="locate" size={18} />
-            {locating === "busy" ? $_("place.locating") : $_("place.locate")}
-          </button>
-          {#if asked && locating === "error"}
-            <p class="error" role="alert">{$_("welcome.place.error")}</p>
+          {#if picking}
+            <CityPicker
+              onpick={(p) => {
+                picking = false;
+                onplace(p);
+                send({ type: "next" });
+              }}
+            />
+            <button class="opt text" onclick={() => (picking = false)}>
+              {$_("place.pick.cancel")}
+            </button>
+          {:else}
+            <button class="opt ink" onclick={locate} aria-busy={locating === "busy"}>
+              <Icon name="locate" size={18} />
+              {locating === "busy" ? $_("place.locating") : $_("place.locate")}
+            </button>
+            {#if asked && locating === "error"}
+              <p class="error" role="alert">{$_("welcome.place.error")}</p>
+            {/if}
+            <button class="opt" data-action="choose-city" onclick={() => (picking = true)}>
+              <Icon name="search" size={18} />
+              {$_("place.choose")}
+            </button>
+            <button class="opt text" onclick={() => send({ type: "next" })}>
+              <Icon name="now" size={18} />
+              {$_("welcome.place.later")}<small>{$_("welcome.place.later.hint")}</small>
+            </button>
           {/if}
-          <button class="opt text" onclick={() => send({ type: "next" })}>
-            <Icon name="now" size={18} />
-            {$_("welcome.place.later")}<small>{$_("welcome.place.later.hint")}</small>
-          </button>
         {:else}
           <p class="kicker">{$_("welcome.level.kicker")}</p>
           <h2 tabindex="-1" bind:this={heading} id="welcome-level">
