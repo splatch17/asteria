@@ -10,8 +10,13 @@ import {
   mapLabelScale,
   saveTextSize,
   TEXT_SCALE,
+  WIDE_SCREEN,
+  WIDE_SCREEN_SCALE,
   type TextSize,
 } from "./text-size";
+
+/** The large-screen query; null where matchMedia is missing (tests, old engines). */
+const wide = typeof matchMedia === "function" ? matchMedia(WIDE_SCREEN) : null;
 
 function storage(): Storage | null {
   try {
@@ -23,7 +28,7 @@ function storage(): Storage | null {
 
 function apply(size: TextSize): void {
   document.documentElement.style.setProperty("--ast-text-scale", String(TEXT_SCALE[size]));
-  setLabelScale(mapLabelScale(size));
+  setLabelScale(mapLabelScale(size) * (wide?.matches ? WIDE_SCREEN_SCALE : 1));
 }
 
 class TextSizeStore {
@@ -37,6 +42,8 @@ class TextSizeStore {
       this.#fromUrl = true;
     }
     apply(this.#size);
+    // The window resized across the large-screen limit: the map names follow the page.
+    wide?.addEventListener("change", () => apply(this.#size));
   }
 
   get value(): TextSize {

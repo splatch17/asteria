@@ -11,6 +11,7 @@ import {
   mainStars,
   observability,
   pickStar,
+  sortBySky,
   tappableStars,
   type CatalogueEntry,
 } from "./catalogue";
@@ -189,5 +190,22 @@ describe.skipIf(!available)("pages from the catalogue (public/data)", () => {
       expect(mainStars(stars, lines, abbr).length, abbr).toBeGreaterThan(0);
       expect(tappableStars(stars, lines, abbr).length, abbr).toBeGreaterThan(1);
     }
+  });
+});
+
+describe("sortBySky", () => {
+  it("lists the figures up now first, the highest at the top, then the others by name", () => {
+    const entries = [
+      { abbr: "Ori", name: "Orion" },
+      { abbr: "Cas", name: "Cassiopée" },
+      { abbr: "Leo", name: "Lion" },
+      { abbr: "Peg", name: "Pégase" },
+      { abbr: "Gem", name: "Gémeaux" },
+    ];
+    const sorted = sortBySky(entries, { Ori: -5, Cas: 75, Leo: -40, Peg: 59, Gem: -1 });
+    expect(sorted.map((e) => e.abbr)).toEqual(["Cas", "Peg", "Gem", "Leo", "Ori"]);
+    // The input is left as it was, and an unknown figure counts as down.
+    expect(entries[0]!.abbr).toBe("Ori");
+    expect(sortBySky(entries, {}).map((e) => e.abbr)).toEqual(["Cas", "Gem", "Leo", "Ori", "Peg"]);
   });
 });

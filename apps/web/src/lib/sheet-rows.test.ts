@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  absoluteMagnitude,
   bodySheet,
   deepSkySheet,
+  LY_PER_PARSEC,
   planetSheet,
   sightLine,
   starColour,
@@ -82,7 +84,48 @@ describe("star sheet by level (#201)", () => {
     expect(s.latin).toBe(true);
   });
 
-  it("Expert: AD / Déc., V, B−V, distance, altitude and azimuth; no sentence", () => {
+  it("Expert: parallax, proper motion, radial velocity and absolute magnitude when known", () => {
+    // Made-up values of the order of Betelgeuse's, one of them negative to check the sign.
+    const s = starSheet(
+      "expert",
+      {
+        ...betelgeuse,
+        astrometry: { plx: 6.55, ePlx: 0.83, pmRa: 27.54, pmDec: -11.3 },
+        radialVelocity: { kms: 21.91, source: "BSC5" },
+      },
+      "SIGHT",
+      t,
+      fmt,
+    );
+    expect(labels(s.rows)).toEqual([
+      "data.ra",
+      "data.dec",
+      "data.v",
+      "data.bv",
+      "data.dist",
+      "data.plx",
+      "data.pm",
+      "data.rv",
+      "data.absMag",
+      "body.altitude",
+      "body.azimuth",
+    ]);
+    const row = (label: string) => s.rows.find((r) => r.label === label)!;
+    expect(row("data.plx").value).toBe('data.plx.valueErr {"plx":"6,55","err":"0,83"}');
+    expect(row("data.pm").value).toBe('data.pm.value {"ra":"+27,5","dec":"−11,3"}');
+    expect(row("data.rv").value).toBe('data.rv.value {"kms":"+21,9"}');
+    expect(row("data.rv").title).toBe("BSC5");
+  });
+
+  it("computes the absolute magnitude from the distance modulus", () => {
+    // Sun-like check: V = 4.83 at 10 pc is M = 4.83; Vega, V 0.03 at 25.04 ly (7.68 pc): M = 0.60.
+    expect(absoluteMagnitude(4.83, 10 * LY_PER_PARSEC)).toBeCloseTo(4.83, 10);
+    expect(absoluteMagnitude(0.03, 25.04)).toBeCloseTo(0.6, 1);
+    // Sirius, V −1.46 at 8.60 ly (2.64 pc): M = +1.43 (tolerance 0.02).
+    expect(Math.abs(absoluteMagnitude(-1.46, 8.6) - 1.43)).toBeLessThan(0.02);
+  });
+
+  it("Expert: AD / Déc., V, B−V, distance, absolute magnitude, altitude and azimuth; no sentence", () => {
     const s = starSheet("expert", betelgeuse, "SIGHT", t, fmt);
     expect(s.lead).toEqual([]);
     expect(s.sight).toBeNull();
@@ -92,11 +135,14 @@ describe("star sheet by level (#201)", () => {
       "data.v",
       "data.bv",
       "data.dist",
+      "data.absMag",
       "body.altitude",
       "body.azimuth",
     ]);
     expect(s.rows.map((r) => r.value).slice(2, 4)).toEqual(["0,45", "1,50"]);
-    expect(s.rows[5]!.value).toBe("35,2°");
+    // V 0.45 at 550 ly (168.6 pc): M = 0.45 − 5 log10(16.86) = −5.7.
+    expect(s.rows[5]!.value).toBe("−5,7");
+    expect(s.rows[6]!.value).toBe("35,2°");
   });
 
   it("a rank in the constellation, or none, and no colour without B−V", () => {
