@@ -23,6 +23,7 @@
   import SheetOrbits from "./SheetOrbits.svelte";
   import SheetSettings from "./SheetSettings.svelte";
   import SheetSky from "./SheetSky.svelte";
+  import SheetTonight from "./SheetTonight.svelte";
   import type SheetCatalogue from "./SheetCatalogue.svelte";
   import type SheetGames from "./SheetGames.svelte";
 
@@ -35,6 +36,8 @@
     catalogue,
     games,
     settings,
+    tonight,
+    tonightOpen = $bindable(false),
     brightness = $bindable(),
     onclose,
     closeButton = $bindable(),
@@ -45,12 +48,16 @@
     ontab: (tab: SheetTab) => void;
     /** The header's short meta of Ciel (« PARIS · 21:30 · EN DIRECT ») and Orbites (the point of view). */
     metas: { sky: string; orbits: string };
-    sky: Omit<ComponentProps<typeof SheetSky>, "brightness">;
+    sky: Omit<ComponentProps<typeof SheetSky>, "brightness" | "ontonight">;
+    /** The « Ce soir » page (#11); null while it is closed or computed. */
+    tonight: ComponentProps<typeof SheetTonight> | null;
     orbits: ComponentProps<typeof SheetOrbits>;
     /** null while the sky's catalogue loads. */
     catalogue: Omit<ComponentProps<typeof SheetCatalogue>, "onmeta"> | null;
     games: ComponentProps<typeof SheetGames> | null;
     settings: ComponentProps<typeof SheetSettings>;
+    /** The « Ce soir » page is shown (App computes it then). */
+    tonightOpen?: boolean;
     brightness: number;
     onclose: () => void;
     closeButton?: HTMLButtonElement | undefined;
@@ -78,6 +85,7 @@
   let settingsOpen = $state(false);
   async function openSettings() {
     levelsOpen = false;
+    tonightOpen = false;
     settingsOpen = true;
     await tick();
     backButton?.focus({ preventScroll: true });
@@ -93,12 +101,33 @@
     () => void closeSettings(),
   );
 
+  /** « Ce soir » (#11), a page over the Ciel tab's home, as the settings: ‹ and Android back. */
+  async function openTonight() {
+    tonightOpen = true;
+    await tick();
+    backButton?.focus({ preventScroll: true });
+  }
+  async function closeTonight() {
+    tonightOpen = false;
+    await tick();
+    sheet?.querySelector<HTMLElement>("[data-row='tonight']")?.focus({ preventScroll: true });
+  }
+  historyLayer(
+    "sheet-tonight",
+    () => tonightOpen,
+    () => void closeTonight(),
+  );
+  /** A page over the tab's home: the settings or « Ce soir ». */
+  const pageOpen = $derived(settingsOpen || tonightOpen);
+  const closePage = () => (settingsOpen ? closeSettings() : closeTonight());
+
   /** Jeux: the level's choices, unfolded under the header. */
   let levelsOpen = $state(false);
 
   function choose(next: SheetTab) {
     levelsOpen = false;
     if (settingsOpen) settingsOpen = false;
+    if (tonightOpen) tonightOpen = false;
     if (next !== tab) ontab(next);
   }
   /** Arrow keys, Home and End move between the tabs and show them (automatic activation). */
@@ -111,7 +140,13 @@
     tablist?.querySelector<HTMLElement>(`[data-tab="${next}"]`)?.focus();
   }
 
-  const title = $derived(settingsOpen ? $_("menu.section.settings") : $_(`tabs.${tab}`));
+  const title = $derived(
+    settingsOpen
+      ? $_("menu.section.settings")
+      : tonightOpen
+        ? $_("tonight.title")
+        : $_(`tabs.${tab}`),
+  );
   const meta = $derived(
     tab === "sky"
       ? metas.sky
@@ -134,7 +169,7 @@
       e.preventDefault();
       e.stopPropagation();
       if (levelsOpen) levelsOpen = false;
-      else if (settingsOpen) void closeSettings();
+      else if (pageOpen) void closePage();
       else onclose();
       return;
     }
@@ -169,22 +204,23 @@
   id="main-menu"
   data-tab={tab}
   data-settings={settingsOpen || undefined}
+  data-page={tonightOpen ? "tonight" : undefined}
   bind:this={sheet}
   {onkeydown}
 >
   <header class="head">
-    {#if settingsOpen}
+    {#if pageOpen}
       <button
         class="square"
         bind:this={backButton}
-        onclick={() => void closeSettings()}
+        onclick={() => void closePage()}
         aria-label={$_("settings.back", { values: { tab: $_(`tabs.${tab}`) } })}
         title={$_("settings.back", { values: { tab: $_(`tabs.${tab}`) } })}
         data-action="settings-back"><span class="chev" aria-hidden="true">‹</span></button
       >
     {/if}
     <h2 id="menu-title" class="title">{title}</h2>
-    {#if !settingsOpen}
+    {#if !pageOpen}
       {#if meta}<p class="meta">{meta}</p>{:else}<span class="spacer"></span>{/if}
       {#if tab === "games"}
         <button
@@ -226,6 +262,14 @@
     <div class="settings">
       <SheetSettings {...settings} />
     </div>
+  {:else if tonightOpen}
+    <div class="body" data-page="tonight">
+      {#if tonight}
+        <SheetTonight {...tonight} />
+      {:else}
+        <p class="wait">{$_("map.loading")}</p>
+      {/if}
+    </div>
   {:else}
     <div
       class="body"
@@ -234,7 +278,7 @@
       aria-labelledby={`sheet-tab-${tab}`}
     >
       {#if tab === "sky"}
-        <SheetSky {...sky} bind:brightness />
+        <SheetSky {...sky} ontonight={() => void openTonight()} bind:brightness />
       {:else if tab === "orbits"}
         <SheetOrbits {...orbits} />
       {:else if tab === "catalogue"}
@@ -271,12 +315,12 @@
       {#each SHEET_TABS as id (id)}
         <button
           class="tab"
-          class:origin={settingsOpen && tab === id}
+          class:origin={pageOpen && tab === id}
           role="tab"
           id={`sheet-tab-${id}`}
           data-tab={id}
           aria-selected={tab === id}
-          aria-controls={settingsOpen ? undefined : `sheet-panel-${id}`}
+          aria-controls={pageOpen ? undefined : `sheet-panel-${id}`}
           tabindex={tab === id ? 0 : -1}
           onclick={() => choose(id)}
           onkeydown={ontabkey}

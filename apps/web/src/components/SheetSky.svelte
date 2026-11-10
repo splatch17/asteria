@@ -1,7 +1,7 @@
 <script lang="ts">
   // Home of the Ciel tab (menu v2, sketch A + B panel 2): what is used under the sky. The search
   // field (it opens the search over the sky, #99), « Ce soir » (one line of what is worth a look
-  // now, lib/sky-tonight: a tap selects it on the map), the « Heure » row (unfolds the time line
+  // now, lib/sky-tonight: a tap opens the « Ce soir » page, #11), the « Heure » row (unfolds the time line
   // from the button, #176), and three tools, an engraved pictogram over a word (#135): Viser
   // (the phone drives the map, #45), Nuit (red night vision) and Masquer (hides the interface,
   // #130). In red night, the brightness slider under them.
@@ -12,6 +12,7 @@
   let {
     onsearch,
     tonight,
+    ontonight,
     time,
     live,
     relative,
@@ -25,8 +26,9 @@
     onhide,
   }: {
     onsearch: () => void;
-    /** « Ce soir »: its label, the sentence, and what a tap does; null while the sky loads. */
-    tonight: { label: string; text: string; onselect: () => void } | null;
+    /** « Ce soir »: its label and the sentence; a tap opens the page (#11). null while the sky loads. */
+    tonight: { label: string; text: string } | null;
+    ontonight: () => void;
     time: string;
     live: boolean;
     relative: string;
@@ -49,7 +51,8 @@
   {#if tonight}
     <SheetRow
       id="tonight"
-      onclick={tonight.onselect}
+      onclick={ontonight}
+      haspopup
       ariaLabel={`${tonight.label} · ${tonight.text}`}
     >
       <span class="tonight"

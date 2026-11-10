@@ -101,6 +101,16 @@
   import { constellationShapes } from "./lib/games/geometry";
   import { DISCOVERY_CONSTELLATIONS } from "./lib/games/pool";
   import { tonightLine, type TonightLine } from "./lib/sky-tonight";
+  import {
+    moonPhaseName,
+    nightOf,
+    showingOf,
+    TONIGHT_LOW_ALTITUDE,
+    topFigures,
+    type Night,
+    type Showing,
+  } from "./lib/tonight-list";
+  import type { TonightRow, TonightSection } from "./components/SheetTonight.svelte";
   import { compassPoint } from "./lib/hud";
   import { historyLayer } from "./lib/back.svelte";
   import MenuSheet from "./components/MenuSheet.svelte";
@@ -2358,12 +2368,195 @@
         ? $_(`sky.tonight.at.${line.when}`, { values: { time: clockLabel(line.at) } })
         : $_(`sky.tonight.${line.when}`),
       text: parts.join(" · "),
-      onselect: () => {
-        menuOpen = false;
-        // By day the line speaks of the coming night: the time goes there, then the figure.
-        if (line.later) showDate(line.at);
-        select({ kind: "constellation", abbr: figure.abbr });
-      },
+    };
+  });
+
+  // --- The « Ce soir » page (#11, lib/tonight-list): computed while it is open, once per minute
+  // shown and place (a few hundred positions of the Sun, the Moon and five planets, ~50 ms).
+  let tonightOpen = $state(false);
+  $effect(() => {
+    if (!menuOpen) tonightOpen = false;
+  });
+  /** The planets one sees without an instrument. */
+  const NAKED_EYE: readonly Planet[] = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"];
+  interface TonightData {
+    night: Night | null;
+    moon: { showing: Showing | null; phaseAngle: number; illumination: number } | null;
+    planets: { planet: Planet; showing: Showing; magnitude: number }[];
+    figures: { abbr: string; altitude: number; azimuth: number }[];
+    /** When the figures are listed: now in the dark, else the night's start. */
+    at: number;
+  }
+  let tonightDataCache: { key: string; data: TonightData } | null = null;
+  const tonightData = $derived.by((): TonightData | null => {
+    if (!menuOpen || !tonightOpen || status !== "ready" || !catalog) return null;
+    const key = `${Math.floor(date.getTime() / 60_000)}|${place.latitude}|${place.longitude}`;
+    if (tonightDataCache?.key === key) return tonightDataCache.data;
+    const observer = { latitude: place.latitude, longitude: place.longitude };
+    const t0 = date.getTime();
+    const night = nightOf((t) => bodyPosition("Sun", new Date(t), observer).altitude, t0);
+    const data: TonightData = { night, moon: null, planets: [], figures: [], at: t0 };
+    if (night) {
+      data.at = night.start;
+      if (ephemerisReliable(new Date(night.start)) && ephemerisReliable(new Date(night.end))) {
+        const mid = new Date((night.start + night.end) / 2);
+        const phase = moonPhase(mid);
+        data.moon = {
+          showing: showingOf((t) => bodyPosition("Moon", new Date(t), observer), night, 0),
+          phaseAngle: phase.phaseAngle,
+          illumination: phase.illumination,
+        };
+        for (const planet of NAKED_EYE) {
+          const showing = showingOf((t) => bodyPosition(planet, new Date(t), observer), night);
+          if (!showing) continue;
+          const { magnitude } = bodyPosition(planet, new Date(showing.best), observer);
+          data.planets.push({ planet, showing, magnitude });
+        }
+        // In the order of the night: the first to show first.
+        data.planets.sort((a, b) => a.showing.from - b.showing.from);
+      }
+      if (!figureCentres) {
+        const shapes = constellationShapes(catalog.stars, catalog.lines);
+        figureCentres = Object.fromEntries(Object.values(shapes).map((sh) => [sh.abbr, sh.centre]));
+      }
+      data.figures = topFigures(
+        figureCentres,
+        DISCOVERY_CONSTELLATIONS,
+        new Date(data.at),
+        observer,
+        5,
+      );
+    }
+    tonightDataCache = { key, data };
+    return data;
+  });
+  /** « de 18 h à 23 h 40 », « toute la nuit »… */
+  function spanText(s: Showing): string {
+    const from = clockLabel(new Date(s.from));
+    const to = clockLabel(new Date(s.to));
+    if (s.fromStart && s.toEnd) return $_("tonight.span.all");
+    if (s.fromStart) return $_("tonight.span.fromStart", { values: { to } });
+    if (s.toEnd) return $_("tonight.span.toEnd", { values: { from } });
+    return $_("tonight.span", { values: { from, to } });
+  }
+  /** Goes to the map: now if the object shows at this instant, else at its best moment. */
+  function seeTonight(
+    sel: SkySelection,
+    night: Night,
+    s: { from: number; to: number; best: number },
+  ) {
+    menuOpen = false;
+    const t = date.getTime();
+    if (!(night.now && t >= s.from && t <= s.to)) showDate(new Date(s.best));
+    select(sel);
+  }
+  const tonightPage = $derived.by(() => {
+    const d = tonightData;
+    if (!d) return null;
+    const note = $_("tonight.note", { values: { place: placeName } });
+    const night = d.night;
+    if (!night) return { night: $_("tonight.night.none"), sections: [], note };
+    const dirOf = (azimuth: number) => $_(`compass.dir.${compassPoint(azimuth)}`);
+    const upAside = (altitude: number) => `↑ ${Math.round(altitude)}°`;
+    const sections: TonightSection[] = [];
+
+    if (d.moon) {
+      const phase = $_(`moon.phase.${moonPhaseName(d.moon.phaseAngle)}`);
+      const pct = Math.round(d.moon.illumination * 100);
+      const s = d.moon.showing;
+      const row: TonightRow = {
+        id: "moon",
+        name: phase,
+        text: [
+          $_("tonight.moon.phase", { values: { pct } }),
+          s ? spanText(s) : $_("tonight.moon.absent"),
+        ].join(" · "),
+        onselect: s ? () => seeTonight({ kind: "body", body: "Moon" }, night, s) : undefined,
+      };
+      sections.push({ id: "moon", title: $_("body.Moon"), rows: [row] });
+    }
+
+    sections.push({
+      id: "planets",
+      title: $_("tonight.section.planets"),
+      rows: d.planets.map(({ planet, showing }) => ({
+        id: planet,
+        name: planetName(planet),
+        text: [
+          spanText(showing),
+          $_(showing.altitude < TONIGHT_LOW_ALTITUDE ? "tonight.low" : "tonight.best", {
+            values: { time: clockLabel(new Date(showing.best)), dir: dirOf(showing.azimuth) },
+          }),
+        ].join(" · "),
+        aside: upAside(showing.altitude),
+        onselect: () => seeTonight({ kind: "planet", planet }, night, showing),
+      })),
+      empty: $_(d.moon ? "tonight.planets.none" : "tonight.planets.unknown"),
+    });
+
+    const pass = issPasses.find(
+      (p) =>
+        p.visible &&
+        p.visible.end.date.getTime() >= Math.max(night.start, date.getTime()) &&
+        p.visible.start.date.getTime() <= night.end,
+    );
+    if (pass?.visible) {
+      const v = pass.visible;
+      sections.push({
+        id: "iss",
+        title: $_("tonight.section.iss"),
+        rows: [
+          {
+            id: "iss",
+            name: $_("iss.name"),
+            text: $_("tonight.iss.pass", {
+              values: {
+                time: clockLabel(v.start.date),
+                from: dirOf(v.start.azimuth),
+                to: dirOf(v.end.azimuth),
+              },
+            }),
+            aside: upAside(v.max.altitude),
+            onselect: () => {
+              menuOpen = false;
+              select({ kind: "satellite", id: ISS_ID });
+            },
+          },
+        ],
+      });
+    }
+
+    sections.push({
+      id: "figures",
+      title: $_(night.now ? "tonight.section.figures.now" : "tonight.section.figures", {
+        values: { time: clockLabel(new Date(d.at)) },
+      }),
+      rows: d.figures.map((f) => ({
+        id: f.abbr,
+        name: names[f.abbr] ?? f.abbr,
+        text: $_(f.altitude >= 40 ? "tonight.figure.high" : "tonight.figure.up", {
+          values: { dir: dirOf(f.azimuth) },
+        }),
+        aside: upAside(f.altitude),
+        onselect: () => {
+          menuOpen = false;
+          if (!night.now) showDate(new Date(d.at));
+          select({ kind: "constellation", abbr: f.abbr });
+        },
+      })),
+      empty: $_("tonight.figures.none"),
+    });
+
+    const from = clockLabel(new Date(night.start));
+    const to = clockLabel(new Date(night.end));
+    return {
+      night: night.endless
+        ? $_("tonight.night.endless")
+        : night.now
+          ? $_("tonight.night.now", { values: { to } })
+          : $_("tonight.night", { values: { from, to } }),
+      sections,
+      note,
     };
   });
   /** The sky's catalogue once loaded, for the Catalogue and Jeux tabs. */
@@ -2884,6 +3077,8 @@
     tab={sheetTab}
     ontab={chooseTab}
     metas={sheetMetas}
+    tonight={tonightPage}
+    bind:tonightOpen
     sky={{
       onsearch: fromMenu(openSearch),
       tonight: tonightInfo,
