@@ -365,7 +365,7 @@
   }
   .segments button,
   .levels button {
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 4px;
     border: 0;
     border-radius: 0;

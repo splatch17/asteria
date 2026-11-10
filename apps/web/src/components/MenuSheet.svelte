@@ -375,7 +375,7 @@
   @media (min-width: 720px) {
     .sheet {
       right: auto;
-      width: 380px;
+      width: min(420px, calc(380px * var(--ast-device-scale)));
     }
     .backdrop {
       background: transparent;

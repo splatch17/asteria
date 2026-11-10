@@ -6,7 +6,12 @@
   import { onMount } from "svelte";
   import { _ } from "@asteria/ui";
   import { hasConstellationStory } from "@asteria/content";
-  import { filterCatalogue, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
+  import {
+    filterCatalogue,
+    sortBySky,
+    type CatalogueEntry,
+    type CatalogueFilter,
+  } from "../lib/catalogue";
   import { isSeen, itemKey, masteryOfItem, type Progress } from "../lib/games/progress";
 
   let {
@@ -14,6 +19,7 @@
     filter = $bindable(),
     query = $bindable(),
     tonight,
+    altitudes = {},
     progress,
     onopen,
     onback,
@@ -24,6 +30,8 @@
     filter: CatalogueFilter;
     query: string;
     tonight: ReadonlySet<string>;
+    /** Each figure's height above the horizon now, degrees (the order of « Ce soir »). */
+    altitudes?: Readonly<Record<string, number>>;
     progress: Progress;
     onopen: (abbr: string) => void;
     onback: () => void;
@@ -31,7 +39,12 @@
   } = $props();
 
   const FILTERS: readonly CatalogueFilter[] = ["essential", "all", "tonight"];
-  const shown = $derived(filterCatalogue(entries, filter, query, tonight));
+  /** « Ce soir » without a query: the sky's order, the highest figure first. */
+  const bySky = $derived(filter === "tonight" && !query.trim());
+  const shown = $derived.by(() => {
+    const kept = filterCatalogue(entries, filter, query, tonight);
+    return bySky ? sortBySky(kept, altitudes) : kept;
+  });
   const countOf = (f: CatalogueFilter) => filterCatalogue(entries, f, "", tonight).length;
 
   let backButton: HTMLButtonElement;
@@ -105,7 +118,14 @@
                 <span class="name">{e.name}</span>
                 <span class="latin"><i lang="la">{e.latin}</i></span>
               </span>
-              {#if hasConstellationStory("fr", e.abbr)}
+              {#if bySky}
+                {@const altitude = altitudes[e.abbr] ?? -90}
+                <span class="now" class:later={altitude <= 0}
+                  >{altitude > 0
+                    ? $_("catalogue.now.up", { values: { alt: Math.round(altitude) } })
+                    : $_("catalogue.now.later")}</span
+                >
+              {:else if hasConstellationStory("fr", e.abbr)}
                 <span class="tag" aria-hidden="true">{$_("catalogue.hasStory")}</span>
               {/if}
               <span class="abbr" aria-hidden="true">{e.abbr}</span>
@@ -295,6 +315,16 @@
     width: 30px;
     text-align: right;
     font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
+    color: var(--ast-fg-muted);
+  }
+  /* « Ce soir »: how high the figure stands now, or that it comes later. */
+  .now {
+    flex: none;
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ast-fg);
+  }
+  .now.later {
     color: var(--ast-fg-muted);
   }
   .tag {
