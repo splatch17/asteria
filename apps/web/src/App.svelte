@@ -17,6 +17,8 @@
     isSpaceStyle,
     isRestFrameId,
     rotationPeriodHours,
+    BODY_RADIUS_KM,
+    EARTH_RADIUS_KM,
     REST_FRAMES,
     isAvailableFrame,
     isBodyTarget,
@@ -36,6 +38,8 @@
     bodyPosition,
     constellationOf,
     geocentricPosition,
+    heliocentricPosition,
+    ORBITAL_PERIOD_DAYS,
     meanObliquity,
     moonPhase,
     propagateStar,
@@ -146,6 +150,7 @@
     bodySheet,
     deepSkySheet,
     planetSheet,
+    planetSpaceSheet,
     sightLine,
     starSheet,
     unnamedStarTitle,
@@ -1632,6 +1637,8 @@
     frameOpen = false;
     menuButton?.focus();
     if (!isAvailableFrame(id)) return;
+    // The point of view already chosen: its framing again (after a flight in, or a wander).
+    if (id === spaceFrame) reframe();
     spaceFrame = id;
     const level = levelPref.value;
     const angle = angleFormat.format(meanObliquity(date));
@@ -2266,6 +2273,26 @@
     if (!p) return null;
     const con = constellationOf(p.ra, p.dec);
     const name = planetName(p.name);
+    // In Orbites the planet is a world seen from space: its size, day and year (#173).
+    if (mode === "space")
+      return {
+        name,
+        con: null,
+        sheet: planetSpaceSheet(
+          userLevel,
+          {
+            name,
+            radiusKm: BODY_RADIUS_KM[p.name],
+            earthRadiusKm: EARTH_RADIUS_KM,
+            sunAu: heliocentricPosition(p.name, date).distanceAu,
+            earthKm: p.distanceKm,
+            rotationHours: rotationPeriodHours(p.name),
+            orbitDays: ORBITAL_PERIOD_DAYS[p.name],
+          },
+          tr,
+          sheetFormat,
+        ),
+      };
     return {
       name,
       con: { abbr: con, name: names[con] ?? con, latin: CONSTELLATION_LATIN[con] ?? con },
@@ -2798,9 +2825,10 @@
   </div>
 {/if}
 
+<!-- One bubble at a time: the gestures wait for the point of view's note to leave. -->
 <GestureTip
   view="earth"
-  active={mode === "space" && !flying && !!space && !menuOpen}
+  active={mode === "space" && !flying && !!space && !menuOpen && !frameNote}
   top={toastTop}
 />
 
@@ -2892,19 +2920,24 @@
   {@const info = planetInfo}
   <InfoPanel
     name={info.name}
-    {belowHorizon}
+    belowHorizon={info.con ? belowHorizon : false}
     sight={info.sheet.sight}
     lead={info.sheet.lead}
-    constellation={{
-      name: info.con.name,
-      latin: info.sheet.latin ? info.con.latin : undefined,
-      onopen: () => (selection = { kind: "constellation", abbr: info.con.abbr }),
-    }}
+    constellation={info.con
+      ? {
+          name: info.con.name,
+          latin: info.sheet.latin ? info.con.latin : undefined,
+          onopen: () => {
+            const abbr = info.con?.abbr;
+            if (abbr) selection = { kind: "constellation", abbr };
+          },
+        }
+      : undefined}
     rows={info.sheet.rows}
     bottom={aboveControls}
     onclose={() => (selection = null)}
   >
-    {#snippet meta()}{$_("planet.kind")}{/snippet}
+    {#snippet meta()}{$_(info.con ? "planet.kind" : "space.facts.kind")}{/snippet}
   </InfoPanel>
 {/if}
 {#if issPanel}
@@ -3123,7 +3156,9 @@
           open={menuOpen}
           onopen={() => (menuOpen ? closeMenu() : openMenu())}
           bind:button={menuButton}
-          date={chipsShown.includes("date") ? { time, ontime: openTime, onnow: goLive } : null}
+          date={chipsShown.includes("date")
+            ? { time, ontime: openTime, onnow: goLive, playing, onpause: stopPlaying }
+            : null}
           pointing={chipsShown.includes("pointing") ? { onstop: () => pointer.toggle() } : null}
         />
       {/if}

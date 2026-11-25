@@ -347,6 +347,123 @@ export function planetSheet(
   };
 }
 
+/**
+ * A planet seen from space (Orbites, #173): what it is like as a world, not where it sits in the
+ * sky. Radii IAU WGCCRE 2015, sidereal periods JPL Horizons (rotation signed: < 0 retrograde),
+ * distances astronomy-engine; all from the packages, nothing written per planet.
+ */
+export interface PlanetSpaceFacts {
+  name: string;
+  /** Equatorial radius, km. */
+  radiusKm: number;
+  /** The Earth's equatorial radius, km (the size compared to it). */
+  earthRadiusKm: number;
+  /** Distance from the Sun's centre, au. */
+  sunAu: number;
+  /** Distance from the Earth, km. */
+  earthKm: number;
+  /** Sidereal rotation period, hours; negative when retrograde (Venus, Uranus). */
+  rotationHours: number;
+  /** Sidereal orbital period, days. */
+  orbitDays: number;
+}
+
+const DAYS_PER_YEAR = 365.25;
+
+/** « 24 h 37 min », « 243 j », said retrograde when it is. */
+function rotationText(hours: number, t: Translate): string {
+  const h = Math.abs(hours);
+  const minutes = Math.round(h * 60);
+  const text =
+    h < 48
+      ? t("rest.period.hours", { h: Math.floor(minutes / 60), min: minutes % 60 })
+      : t("rest.period.days", { d: Number((h / 24).toPrecision(3)) });
+  return hours < 0 ? t("rest.period.retrograde", { period: text }) : text;
+}
+
+/** « 88 jours », « 1,9 an », « 29,4 ans », « 165 ans ». */
+function yearText(days: number, t: Translate): string {
+  if (days < 1.5 * DAYS_PER_YEAR) return t("space.facts.days", { d: Math.round(days) });
+  const years = days / DAYS_PER_YEAR;
+  return t("space.facts.years", { y: Number(years.toFixed(years < 100 ? 1 : 0)) });
+}
+
+/** The size against the Earth's in words: « 11 fois plus large », « presque aussi large ». */
+function sizeWords(ratio: number, name: string, t: Translate): string {
+  if (ratio >= 1.15) return t("space.facts.size.larger", { name, n: Math.round(ratio) });
+  if (ratio > 1 / 1.15) return t("space.facts.size.same", { name });
+  return t("space.facts.size.smaller", { name, n: Math.round(1 / ratio) });
+}
+
+/** The sheet of a planet in Orbites: its size, its day, its year, how far from the Sun. */
+export function planetSpaceSheet(
+  level: FigureLevel,
+  f: PlanetSpaceFacts,
+  t: Translate,
+  fmt: SheetFormat,
+): Sheet {
+  const ratio = f.radiusKm / f.earthRadiusKm;
+  const fromEarth = (digits: number) =>
+    t("planet.distance", { au: Number((f.earthKm / KM_PER_AU).toFixed(digits)) });
+  if (level === "expert")
+    return {
+      lead: [],
+      sight: null,
+      rows: [
+        {
+          label: t("space.facts.radius"),
+          value: t("space.facts.km", { km: fmt.num(f.radiusKm, 1) }),
+        },
+        {
+          label: t("space.facts.sun"),
+          value: t("planet.distance", { au: Number(f.sunAu.toFixed(3)) }),
+        },
+        { label: t("space.facts.earth"), value: fromEarth(3) },
+        {
+          label: t("space.facts.rotation"),
+          value: t("space.facts.hours", { h: fmt.num(f.rotationHours, 3) }),
+        },
+        {
+          label: t("space.facts.orbit"),
+          value: t("space.facts.daysExact", { d: fmt.num(f.orbitDays, 2) }),
+        },
+      ],
+      latin: false,
+    };
+  const day = rotationText(f.rotationHours, t);
+  const year = yearText(f.orbitDays, t);
+  const lead = [sizeWords(ratio, f.name, t), t("space.facts.yearLead", { year })];
+  if (level === "discovery")
+    return {
+      lead,
+      sight: null,
+      rows: [
+        { label: t("space.facts.day"), value: day },
+        { label: t("space.facts.year"), value: year },
+        { label: t("space.facts.sun"), value: kmInWords(f.sunAu * KM_PER_AU, t, fmt) },
+      ],
+      latin: false,
+    };
+  return {
+    lead,
+    sight: null,
+    rows: [
+      {
+        label: t("space.facts.diameter"),
+        value: t("space.facts.km", { km: fmt.num(Math.round(2 * f.radiusKm), 0) }),
+      },
+      { label: t("space.facts.day"), value: day },
+      { label: t("space.facts.year"), value: year },
+      {
+        label: t("space.facts.sun"),
+        value: t("planet.distance", { au: Number(f.sunAu.toFixed(2)) }),
+      },
+      { label: t("space.facts.earth"), value: fromEarth(2) },
+    ],
+    latin: false,
+  };
+}
+
 export interface BodyFacts {
   body: "Sun" | "Moon";
   ra: number;

@@ -5,6 +5,7 @@ import {
   deepSkySheet,
   LY_PER_PARSEC,
   planetSheet,
+  planetSpaceSheet,
   sightLine,
   starColour,
   starSheet,
@@ -320,5 +321,86 @@ describe("sight line (#201)", () => {
     );
     expect(sightLine({ state: "down" }, t, fmt, o)).toBe("sight.never");
     expect(sightLine({ state: "down" }, t, fmt, { ...o, fixed: false })).toBe("sight.notToday");
+  });
+});
+
+describe("planetSpaceSheet (Orbites)", () => {
+  // Jupiter: IAU equatorial radius, JPL sidereal periods, distances of an invented date.
+  const jupiter = {
+    name: "Jupiter",
+    radiusKm: 71_492,
+    earthRadiusKm: 6378.137,
+    sunAu: 5.1234,
+    earthKm: 4.2 * 149_597_870.7,
+    rotationHours: 9.925,
+    orbitDays: 4332.589,
+  };
+  const venus = {
+    ...jupiter,
+    name: "Vénus",
+    radiusKm: 6051.8,
+    rotationHours: -5832.6,
+    orbitDays: 224.701,
+  };
+  const mars = {
+    ...jupiter,
+    name: "Mars",
+    radiusKm: 3396.19,
+    rotationHours: 24.6229,
+    orbitDays: 686.98,
+  };
+
+  it("compares the size with the Earth's, in whole times", () => {
+    expect(planetSpaceSheet("discovery", jupiter, t, fmt).lead[0]).toBe(
+      'space.facts.size.larger {"name":"Jupiter","n":11}',
+    );
+    expect(planetSpaceSheet("discovery", venus, t, fmt).lead[0]).toBe(
+      'space.facts.size.same {"name":"Vénus"}',
+    );
+    expect(planetSpaceSheet("discovery", mars, t, fmt).lead[0]).toBe(
+      'space.facts.size.smaller {"name":"Mars","n":2}',
+    );
+  });
+
+  it("gives the year in days under a year and a half, in years beyond", () => {
+    const year = (f: typeof jupiter) =>
+      planetSpaceSheet("amateur", f, t, fmt).rows.find((r) => r.label === "space.facts.year")!
+        .value;
+    expect(year(venus)).toBe('space.facts.days {"d":225}');
+    expect(year(mars)).toBe('space.facts.years {"y":1.9}');
+    expect(year(jupiter)).toBe('space.facts.years {"y":11.9}');
+    expect(year({ ...jupiter, orbitDays: 10755.698 })).toBe('space.facts.years {"y":29.4}');
+    expect(year({ ...jupiter, orbitDays: 60189 })).toBe('space.facts.years {"y":165}');
+  });
+
+  it("says a retrograde rotation, and long days in days", () => {
+    const day = (f: typeof jupiter) =>
+      planetSpaceSheet("amateur", f, t, fmt).rows.find((r) => r.label === "space.facts.day")!.value;
+    expect(day(mars)).toBe('rest.period.hours {"h":24,"min":37}');
+    expect(day(venus)).toBe('rest.period.retrograde {"period":"rest.period.days {\\"d\\":243}"}');
+  });
+
+  it("has no sky line, no constellation, and data rows by level", () => {
+    for (const level of ["discovery", "amateur", "expert"] as const) {
+      const s = planetSpaceSheet(level, jupiter, t, fmt);
+      expect(s.sight).toBeNull();
+      expect(s.latin).toBe(false);
+    }
+    expect(labels(planetSpaceSheet("amateur", jupiter, t, fmt).rows)).toEqual([
+      "space.facts.diameter",
+      "space.facts.day",
+      "space.facts.year",
+      "space.facts.sun",
+      "space.facts.earth",
+    ]);
+    const expert = planetSpaceSheet("expert", jupiter, t, fmt);
+    expect(expert.lead).toEqual([]);
+    expect(expert.rows.map((r) => r.value)).toEqual([
+      'space.facts.km {"km":"71492,0"}',
+      'planet.distance {"au":5.123}',
+      'planet.distance {"au":4.2}',
+      'space.facts.hours {"h":"9,925"}',
+      'space.facts.daysExact {"d":"4332,59"}',
+    ]);
   });
 });
