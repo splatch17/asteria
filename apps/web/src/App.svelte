@@ -1312,6 +1312,11 @@
     closeSearch();
     if (!catalog) return;
     rememberSearch(appStorage(), target);
+    focusTarget(target);
+  }
+  /** Selects a target and turns the map towards it, with the arrival rings (search, Ce soir). */
+  function focusTarget(target: SearchTarget) {
+    if (!catalog) return;
     const years = yearsSinceHipparcos(date);
     let next: SkySelection;
     let dirs: ReturnType<typeof figureDirections>;
@@ -2511,14 +2516,14 @@
   }
   /** Goes to the map: now if the object shows at this instant, else at its best moment. */
   function seeTonight(
-    sel: SkySelection,
+    target: SearchTarget,
     night: Night,
     s: { from: number; to: number; best: number },
   ) {
     menuOpen = false;
     const t = date.getTime();
     if (!(night.now && t >= s.from && t <= s.to)) showDate(new Date(s.best));
-    select(sel);
+    focusTarget(target);
   }
   const tonightPage = $derived.by(() => {
     const d = tonightData;
@@ -2587,10 +2592,12 @@
               },
             }),
             aside: upAside(v.max.altitude),
-            onselect: () => {
-              menuOpen = false;
-              select({ kind: "satellite", id: ISS_ID });
-            },
+            onselect: () =>
+              seeTonight({ kind: "satellite", id: ISS_ID }, night, {
+                from: v.start.date.getTime(),
+                to: v.end.date.getTime(),
+                best: v.max.date.getTime(),
+              }),
           },
         ],
       });
@@ -2611,7 +2618,7 @@
         onselect: () => {
           menuOpen = false;
           if (!night.now) showDate(new Date(d.at));
-          select({ kind: "constellation", abbr: f.abbr });
+          focusTarget({ kind: "constellation", abbr: f.abbr });
         },
       })),
       empty: $_("tonight.figures.none"),

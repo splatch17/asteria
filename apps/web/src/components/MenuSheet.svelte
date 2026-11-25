@@ -352,13 +352,24 @@
     left: var(--inset-l);
     right: max(var(--ast-corner-inset), env(safe-area-inset-right));
     bottom: var(--inset-b);
-    max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - var(--inset-b));
+    /* Two heights, as an iOS or Material sheet's detents: the four homes share one, so that
+       the header and the tabs stay put from tab to tab (the tallest home, Jeux, sets it; it grows
+       with the text size); a page over them (the settings, « Ce soir ») takes the whole height,
+       whatever its part, so its segmented control never moves either. Both stop below the top. */
+    --sheet-max: calc(100dvh - max(16px, env(safe-area-inset-top)) - var(--inset-b));
+    --sheet-home: calc(470px + (var(--ast-text-scale) - 1) * 320px);
+    height: min(var(--sheet-home), var(--sheet-max));
     display: flex;
     flex-direction: column;
     background: color-mix(in srgb, var(--ast-bg) 94%, transparent);
     outline: none;
     transform-origin: bottom left;
     animation: rise 180ms var(--ast-ease-out);
+    transition: height 200ms var(--ast-ease-out);
+  }
+  .sheet[data-settings],
+  .sheet[data-page] {
+    height: var(--sheet-max);
   }
   @keyframes rise {
     from {
@@ -386,6 +397,7 @@
     .body,
     .settings {
       animation: none;
+      transition: none;
     }
   }
   /* Header: the tab's name in tall capitals, its meta in small data capitals, ⚙ at the right. */
@@ -503,9 +515,9 @@
   .levels button[aria-pressed="true"]:focus-visible {
     outline-color: var(--ast-bg);
   }
-  /* The tab's home: scrolls inside the sheet when the screen is short. */
+  /* The tab's home: fills the sheet's height, from the top; scrolls inside when it is taller. */
   .body {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -513,7 +525,7 @@
     animation: appear 140ms var(--ast-ease-out);
   }
   .settings {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
