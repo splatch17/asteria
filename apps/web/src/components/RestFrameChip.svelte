@@ -140,6 +140,12 @@
     gap: 6px;
     max-width: min(340px, calc(100vw - 2 * max(16px, env(safe-area-inset-left))));
   }
+  /* 30 px tall for the eye, 44 px for the finger. */
+  .chip::after {
+    content: "";
+    position: absolute;
+    inset: -9px 0 -5px;
+  }
   .chip {
     position: relative;
     display: inline-flex;

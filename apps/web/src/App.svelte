@@ -2193,6 +2193,14 @@
                 : undefined,
           rank: rankFact(star.hip, starRanks()),
           conOf,
+          astrometry: { plx: star.plx, ePlx: star.ePlx, pmRa: star.pmRa, pmDec: star.pmDec },
+          radialVelocity:
+            record.radialVelocity === undefined
+              ? undefined
+              : {
+                  kms: record.radialVelocity,
+                  source: $_(`star.rvSource.${record.radialVelocitySource ?? "bsc5"}`),
+                },
         },
         sightFor(
           `star:${star.hip}`,

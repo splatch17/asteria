@@ -24,6 +24,10 @@ export const TEXT_SCALE: Readonly<Record<TextSize, number>> = {
 export const MAP_LABEL_BASE = 1.1;
 export const mapLabelScale = (size: TextSize): number => MAP_LABEL_BASE * TEXT_SCALE[size];
 
+/** A large screen read from further away: tokens.css sets --ast-device-scale there. */
+export const WIDE_SCREEN = "(min-width: 1100px) and (min-height: 700px) and (pointer: fine)";
+export const WIDE_SCREEN_SCALE = 1.1;
+
 export const isTextSize = (v: unknown): v is TextSize =>
   v === "normal" || v === "large" || v === "larger";
 

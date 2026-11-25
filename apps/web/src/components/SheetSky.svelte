@@ -64,7 +64,7 @@
     id="time"
     label={$_("menu.time.row")}
     onclick={ontime}
-    ariaLabel={`${$_("menu.time.row")} · ${time}`}
+    ariaLabel={`${$_("menu.time.row")} · ${time} · ${live ? $_("time.live") : relative}`}
   >
     <span class="time">{time}</span>
     <span class="sub" class:live>{live ? `● ${$_("time.live")}` : relative}</span>

@@ -130,6 +130,68 @@ export interface StarFacts {
   rank: { kind: "sky" | "constellation"; rank: number } | null;
   /** « d'Orion »: the constellation as a complement (@asteria/content `constellationNamesOf`). */
   conOf: string;
+  /**
+   * Hipparcos astrometry (van Leeuwen 2007, as the catalogue stores it): parallax and its
+   * standard error in mas, proper motion in mas/yr (μα cos δ, μδ). Expert rows.
+   */
+  astrometry?:
+    | {
+        plx?: number | undefined;
+        ePlx?: number | undefined;
+        pmRa?: number | undefined;
+        pmDec?: number | undefined;
+      }
+    | undefined;
+  /** Radial velocity in km/s, positive receding, and its source's name. Expert row. */
+  radialVelocity?: { kms: number; source: string } | undefined;
+}
+
+/** Light-years in a parsec (IAU 2015: 1 pc = 648 000 / π au; 1 ly = c × 1 Julian year). */
+export const LY_PER_PARSEC = 3.2615637769;
+
+/**
+ * Absolute visual magnitude from the apparent one and a distance in light-years (distance
+ * modulus, M = V − 5 log₁₀(d / 10 pc)), without any correction for interstellar extinction.
+ */
+export const absoluteMagnitude = (v: number, ly: number): number =>
+  v - 5 * Math.log10(ly / LY_PER_PARSEC / 10);
+
+/** « +200,94 » / « −13,9 »: a number with its sign, the minus as the typographic one. */
+const signed = (x: number, digits: number, fmt: SheetFormat): string =>
+  `${x < 0 ? "−" : "+"}${fmt.num(Math.abs(x), digits)}`;
+
+/** The Expert rows after the distance: parallax, proper motion, radial velocity, M_V. */
+function starExpertRows(f: StarFacts, t: Translate, fmt: SheetFormat): SheetRow[] {
+  const rows: SheetRow[] = [];
+  const a = f.astrometry;
+  if (a?.plx !== undefined)
+    rows.push({
+      label: t("data.plx"),
+      value:
+        a.ePlx !== undefined
+          ? t("data.plx.valueErr", { plx: fmt.num(a.plx, 2), err: fmt.num(a.ePlx, 2) })
+          : t("data.plx.value", { plx: fmt.num(a.plx, 2) }),
+      title: t("data.hipparcos.source"),
+    });
+  if (a?.pmRa !== undefined && a.pmDec !== undefined)
+    rows.push({
+      label: t("data.pm"),
+      value: t("data.pm.value", { ra: signed(a.pmRa, 1, fmt), dec: signed(a.pmDec, 1, fmt) }),
+      title: t("data.pm.title"),
+    });
+  if (f.radialVelocity)
+    rows.push({
+      label: t("data.rv"),
+      value: t("data.rv.value", { kms: signed(f.radialVelocity.kms, 1, fmt) }),
+      title: f.radialVelocity.source,
+    });
+  if (f.distance)
+    rows.push({
+      label: t("data.absMag"),
+      value: fmt.num(absoluteMagnitude(f.v, f.distance.ly), 1).replace(/^-/, "−"),
+      title: t("data.absMag.title"),
+    });
+  return rows;
 }
 
 /** Title of a star without a proper name nor a Bayer letter: « Étoile de Pégase ». */
@@ -187,7 +249,7 @@ export function starSheet(
     { label: t("data.v"), value: fmt.num(f.v, 2) },
   ];
   if (f.bv !== undefined) rows.push({ label: t("data.bv"), value: fmt.num(f.bv, 2) });
-  rows.push(distance(false), ...horizontalRows(f, t, fmt));
+  rows.push(distance(false), ...starExpertRows(f, t, fmt), ...horizontalRows(f, t, fmt));
   return { lead: [], sight: null, rows, latin: true };
 }
 

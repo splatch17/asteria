@@ -91,7 +91,7 @@
     color: var(--ast-fg-muted);
   }
   button {
-    min-height: 36px;
+    min-height: 44px;
     margin-top: 8px;
     padding: 0 14px;
     border: 1px solid var(--ast-control-border);

@@ -55,7 +55,7 @@
 <!-- Long sheets (the ISS passes, #12) scroll inside: the lower half of the screen at most, the
      map keeps the upper half (where frameAbove brings what is shown). -->
 <aside
-  class="panel"
+  class="panel frame"
   style:bottom
   style:max-height={`min(calc(100dvh - (${bottom}) - 96px), 50dvh)`}
 >
@@ -102,7 +102,7 @@
     z-index: 2;
     left: max(16px, env(safe-area-inset-left));
     right: max(16px, env(safe-area-inset-right));
-    max-width: 300px;
+    max-width: calc(300px * var(--ast-text-scale) * var(--ast-device-scale));
     border: 1px solid var(--ast-hairline);
     background: color-mix(in srgb, var(--ast-bg) 85%, transparent);
     backdrop-filter: blur(6px);
@@ -157,10 +157,10 @@
   }
   .con {
     display: block;
-    min-height: 32px;
+    min-height: 44px;
     padding: 0;
     text-align: left;
-    margin: -4px 0 4px;
+    margin: -8px 0 0;
     line-height: 1.4;
   }
   .con i {
@@ -190,7 +190,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    min-height: 40px;
+    min-height: 44px;
     margin-top: 10px;
     padding: 0 12px;
     border: 1px solid var(--ast-control-border);

@@ -26,6 +26,23 @@ export const defaultFilter = (level: string): CatalogueFilter =>
   level === "discovery" ? "essential" : "all";
 
 /**
+ * The « Ce soir » list in the order of the sky (review of 2026-11-09, point 11): the figures up
+ * now first, the highest at the top, then those that come later tonight, alphabetical.
+ * `altitudes`: degrees above the horizon now, by abbreviation.
+ */
+export function sortBySky<E extends { abbr: string; name: string }>(
+  entries: readonly E[],
+  altitudes: Readonly<Record<string, number>>,
+): E[] {
+  const up = (e: E) => (altitudes[e.abbr] ?? -90) > 0;
+  return [...entries].sort((a, b) => {
+    if (up(a) !== up(b)) return up(a) ? -1 : 1;
+    if (up(a)) return (altitudes[b.abbr] ?? 0) - (altitudes[a.abbr] ?? 0);
+    return a.name.localeCompare(b.name, "fr");
+  });
+}
+
+/**
  * Entries kept by a filter and a query, in reading order: alphabetical (French collation) without
  * a query; with one, best match first (name, Latin name or abbreviation: exact, prefix, word
  * prefix, substring, one typo — the search of the map, #99), then alphabetical.

@@ -31,7 +31,7 @@
   // and level. « Rejouer » plays again with the same settings.
   import { onMount, tick, untrack } from "svelte";
   import { _ } from "@asteria/ui";
-  import type { Observer } from "@asteria/astro-core";
+  import { applyMat3, j2000ToHorizontalMatrix, type Observer } from "@asteria/astro-core";
   import type { CatalogStar, FigureLevel, SkyTheme } from "@asteria/sky-renderer";
   import { defaultFilter, type CatalogueEntry, type CatalogueFilter } from "../lib/catalogue";
   import { pageSequence } from "../lib/catalogue-nav";
@@ -165,6 +165,16 @@
   // Computed once per opening: the catalogue, place and date do not change under the screen.
   const shapes = untrack(() => constellationShapes(stars, lines));
   const visible = untrack(() => visibleTonight(shapes, date, observer));
+  /** Each figure's height above the horizon now (its centre), for the « Ce soir » list's order. */
+  const figureAltitudes = untrack(() => {
+    const m = j2000ToHorizontalMatrix(date, observer);
+    return Object.fromEntries(
+      Object.values(shapes).map((sh) => [
+        sh.abbr,
+        (Math.asin(Math.max(-1, Math.min(1, applyMat3(m, sh.centre)[2]))) * 180) / Math.PI,
+      ]),
+    );
+  });
   /** « Nomme l'étoile » (#165): the named stars, their brightness ranks, those up tonight. */
   const named = untrack(() => namedStars(stars));
   const ranks = untrack(() => brightnessRanks(stars));
@@ -485,7 +495,8 @@
   class:bare={!playing && !page && !catalogueOpen && start.view !== "sky"}
   role="dialog"
   aria-modal="true"
-  aria-labelledby="games-title"
+  aria-labelledby={playing ? undefined : "games-title"}
+  aria-label={playing ? $_("tabs.games") : undefined}
   tabindex="-1"
   bind:this={dialog}
   {onkeydown}
@@ -597,6 +608,7 @@
       bind:filter
       bind:query
       tonight={visible}
+      altitudes={figureAltitudes}
       {progress}
       onopen={(abbr) => openPage(abbr)}
       onback={closeCatalogue}
