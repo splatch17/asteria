@@ -300,6 +300,8 @@ const SURFACE_MARGIN = 1.15;
 const MARKER_PX = 4.5;
 /** Two markers closer than this (CSS px) merge: the one placed first (SCENE_BODIES) stays. */
 const MARKER_MERGE_PX = 9;
+/** The Earth's place in SCENE_BODIES. */
+const EARTH_SCENE_INDEX = SCENE_BODIES.indexOf("Earth");
 /** Length of the axis tick on the Earth's markers (« Les saisons »), CSS px from the centre. */
 const AXIS_TICK_PX = 13;
 /** Longest scale bar, CSS px. */
@@ -476,6 +478,8 @@ export class SpaceView {
   private readonly sceneScreen = new Float32Array(3 * SCENE_BODIES.length);
   private readonly sceneOk = new Uint8Array(SCENE_BODIES.length);
   private readonly sceneOrder = new Int8Array(SCENE_BODIES.length);
+  /** Bodies whose marker merged into the Sun's glow this frame (named under it). */
+  private readonly inSun = new Uint8Array(SCENE_BODIES.length);
   /** North end of the Earth's axis tick (« Les saisons »), CSS px; NaN when not drawn. */
   private readonly axisTip = new THREE.Vector2(NaN, NaN);
   /** The last tap was answered by the view itself (focus on the Earth), see pickScene. */
@@ -2523,6 +2527,7 @@ export class SpaceView {
     this.drawScaleBar(layout, font);
     // Screen places, merging of the crowded markers, discs reserved before any label.
     let count = 0;
+    this.inSun.fill(0);
     for (let i = 0; i < SCENE_BODIES.length; i++) {
       const p = this.scenePosition(i, visited);
       if (this.sceneHidden(p, i)) continue;
@@ -2536,10 +2541,12 @@ export class SpaceView {
       for (let j = 0; j < count; j++) {
         const k = this.sceneOrder[j]!;
         const d = Math.hypot(x - xyr[3 * k]!, y - xyr[3 * k + 1]!);
-        // Within the Sun's glow, or on another marker.
-        const clear = k === 0 ? xyr[2]! + 4 : MARKER_MERGE_PX;
+        // Within the Sun's glow, or on another marker. The Earth, where the reader is, keeps its
+        // marker inside the glow (the whole system's framing): only on the Sun itself it merges.
+        const clear = k === 0 && i !== EARTH_SCENE_INDEX ? xyr[2]! + 4 : MARKER_MERGE_PX;
         if (d < clear) {
           merged = true;
+          if (k === 0) this.inSun[i] = 1;
           break;
         }
       }
@@ -2605,7 +2612,10 @@ export class SpaceView {
     const merged = seasons && Math.abs(nearDays) <= SEASON_NEAR_DAYS;
     // Names: the Sun, the Earth (merged with a near season), the marks, then the others.
     font("700 11px", "0.12em");
-    if (ok[0]) this.labelOutward(layout, labels.sun, sx, sy, xyr[2]! + 4, sx, sy - 1);
+    if (ok[0]) {
+      this.labelOutward(layout, labels.sun, sx, sy, xyr[2]! + 4, sx, sy - 1);
+      this.labelInSun(layout, font, sx, sy, xyr[2]! + 4);
+    }
     if (ok[e] && labels.earth) {
       let text = labels.earth;
       if (merged && this.options.formatEarthSeason) {
@@ -2645,6 +2655,45 @@ export class SpaceView {
       ]);
       if (r) ctx.fillText(t, r.x, r.y + 6);
     }
+  }
+
+  /**
+   * The whole system's framing: the inner planets are lost in the Sun's glow (1 au is a few
+   * pixels). Their names, muted, under the Sun (« TERRE · MARS · VÉNUS · MERCURE »), so that the
+   * reader knows they are there, to be zoomed in on. The Moon is not named (it is the Earth's).
+   */
+  private labelInSun(
+    layout: LabelLayout,
+    font: (weightSize: string, spacing: string) => void,
+    sx: number,
+    sy: number,
+    reach: number,
+  ): void {
+    const { labels } = this.options;
+    const names = this.options.planetNames;
+    let text = "";
+    for (let i = 1; i < SCENE_BODIES.length; i++) {
+      if (!this.inSun[i]) continue;
+      const body = SCENE_BODIES[i]!;
+      const name =
+        body === "Earth" ? labels.earth : body === "Moon" || body === "Sun" ? null : names?.[body];
+      if (name) text += (text ? " · " : "") + name.toUpperCase();
+    }
+    if (!text) return;
+    const ctx = this.ctx;
+    font("400 9px", "0.08em");
+    const w = ctx.measureText(text).width;
+    const h = 11;
+    const r = layout.place([
+      { x: sx - w / 2, y: sy + reach + 4, w, h },
+      { x: sx - w / 2, y: sy - reach - 4 - h, w, h },
+    ]);
+    if (!r) return;
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = 0.7 * this.sceneAlpha;
+    ctx.fillText(text, r.x, r.y + h / 2);
+    ctx.globalAlpha = alpha;
+    font("700 11px", "0.12em");
   }
 
   /**

@@ -22,7 +22,14 @@
     open: boolean;
     onopen: () => void;
     /** Date chip, when the time shown is not now. */
-    date?: { time: string; ontime: () => void; onnow: () => void } | null;
+    /** `playing`: the time runs (a point of view's demonstration too): ⏸ stops it there. */
+    date?: {
+      time: string;
+      ontime: () => void;
+      onnow: () => void;
+      playing?: boolean;
+      onpause?: () => void;
+    } | null;
     /** « Viser » chip, while the pointing is on. */
     pointing?: { onstop: () => void } | null;
     button?: HTMLButtonElement | undefined;
@@ -58,6 +65,15 @@
           >
             <span class="chip-text">{date.time}</span>
           </button>
+          {#if date.playing && date.onpause}
+            <button
+              class="chip-icon"
+              data-action="pause"
+              onclick={date.onpause}
+              aria-label={$_("time.pause")}
+              title={$_("time.pause")}><Icon name="pause" size={18} /></button
+            >
+          {/if}
           <button
             class="chip-icon"
             onclick={date.onnow}
