@@ -214,6 +214,11 @@ export interface SpaceViewOptions {
    * solar system): the caller updates its state (setFrame with the same id does nothing).
    */
   onFrameChange?: (id: ReferenceFrameId) => void;
+  /**
+   * « Le système solaire » switched between its two framings by itself (#232: a double tap on
+   * the Sun): the caller updates its button.
+   */
+  onSolarScaleChange?: (scale: SolarScale) => void;
   /** Duration (ms) of the way back from a visit by pinching out (#134); 0: crossfade. */
   exitDuration?: () => number;
   /**
@@ -285,6 +290,12 @@ const FRAMING = Object.freeze({
 /** Half-extents framed by « Les saisons » and « Le système solaire », au. */
 const SEASONS_EXTENT_AU = 1.03;
 const SOLAR_EXTENT_AU = 30.6;
+/** « Le système solaire » framed on the near planets or on the whole system (#232). */
+export type SolarScale = "inner" | "whole";
+/** « Le système solaire », the near planets' framing (#232): out to Mars' aphelion (1.67 au). */
+const INNER_EXTENT_AU = 1.75;
+/** A double tap this close to the Sun's glow (CSS px) switches the framing (#232). */
+const SUN_TAP_PX = 28;
 /**
  * Camera distance limits of the true-scale scene, Earth radii: from 0.05 (320 km from the point
  * looked at; the camera never enters a globe, see zoomAt) to 400 au.
@@ -342,6 +353,8 @@ export class SpaceView {
   private orbit: EarthOrbit = { lon: 0, lat: 30, dist: 4, tx: 0, ty: 0, tz: 0 };
   // --- Reference frames (#122), see reference-frames.ts
   private frameId: ReferenceFrameId = DEFAULT_REFERENCE_FRAME;
+  /** « Le système solaire » framed on the near planets or on the whole system (#232). */
+  private solarScale: SolarScale = "whole";
   /** Rotation frame → world at the current date, and the frame's target (world). */
   private readonly frameQuat = new THREE.Quaternion();
   private readonly frameOrigin = new THREE.Vector3();
@@ -1132,6 +1145,21 @@ export class SpaceView {
   }
 
   /**
+   * « Le système solaire »: its framing on the near planets (Mercure to Mars) or on the whole
+   * system (#232). Kept for the next time that point of view is chosen; shown now, the camera
+   * goes there (animated unless `instant`).
+   */
+  setSolarScale(scale: SolarScale, instant = false): void {
+    this.solarScale = scale;
+    if (this.frameId === "heliocentric" && !this.attached() && !this.flight)
+      this.moveTo(this.defaultOrbit(), instant);
+  }
+
+  getSolarScale(): SolarScale {
+    return this.solarScale;
+  }
+
+  /**
    * Screen insets (CSS px) covered by the interface: the projection centre moves to the middle
    * of the rest, and the points of view are framed in it (#128).
    */
@@ -1567,7 +1595,12 @@ export class SpaceView {
         : portrait
           ? FRAMING.solarLatPortrait
           : FRAMING.solarLat;
-      const half = (seasons ? SEASONS_EXTENT_AU : SOLAR_EXTENT_AU) * AU;
+      const half =
+        (seasons
+          ? SEASONS_EXTENT_AU
+          : this.solarScale === "inner"
+            ? INNER_EXTENT_AU
+            : SOLAR_EXTENT_AU) * AU;
       const fill = seasons ? FRAMING.seasonsFill : FRAMING.solarFill;
       // The near side of the orbit is closer, so larger on screen: a margin in height.
       orbit.dist = fit(half, 1.3 * half * Math.sin(orbit.lat * DEG), fill);
@@ -1723,7 +1756,20 @@ export class SpaceView {
   private centreAt(x: number, y: number): void {
     // Round the Sun of a diagram there is no globe to turn: back to the point of view's framing
     // (attached to a globe, #139: that globe turns to face the camera).
-    if (isSunCentred(this.frameId) && !this.attached()) return this.resetView();
+    if (isSunCentred(this.frameId) && !this.attached()) {
+      // On the Sun, in « Le système solaire »: the other framing (#232).
+      const xyr = this.sceneScreen;
+      if (
+        this.frameId === "heliocentric" &&
+        this.sceneOk[0] &&
+        Math.hypot(x - xyr[0]!, y - xyr[1]!) < xyr[2]! + SUN_TAP_PX
+      ) {
+        this.setSolarScale(this.solarScale === "inner" ? "whole" : "inner");
+        this.options.onSolarScaleChange?.(this.solarScale);
+        return;
+      }
+      return this.resetView();
+    }
     const { clientWidth: w, clientHeight: h } = this.options.canvas;
     const { a: dir } = this.frameTmp;
     const o = this.camera.position;

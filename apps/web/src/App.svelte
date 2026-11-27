@@ -15,6 +15,7 @@
     type RestFrameId,
     type BodyTarget,
     isSpaceStyle,
+    type SolarScale,
     isRestFrameId,
     rotationPeriodHours,
     BODY_RADIUS_KM,
@@ -909,6 +910,11 @@
         spaceFrame = id;
         frameNote = null;
       },
+      // A double tap on the Sun: its first tap selected it, the sheet would hide the planets.
+      onSolarScaleChange: (scale) => {
+        solarScale = scale;
+        selection = null;
+      },
       exitDuration: frameDuration,
       onRestChange: (rest, focus) => {
         spaceRest = rest;
@@ -1444,6 +1450,7 @@
       instruments ? skyTools : undefined,
       visitBack,
       restChip,
+      solarButton,
     ].filter((el): el is HTMLElement => el !== undefined && el !== null);
   function updateGraduationExclusions() {
     const m = 4; // margin around each block, CSS px
@@ -1461,6 +1468,7 @@
     void hudReturn;
     void visitBack;
     void restChip;
+    void solarButton;
     void headerShown;
     void instruments;
     void chipsShown;
@@ -1593,6 +1601,27 @@
     chooseFrame("body");
   }
 
+  /**
+   * « Le système solaire », two framings (#232): the near planets (Mercure to Mars, the Earth
+   * readable) or the whole system. A button beside the rest chip, or a double tap on the Sun.
+   */
+  let solarScale = $state<SolarScale>("whole");
+  let solarButton = $state<HTMLElement>();
+  function toggleSolarScale() {
+    solarScale = solarScale === "inner" ? "whole" : "inner";
+    space?.setSolarScale(solarScale, reducedMotion.matches);
+  }
+  const showSolarScale = $derived(
+    mode === "space" && spaceFrame === "heliocentric" && !flying && !immersive && !!space,
+  );
+
+  /** In a visit (#232): the bodies before and after, in the selector's order, for the arrows. */
+  const visitSiblings = $derived.by(() => {
+    if (mode !== "space" || spaceFrame !== "body" || flying || immersive || !space) return null;
+    const i = BODY_TARGETS.indexOf(spaceBody);
+    return { prev: BODY_TARGETS[i - 1] ?? null, next: BODY_TARGETS[i + 1] ?? null };
+  });
+
   /** Name of the body orbited (body-centred frame). */
   const targetName = (body: BodyTarget) =>
     body === "Moon" ? $_("body.Moon") : $_(`planet.${body}`);
@@ -1638,7 +1667,7 @@
     menuButton?.focus();
     if (!isAvailableFrame(id)) return;
     // The point of view already chosen: its framing again (after a flight in, or a wander).
-    if (id === spaceFrame) reframe();
+    if (id === spaceFrame && id !== "body") reframe();
     spaceFrame = id;
     const level = levelPref.value;
     const angle = angleFormat.format(meanObliquity(date));
@@ -2728,6 +2757,26 @@
   </button>
 {/if}
 
+{#if visitSiblings}
+  <!-- From one body to the next without the menu (#232): the neighbours in the selector's order,
+       at the screen's edges, named. -->
+  {#each [["prev", visitSiblings.prev], ["next", visitSiblings.next]] as const as [side, body] (side)}
+    {#if body}
+      <button
+        class="visit-step frame"
+        data-side={side}
+        data-action={`visit-${side}`}
+        onclick={() => (spaceBody = body)}
+        aria-label={$_("frame.body.goTo", { values: { body: targetName(body) } })}
+        title={$_("frame.body.goTo", { values: { body: targetName(body) } })}
+      >
+        <span class="arrow" aria-hidden="true">{side === "prev" ? "‹" : "›"}</span>
+        <span class="step-name" aria-hidden="true">{targetName(body)}</span>
+      </button>
+    {/if}
+  {/each}
+{/if}
+
 {#if frameOpen && mode === "space"}
   <FramePanel
     frame={spaceFrame}
@@ -2857,6 +2906,20 @@
       bind:element={restChip}
     />
   {/if}
+{/if}
+{#if showSolarScale}
+  <!-- « Le système solaire »: the other framing (#232), beside the recentre button (both frame
+       the view); a double tap on the Sun does the same. -->
+  <button
+    class="solar-scale"
+    data-action="solar-scale"
+    bind:this={solarButton}
+    onclick={toggleSolarScale}
+    title={$_("space.scale.hint")}
+  >
+    <span class="glyph" aria-hidden="true">{solarScale === "whole" ? "⊕" : "⊖"}</span>
+    {$_(solarScale === "whole" ? "space.scale.inner" : "space.scale.whole")}
+  </button>
 {/if}
 
 {#if status !== "ready"}
@@ -3401,6 +3464,82 @@
     text-decoration-color: var(--ast-hairline);
     text-underline-offset: 3px;
     cursor: pointer;
+  }
+  /* « Le système solaire »: the other framing, a chip as the rest chip, left of the recentre
+     button (44 px, in the top right corner), on its centre line. */
+  .solar-scale {
+    position: fixed;
+    z-index: 2;
+    top: calc(max(var(--ast-corner-inset), env(safe-area-inset-top)) + 7px);
+    right: calc(max(var(--ast-corner-inset), env(safe-area-inset-right)) + 52px);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    min-height: 0;
+    padding: 0 10px 0 8px;
+    font: 500 var(--ast-fs-s)/1 var(--ast-font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ast-fg);
+    background: color-mix(in srgb, var(--ast-bg) 80%, transparent);
+    border: 1px solid var(--ast-control-border);
+    border-radius: var(--ast-radius);
+    cursor: pointer;
+  }
+  /* 44 px for the finger round the 30 px chip. */
+  .solar-scale::before {
+    content: "";
+    position: absolute;
+    inset: -7px -4px;
+  }
+  .solar-scale .glyph {
+    font-size: 15px;
+  }
+  .solar-scale:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: 2px;
+  }
+  /* A visit: the next body at each edge, an arrow over its name, centred on the globe's height. */
+  .visit-step {
+    position: fixed;
+    z-index: 2;
+    top: 46%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 44px;
+    min-height: 64px;
+    height: auto;
+    padding: 6px 4px;
+    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
+    color: var(--ast-fg);
+    cursor: pointer;
+  }
+  .visit-step[data-side="prev"] {
+    left: max(8px, env(safe-area-inset-left));
+  }
+  .visit-step[data-side="next"] {
+    right: max(8px, env(safe-area-inset-right));
+  }
+  .visit-step .arrow {
+    font: 400 28px/1 var(--ast-font-mono);
+  }
+  .visit-step .step-name {
+    font: 500 var(--ast-fs-xs)/1 var(--ast-font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ast-fg-muted);
+  }
+  .visit-step:hover .step-name,
+  .visit-step:focus-visible .step-name {
+    color: var(--ast-fg);
+  }
+  .visit-step:focus-visible {
+    outline: 1px solid var(--ast-fg);
+    outline-offset: -4px;
   }
   .visit-back:hover,
   .visit-back:focus-visible {
