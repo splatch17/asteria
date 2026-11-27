@@ -122,6 +122,7 @@
   "layers.section.sky": "Ciel",
   "layers.section.solar": "Système solaire",
   "layers.section.guides": "Repères",
+  "layers.section.look": "Apparence",
   "layers.constellationLines": "Lignes des constellations",
   "layers.constellationLines.short": "Lignes",
   "layers.constellationNames": "Noms des constellations",
