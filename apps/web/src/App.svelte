@@ -2763,7 +2763,7 @@
   {#each [["prev", visitSiblings.prev], ["next", visitSiblings.next]] as const as [side, body] (side)}
     {#if body}
       <button
-        class="visit-step frame"
+        class="visit-step"
         data-side={side}
         data-action={`visit-${side}`}
         onclick={() => (spaceBody = body)}
@@ -3500,7 +3500,8 @@
     outline: 1px solid var(--ast-fg);
     outline-offset: 2px;
   }
-  /* A visit: the next body at each edge, an arrow over its name, centred on the globe's height. */
+  /* A visit: the next body at each edge, an arrow over its name, centred on the globe's height;
+     no frame nor plate (owner's request), a dark halo keeps them legible over the sky. */
   .visit-step {
     position: fixed;
     z-index: 2;
@@ -3514,9 +3515,14 @@
     min-height: 64px;
     height: auto;
     padding: 6px 4px;
-    background: color-mix(in srgb, var(--ast-bg) 70%, transparent);
+    border: 0;
+    background: none;
     color: var(--ast-fg);
+    text-shadow:
+      0 0 4px var(--ast-bg),
+      0 0 10px var(--ast-bg);
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
   .visit-step[data-side="prev"] {
     left: max(8px, env(safe-area-inset-left));
