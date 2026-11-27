@@ -1,7 +1,8 @@
 <script lang="ts">
   // The settings page of the sheet (menu v2, sketch A + B, panels 7 and 8): behind ⚙, apart from
   // the destinations, in three parts picked by a segmented control (Affichage · Lieu et temps ·
-  // Appli), the last one remembered. Affichage: every layer of the view, by section (#54, #138).
+  // Appli), the last one remembered. Affichage: every layer of the view, by section (#54, #138),
+  // then the look (Vue réaliste).
   // Lieu et temps: the place and the time, data in monospace, actions as engraved icon buttons.
   // Appli: the level (#201), the rarer settings, the network, the offline copy, the credits and a
   // short help. Long labels are not printed on the tiles: a readout shows the detail of the tile
@@ -156,6 +157,20 @@
         <LayersPanel entries={section.entries} {layers} onchange={onlayer} {unavailable} {oninfo} />
       </div>
     {/each}
+    <!-- How the Earth and the planets are drawn: an engraving, or their real colours. It belongs
+         with what the map shows (owner's request), not with the app's settings. -->
+    <h3 id="menu-layers-look">{$_("layers.section.look")}</h3>
+    <div class="grid" role="group" aria-labelledby="menu-layers-look">
+      <MenuTile
+        id="realistic"
+        icon="realistic"
+        label={$_("menu.realistic.short")}
+        detail={$_("space.realistic")}
+        pressed={realistic}
+        onclick={onrealistic}
+        {oninfo}
+      />
+    </div>
   </div>
 
   <div
@@ -259,15 +274,6 @@
     </div>
     <p class="note level-note">{$_("settings.textSize.note")}</p>
     <div class="grid">
-      <MenuTile
-        id="realistic"
-        icon="realistic"
-        label={$_("menu.realistic.short")}
-        detail={$_("space.realistic")}
-        pressed={realistic}
-        onclick={onrealistic}
-        {oninfo}
-      />
       {#if fullscreen !== null}
         <MenuTile
           id="fullscreen"
